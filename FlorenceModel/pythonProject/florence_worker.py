@@ -2,343 +2,214 @@ import io
 import json
 import re
 import time
+import argparse
+from typing import Any, Dict, List, Optional, Tuple
+
 import zmq
 import torch
 from PIL import Image
 from transformers import pipeline
 
 
-def load_florence_pipeline():
-    """Load Florence-2 as an image-text-to-text pipeline."""
-    has_cuda = torch.cuda.is_available()
+# --- Regex extraction (לא "הסקה" — רק חילוץ תבניות) ---
+DATE_PATTERNS = [
+    re.compile(r"\b(20\d{2})[-/\.](0[1-9]|1[0-2])[-/\.]([0-2]\d|3[01])\b"),  # YYYY-MM-DD
+    re.compile(r"\b([0-2]\d|3[01])[-/\.](0[1-9]|1[0-2])[-/\.](20\d{2})\b"),  # DD-MM-YYYY
+]
 
-    if has_cuda:
-        vision_pipe = pipeline(
-            "image-text-to-text",
-            model="florence-community/Florence-2-base",
-            device=0,
-            dtype=torch.bfloat16,
-            trust_remote_code=True,
-        )
-        print("✅ Florence-2 pipeline loaded on GPU")
+TIME_PATTERN = re.compile(r"\b([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\b")    # HH:MM(:SS)
+
+
+def now_unix_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def load_florence_pipeline(model_name: str, device_str: str):
+    """
+    device_str: "cpu" | "cuda"
+    """
+    if device_str == "cuda" and torch.cuda.is_available():
+        device = 0
+        torch_dtype = torch.float16
+        print("Device set to use cuda")
     else:
-        vision_pipe = pipeline(
-            "image-text-to-text",
-            model="florence-community/Florence-2-base",
-            device=-1,
-            trust_remote_code=True,
-        )
-        print("✅ Florence-2 pipeline loaded on CPU")
+        device = -1
+        torch_dtype = torch.float32
+        print("Device set to use cpu")
 
+    # Note: keep it simple; Florence sometimes emits warnings about use_fast. Not critical.
+    vision_pipe = pipeline(
+        "image-text-to-text",
+        model=model_name,
+        device=device,
+        torch_dtype=torch_dtype,
+    )
+    print(f"✅ Florence-2 pipeline loaded ({model_name}) on {device_str if device != -1 else 'cpu'}")
     return vision_pipe
 
 
-def _extract_generated_text(result):
-    """Normalize pipeline output into a string."""
-    if isinstance(result, list) and len(result) > 0:
-        first = result[0]
-        if isinstance(first, str):
-            return first
-        if isinstance(first, dict) and "generated_text" in first:
-            return first["generated_text"]
+def recv_frame(socket) -> Tuple[int, Optional[int], bytes]:
+    """
+    Supports:
+      - [frame_idx, jpg]
+      - [frame_idx, video_time_ms, jpg]
+      - any longer: uses first as idx, last as jpg, second as time if numeric
+    """
+    parts = socket.recv_multipart()
+
+    if len(parts) < 2:
+        raise ValueError(f"Expected at least 2 parts, got {len(parts)}")
+
+    frame_idx = int(parts[0].decode("utf-8"))
+
+    video_time_ms: Optional[int] = None
+    jpg_bytes = parts[-1]
+
+    if len(parts) >= 3:
+        # try parse second part as time
+        try:
+            video_time_ms = int(parts[1].decode("utf-8"))
+        except Exception:
+            video_time_ms = None
+
+    return frame_idx, video_time_ms, jpg_bytes
+
+
+def pil_from_jpg(jpg_bytes: bytes) -> Image.Image:
+    return Image.open(io.BytesIO(jpg_bytes)).convert("RGB")
+
+
+def run_task(vision_pipe, image: Image.Image, task_text: str) -> str:
+    """
+    Florence returns list[dict|str]. We normalize into a single string.
+    """
+    out = vision_pipe(image, text=task_text)
+
+    if isinstance(out, list) and out:
+        first = out[0]
+        if isinstance(first, dict):
+            # pipeline commonly uses 'generated_text'
+            if "generated_text" in first:
+                return str(first["generated_text"])
+            return json.dumps(first, ensure_ascii=False)
         return str(first)
-    return str(result)
+
+    return str(out)
 
 
-def _safe_run_task(vision_pipe, image, task_token):
-    """
-    Try to run a Florence task token.
-    If the model/task fails, return None (and keep pipeline alive).
-    """
-    try:
-        result = vision_pipe(image, text=task_token)
-        return _extract_generated_text(result)
-    except Exception:
-        return None
+def extract_datetime_candidates(text: str) -> List[str]:
+    cands: List[str] = []
+    # normalize
+    t = text.replace("<OCR>", "").strip()
 
+    for pat in DATE_PATTERNS:
+        for m in pat.finditer(t):
+            cands.append(m.group(0))
 
-def _guess_indoor_outdoor(text):
-    if not text:
-        return None
-    t = text.lower()
-    indoor_hints = ["indoors", "inside", "store", "shop", "supermarket", "mall", "aisle", "counter", "checkout"]
-    outdoor_hints = ["outdoors", "outside", "street", "sidewalk", "road", "parking", "sky", "trees"]
-    indoor_score = sum(1 for w in indoor_hints if w in t)
-    outdoor_score = sum(1 for w in outdoor_hints if w in t)
-    if indoor_score == 0 and outdoor_score == 0:
-        return None
-    if indoor_score >= outdoor_score:
-        return "INDOOR"
-    return "OUTDOOR"
+    for m in TIME_PATTERN.finditer(t):
+        cands.append(m.group(0))
 
-
-def _extract_people_count(text):
-    """
-    Heuristic people count extraction from caption text.
-    Not perfect, but better than nothing when we only have captions.
-    """
-    if not text:
-        return None
-
-    t = text.lower()
-
-    # Common phrases
-    patterns = [
-        r"\b(\d+)\s+(people|persons|men|women|kids|children|customers|shoppers)\b",
-        r"\b(one|two|three|four|five|six|seven|eight|nine|ten)\s+(people|persons|men|women|kids|children|customers|shoppers)\b",
-        r"\b(a|an)\s+(man|woman|person|customer|shopper)\b",
-    ]
-
-    word_to_num = {
-        "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-        "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10
-    }
-
-    for p in patterns:
-        m = re.search(p, t)
-        if m:
-            val = m.group(1)
-            if val.isdigit():
-                return int(val)
-            if val in word_to_num:
-                return word_to_num[val]
-            if val in ["a", "an"]:
-                return 1
-
-    # Fallback: if it contains "a man"/"a woman" etc
-    if "a man" in t or "a woman" in t or "a person" in t:
-        return 1
-
-    return None
-
-
-def _extract_location_guess(text):
-    if not text:
-        return None
-    t = text.lower()
-
-    # Simple location categories (extend as needed)
-    mapping = [
-        ("supermarket", ["supermarket", "grocery", "aisle", "checkout", "shopping cart", "shelves"]),
-        ("convenience_store", ["convenience", "corner store", "counter", "cashier", "register"]),
-        ("shop", ["shop", "store", "retail", "boutique"]),
-        ("street", ["street", "sidewalk", "crosswalk", "traffic", "road"]),
-        ("parking_lot", ["parking lot", "parked cars", "parking"]),
-        ("home", ["living room", "kitchen", "bedroom", "house", "apartment"]),
-        ("office", ["office", "desk", "computer", "meeting room"]),
-    ]
-
-    for label, hints in mapping:
-        score = sum(1 for h in hints if h in t)
-        if score >= 2:
-            return label
-
-    return None
-
-
-def _extract_datetime_candidates(text):
-    """
-    Look for timestamp-like patterns that may appear in overlays described by caption.
-    If you later add real OCR, you can replace this with OCR output parsing.
-    """
-    if not text:
-        return []
-
-    patterns = [
-        r"\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b",          # YYYY-MM-DD
-        r"\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\b",        # DD/MM/YYYY
-        r"\b\d{1,2}:\d{2}(:\d{2})?\b",               # HH:MM(:SS)
-    ]
-
-    found = []
-    for p in patterns:
-        for m in re.finditer(p, text):
-            found.append(m.group(0))
-
-    # Deduplicate while keeping order
-    unique = []
-    seen = set()
-    for x in found:
-        if x not in seen:
-            unique.append(x)
-            seen.add(x)
-    return unique
-
-
-def _classify_activity(text):
-    """
-    Very rough activity labeling based on caption keywords.
-    This is a placeholder until you add a dedicated classifier.
-    """
-    if not text:
-        return {"label": None, "confidence": 0.0, "is_suspicious": False, "reasons": []}
-
-    t = text.lower()
-
-    rules = [
-        ("shopping_checkout", ["checkout", "cashier", "paying", "payment", "register", "counter"]),
-        ("shopping_browsing", ["shopping", "browsing", "aisle", "shelves", "cart", "basket"]),
-        ("walking", ["walking", "walking down", "walks", "pedestrian"]),
-        ("running", ["running", "sprinting"]),
-        ("fighting", ["fight", "fighting", "punch", "kicking", "assault"]),
-        ("stealing", ["steal", "stealing", "shoplifting", "hiding an item", "conceal"]),
-        ("weapon_present", ["gun", "knife", "rifle", "weapon"]),
-        ("loitering", ["loiter", "lingering", "standing around"]),
-    ]
-
-    best = None
-    best_hits = 0
-    for label, keywords in rules:
-        hits = sum(1 for k in keywords if k in t)
-        if hits > best_hits:
-            best_hits = hits
-            best = label
-
-    confidence = 0.0
-    if best_hits > 0:
-        confidence = min(0.95, 0.25 + 0.15 * best_hits)
-
-    suspicious_labels = {"fighting", "stealing", "weapon_present"}
-    is_suspicious = best in suspicious_labels
-
-    reasons = []
-    if is_suspicious:
-        reasons.append(f"Matched activity label: {best}")
-
-    return {
-        "label": best,
-        "confidence": round(confidence, 2),
-        "is_suspicious": is_suspicious,
-        "reasons": reasons,
-    }
-
-
-def build_analysis(frame_idx, video_time_ms, detailed_caption, od_text, ocr_text):
-    indoor_outdoor = _guess_indoor_outdoor(detailed_caption)
-    location_guess = _extract_location_guess(detailed_caption)
-    people_count = _extract_people_count(detailed_caption)
-    datetime_candidates = _extract_datetime_candidates((ocr_text or "") + "\n" + (detailed_caption or ""))
-
-    activity = _classify_activity(detailed_caption)
-
-    analysis = {
-        "frame_index": frame_idx,
-        "video_time_ms": video_time_ms,
-        "scene": {
-            "indoor_outdoor": indoor_outdoor,
-            "location_guess": location_guess,
-        },
-        "people": {
-            "count_guess": people_count,
-        },
-        "objects": {
-            "raw_detection_text": od_text,  # may be None if task unsupported
-        },
-        "text_overlay": {
-            "raw_ocr_text": ocr_text,       # may be None if task unsupported
-            "datetime_candidates": datetime_candidates,
-        },
-        "activity": activity,
-        "raw": {
-            "detailed_caption": detailed_caption,
-        },
-        "meta": {
-            "generated_at_unix_ms": int(time.time() * 1000),
-        },
-    }
-
-    return analysis
-
-
-def render_text_report(analysis):
-    frame_idx = analysis.get("frame_index")
-    video_time_ms = analysis.get("video_time_ms")
-    scene = analysis.get("scene", {})
-    people = analysis.get("people", {})
-    activity = analysis.get("activity", {})
-    overlay = analysis.get("text_overlay", {})
-    raw = analysis.get("raw", {})
-
-    lines = []
-    lines.append(f"Frame {frame_idx} | t={video_time_ms}ms")
-    lines.append(f"Scene: indoor_outdoor={scene.get('indoor_outdoor')} | location_guess={scene.get('location_guess')}")
-    lines.append(f"People: count_guess={people.get('count_guess')}")
-    lines.append(f"Activity: label={activity.get('label')} | confidence={activity.get('confidence')} | suspicious={activity.get('is_suspicious')}")
-    if activity.get("reasons"):
-        lines.append(f"Suspicion reasons: {activity.get('reasons')}")
-
-    if overlay.get("datetime_candidates"):
-        lines.append(f"Datetime candidates: {overlay.get('datetime_candidates')}")
-
-    lines.append("Caption:")
-    lines.append(raw.get("detailed_caption") or "")
-    return "\n".join(lines)
+    # keep unique order
+    uniq: List[str] = []
+    for x in cands:
+        if x not in uniq:
+            uniq.append(x)
+    return uniq
 
 
 def main():
-    vision_pipe = load_florence_pipeline()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--endpoint", default="tcp://127.0.0.1:5560")
+    parser.add_argument("--out", default="analysis.jsonl")
+    parser.add_argument("--model", default="florence-community/Florence-2-base")
+    parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
+    args = parser.parse_args()
 
-    # ZeroMQ PULL socket
+    vision_pipe = load_florence_pipeline(args.model, args.device)
+
+    # ZeroMQ
     context = zmq.Context()
     socket = context.socket(zmq.PULL)
-    socket.connect("tcp://127.0.0.1:5560")
-    print("🔗 Connected to video broadcaster on tcp://127.0.0.1:5560")
+    socket.connect(args.endpoint)
+    print(f"🔗 Connected to video broadcaster on {args.endpoint}")
 
-    # Try multiple Florence tasks.
-    # Some may not be supported by your Florence-2 variant; we handle None gracefully.
-    TASK_DETAILED = "<MORE_DETAILED_CAPTION>"
+    # Open output file (append)
+    out_path = args.out
+    print(f"📝 Writing JSONL to: {out_path}")
+
+    # Pure data extraction tasks (no inference)
+    # IMPORTANT: <MORE_DETAILED_CAPTION> must be the ONLY content!
+    TASK_CAPTION = "<MORE_DETAILED_CAPTION>"
     TASK_OD = "<OD>"
     TASK_OCR = "<OCR>"
 
-    # Optional output file
-    out_path = "analysis.jsonl"
+    # Open-vocab is still "detection text" (not suspiciousness inference).
+    # Florence expects token + comma-separated labels.
+    WEAPON_QUERY = "gun, handgun, pistol, revolver, firearm, rifle, shotgun, knife, blade, switchblade"
+    TASK_WEAPONS = f"<OPEN_VOCABULARY_DETECTION>{WEAPON_QUERY}"
 
     try:
-        with open(out_path, "a", encoding="utf-8") as f:
-            while True:
-                parts = socket.recv_multipart()
+        while True:
+            frame_idx, video_time_ms, jpg_bytes = recv_frame(socket)
+            image = pil_from_jpg(jpg_bytes)
 
-                # Backward compatible:
-                # Old format: [frame_idx, jpg_bytes]
-                # New format: [frame_idx, pos_msec, jpg_bytes]
-                if len(parts) == 2:
-                    frame_idx_bytes, jpg_bytes = parts
-                    video_time_ms = -1
-                else:
-                    frame_idx_bytes, pos_msec_bytes, jpg_bytes = parts
-                    try:
-                        video_time_ms = int(pos_msec_bytes.decode("utf-8"))
-                    except Exception:
-                        video_time_ms = -1
+            record: Dict[str, Any] = {
+                "frame_index": frame_idx,
+                "video_time_ms": video_time_ms,
+                "raw": {},
+                "meta": {
+                    "generated_at_unix_ms": now_unix_ms(),
+                    "model": args.model,
+                }
+            }
 
-                frame_idx = int(frame_idx_bytes.decode("utf-8"))
+            # --- Run tasks (each task is raw output only) ---
+            # Caption
+            try:
+                caption = run_task(vision_pipe, image, TASK_CAPTION)
+            except Exception as e:
+                caption = f"[ERROR running {TASK_CAPTION}] {e}"
+            record["raw"]["more_detailed_caption"] = caption
 
-                # Decode JPEG to PIL image
-                image = Image.open(io.BytesIO(jpg_bytes)).convert("RGB")
+            # OD
+            try:
+                od = run_task(vision_pipe, image, TASK_OD)
+            except Exception as e:
+                od = f"[ERROR running {TASK_OD}] {e}"
+            record["raw"]["object_detection"] = od
 
-                # Run Florence tasks
-                detailed_caption = _safe_run_task(vision_pipe, image, TASK_DETAILED)
-                od_text = _safe_run_task(vision_pipe, image, TASK_OD)
-                ocr_text = _safe_run_task(vision_pipe, image, TASK_OCR)
+            # OCR
+            try:
+                ocr = run_task(vision_pipe, image, TASK_OCR)
+            except Exception as e:
+                ocr = f"[ERROR running {TASK_OCR}] {e}"
+            record["raw"]["ocr"] = ocr
+            record["text_overlay"] = {
+                "datetime_candidates": extract_datetime_candidates(ocr),
+            }
 
-                analysis = build_analysis(
-                    frame_idx=frame_idx,
-                    video_time_ms=video_time_ms,
-                    detailed_caption=detailed_caption,
-                    od_text=od_text,
-                    ocr_text=ocr_text,
-                )
+            # Open vocab weapons
+            try:
+                weapons = run_task(vision_pipe, image, TASK_WEAPONS)
+            except Exception as e:
+                weapons = f"[ERROR running <OPEN_VOCABULARY_DETECTION>] {e}"
+            record["raw"]["open_vocab_weapons"] = weapons
 
-                # Print TEXT report + JSON
-                print("\n" + "=" * 80)
-                print(render_text_report(analysis))
-                print("-" * 80)
-                print("JSON:")
-                print(json.dumps(analysis, ensure_ascii=False, indent=2))
+            # --- Console output (compact but useful) ---
+            dt = record["text_overlay"]["datetime_candidates"]
+            dt_str = dt[0] if dt else "-"
+            caption_short = caption.replace("\n", " ").strip()
+            if len(caption_short) > 120:
+                caption_short = caption_short[:120] + "..."
 
-                # Persist JSONL
-                f.write(json.dumps(analysis, ensure_ascii=False) + "\n")
-                f.flush()
+            print(f"🎬 Frame {frame_idx}"
+                  + (f" | t={video_time_ms}ms" if video_time_ms is not None else "")
+                  + f" | dt={dt_str}"
+                  + f" | caption={caption_short}")
+
+            # --- Write JSONL ---
+            with open(out_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     except KeyboardInterrupt:
         print("\n[INFO] Stopped by user (worker).")

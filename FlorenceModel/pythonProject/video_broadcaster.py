@@ -5,66 +5,64 @@ import sys
 
 
 def main():
-    # Read video path from CLI or use default
+    # Usage: python video_broadcaster.py videos/shop.mp4
     if len(sys.argv) < 2:
         video_path = "videos/shop.mp4"
         print(f"[INFO] No video path provided, using default: {video_path}")
     else:
         video_path = sys.argv[1]
 
-    # ZeroMQ PUSH socket
+    endpoint = "tcp://127.0.0.1:5560"
+    send_every_n_frames = 60         # אפשר לשנות (60 / 120 וכו')
+    resize_width = 640               # כדי להקטין עומס
+
     context = zmq.Context()
     socket = context.socket(zmq.PUSH)
-    socket.bind("tcp://127.0.0.1:5560")
-    print("📡 Video broadcaster bound on tcp://127.0.0.1:5560")
+    socket.bind(endpoint)
+
+    print(f"[INFO] Broadcasting video: {video_path}")
+    print(f"[INFO] ZeroMQ PUSH bind: {endpoint}")
+    print(f"[INFO] Sending every {send_every_n_frames} frames, resize width={resize_width}")
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        print(f"[ERROR] Failed to open video: {video_path}")
-        return
+        raise RuntimeError(f"Failed to open video: {video_path}")
 
-    EVERY_N_FRAMES = 120  # send one frame every N frames to reduce load
     frame_idx = 0
 
     try:
         while True:
-            ret, frame = cap.read()
-
-            # If we reached the end of the video – restart from beginning
-            if not ret:
+            ok, frame = cap.read()
+            if not ok:
                 print("🔁 End of video — restarting from beginning...")
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                frame_idx = 0
                 continue
 
-            # Downscale frame to speed up processing
-            h, w = frame.shape[:2]
-            target_width = 640
-            if w > target_width:
-                target_height = int(h * target_width / w)
-                frame = cv2.resize(frame, (target_width, target_height))
+            if frame_idx % send_every_n_frames == 0:
+                # timestamp in ms inside the video
+                video_time_ms = int(cap.get(cv2.CAP_PROP_POS_MSEC))
 
-            # Send only every Nth frame
-            if frame_idx % EVERY_N_FRAMES == 0:
-                # Extract video time in milliseconds (position of current frame)
-                pos_msec = cap.get(cv2.CAP_PROP_POS_MSEC)
-                pos_msec_int = int(pos_msec) if pos_msec is not None else -1
+                # resize
+                h, w = frame.shape[:2]
+                if w > resize_width:
+                    new_h = int(h * (resize_width / w))
+                    frame = cv2.resize(frame, (resize_width, new_h), interpolation=cv2.INTER_AREA)
 
-                success, buffer = cv2.imencode(".jpg", frame)
-                if not success:
-                    print(f"[WARN] Failed to encode frame {frame_idx}")
-                else:
-                    jpg_bytes = buffer.tobytes()
+                # encode jpeg
+                ok2, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+                if not ok2:
+                    frame_idx += 1
+                    continue
 
-                    # Send multipart:
-                    # [frame_index, pos_msec, jpeg_bytes]
-                    socket.send_multipart(
-                        [
-                            str(frame_idx).encode("utf-8"),
-                            str(pos_msec_int).encode("utf-8"),
-                            jpg_bytes,
-                        ]
-                    )
-                    print(f"📤 Sent frame {frame_idx} (t={pos_msec_int}ms)")
+                jpg_bytes = buf.tobytes()
+
+                # multipart: [frame_idx, video_time_ms, jpg]
+                socket.send_multipart([
+                    str(frame_idx).encode("utf-8"),
+                    str(video_time_ms).encode("utf-8"),
+                    jpg_bytes
+                ])
 
             frame_idx += 1
             time.sleep(0.001)
