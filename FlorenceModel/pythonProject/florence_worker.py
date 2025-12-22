@@ -17,7 +17,7 @@ DATE_PATTERNS = [
     re.compile(r"\b([0-2]\d|3[01])[-/\.](0[1-9]|1[0-2])[-/\.](20\d{2})\b"),  # DD-MM-YYYY
 ]
 
-TIME_PATTERN = re.compile(r"\b([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\b")    # HH:MM(:SS)
+TIME_PATTERN = re.compile(r"\b([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\b")  # HH:MM(:SS)
 
 
 def now_unix_ms() -> int:
@@ -37,7 +37,6 @@ def load_florence_pipeline(model_name: str, device_str: str):
         torch_dtype = torch.float32
         print("Device set to use cpu")
 
-    # Note: keep it simple; Florence sometimes emits warnings about use_fast. Not critical.
     vision_pipe = pipeline(
         "image-text-to-text",
         model=model_name,
@@ -66,7 +65,6 @@ def recv_frame(socket) -> Tuple[int, Optional[int], bytes]:
     jpg_bytes = parts[-1]
 
     if len(parts) >= 3:
-        # try parse second part as time
         try:
             video_time_ms = int(parts[1].decode("utf-8"))
         except Exception:
@@ -88,7 +86,6 @@ def run_task(vision_pipe, image: Image.Image, task_text: str) -> str:
     if isinstance(out, list) and out:
         first = out[0]
         if isinstance(first, dict):
-            # pipeline commonly uses 'generated_text'
             if "generated_text" in first:
                 return str(first["generated_text"])
             return json.dumps(first, ensure_ascii=False)
@@ -99,7 +96,6 @@ def run_task(vision_pipe, image: Image.Image, task_text: str) -> str:
 
 def extract_datetime_candidates(text: str) -> List[str]:
     cands: List[str] = []
-    # normalize
     t = text.replace("<OCR>", "").strip()
 
     for pat in DATE_PATTERNS:
@@ -109,7 +105,6 @@ def extract_datetime_candidates(text: str) -> List[str]:
     for m in TIME_PATTERN.finditer(t):
         cands.append(m.group(0))
 
-    # keep unique order
     uniq: List[str] = []
     for x in cands:
         if x not in uniq:
@@ -133,20 +128,13 @@ def main():
     socket.connect(args.endpoint)
     print(f"🔗 Connected to video broadcaster on {args.endpoint}")
 
-    # Open output file (append)
     out_path = args.out
     print(f"📝 Writing JSONL to: {out_path}")
 
-    # Pure data extraction tasks (no inference)
     # IMPORTANT: <MORE_DETAILED_CAPTION> must be the ONLY content!
     TASK_CAPTION = "<MORE_DETAILED_CAPTION>"
     TASK_OD = "<OD>"
     TASK_OCR = "<OCR>"
-
-    # Open-vocab is still "detection text" (not suspiciousness inference).
-    # Florence expects token + comma-separated labels.
-    WEAPON_QUERY = "gun, handgun, pistol, revolver, firearm, rifle, shotgun, knife, blade, switchblade"
-    TASK_WEAPONS = f"<OPEN_VOCABULARY_DETECTION>{WEAPON_QUERY}"
 
     try:
         while True:
@@ -163,7 +151,6 @@ def main():
                 }
             }
 
-            # --- Run tasks (each task is raw output only) ---
             # Caption
             try:
                 caption = run_task(vision_pipe, image, TASK_CAPTION)
@@ -188,26 +175,21 @@ def main():
                 "datetime_candidates": extract_datetime_candidates(ocr),
             }
 
-            # Open vocab weapons
-            try:
-                weapons = run_task(vision_pipe, image, TASK_WEAPONS)
-            except Exception as e:
-                weapons = f"[ERROR running <OPEN_VOCABULARY_DETECTION>] {e}"
-            record["raw"]["open_vocab_weapons"] = weapons
-
-            # --- Console output (compact but useful) ---
+            # Console output (compact)
             dt = record["text_overlay"]["datetime_candidates"]
             dt_str = dt[0] if dt else "-"
             caption_short = caption.replace("\n", " ").strip()
             if len(caption_short) > 120:
                 caption_short = caption_short[:120] + "..."
 
-            print(f"🎬 Frame {frame_idx}"
-                  + (f" | t={video_time_ms}ms" if video_time_ms is not None else "")
-                  + f" | dt={dt_str}"
-                  + f" | caption={caption_short}")
+            print(
+                f"🎬 Frame {frame_idx}"
+                + (f" | t={video_time_ms}ms" if video_time_ms is not None else "")
+                + f" | dt={dt_str}"
+                + f" | caption={caption_short}"
+            )
 
-            # --- Write JSONL ---
+            # Write JSONL
             with open(out_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
