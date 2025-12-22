@@ -11,7 +11,6 @@ from PIL import Image
 from transformers import pipeline
 
 
-# --- Regex extraction (לא "הסקה" — רק חילוץ תבניות) ---
 DATE_PATTERNS = [
     re.compile(r"\b(20\d{2})[-/\.](0[1-9]|1[0-2])[-/\.]([0-2]\d|3[01])\b"),  # YYYY-MM-DD
     re.compile(r"\b([0-2]\d|3[01])[-/\.](0[1-9]|1[0-2])[-/\.](20\d{2})\b"),  # DD-MM-YYYY
