@@ -26,10 +26,12 @@ def load_florence_pipeline(model_name: str, device_str: str):
     if device_str == "cuda" and torch.cuda.is_available():
         device = 0
         torch_dtype = torch.float16
+        actual_device = "cuda"
         print("Device set to use cuda")
     else:
         device = -1
         torch_dtype = torch.float32
+        actual_device = "cpu"
         print("Device set to use cpu")
 
     vision_pipe = pipeline(
@@ -38,25 +40,23 @@ def load_florence_pipeline(model_name: str, device_str: str):
         device=device,
         torch_dtype=torch_dtype,
     )
-    print(f"✅ Florence-2 pipeline loaded ({model_name}) on {device_str if device != -1 else 'cpu'}")
-    return vision_pipe
+    print(f"✅ Florence-2 pipeline loaded ({model_name}) on {actual_device}")
+    return vision_pipe, actual_device
 
 
-def recv_frame(socket) -> Tuple[int, Optional[int], bytes]:
+def recv_frame_sub(socket) -> Tuple[int, Optional[int], bytes]:
     parts = socket.recv_multipart()
-    if len(parts) < 2:
-        raise ValueError(f"Expected at least 2 parts, got {len(parts)}")
+    # [topic, frame_idx, video_time_ms, jpg]
+    if len(parts) < 4:
+        raise ValueError(f"Expected 4 parts, got {len(parts)}")
 
-    frame_idx = int(parts[0].decode("utf-8"))
-    video_time_ms: Optional[int] = None
-    jpg_bytes = parts[-1]
+    frame_idx = int(parts[1].decode("utf-8"))
+    try:
+        video_time_ms = int(parts[2].decode("utf-8"))
+    except Exception:
+        video_time_ms = None
 
-    if len(parts) >= 3:
-        try:
-            video_time_ms = int(parts[1].decode("utf-8"))
-        except Exception:
-            video_time_ms = None
-
+    jpg_bytes = parts[3]
     return frame_idx, video_time_ms, jpg_bytes
 
 
@@ -102,80 +102,86 @@ def main():
     parser.add_argument("--out", default="florence.jsonl")
     parser.add_argument("--model", default="florence-community/Florence-2-base")
     parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
+    parser.add_argument("--every", type=int, default=60, help="process every N frames")
     args = parser.parse_args()
 
-    vision_pipe = load_florence_pipeline(args.model, args.device)
+    vision_pipe, actual_device = load_florence_pipeline(args.model, args.device)
 
     context = zmq.Context()
-    socket = context.socket(zmq.PULL)
+    socket = context.socket(zmq.SUB)
     socket.connect(args.endpoint)
-    print(f"🔗 Connected to video broadcaster on {args.endpoint}")
+    socket.setsockopt(zmq.SUBSCRIBE, b"frame")
+    print(f"🔗 SUB connected to broadcaster on {args.endpoint}")
     print(f"📝 Writing JSONL to: {args.out}")
+    print(f"⚙️ Florence processes every {args.every} frames")
 
     TASK_CAPTION = "<MORE_DETAILED_CAPTION>"
     TASK_OD = "<OD>"
     TASK_OCR = "<OCR>"
 
+    processed = 0
+    skipped = 0
+
     try:
         while True:
-            frame_idx, video_time_ms, jpg_bytes = recv_frame(socket)
+            frame_idx, video_time_ms, jpg_bytes = recv_frame_sub(socket)
+
+            # Skip fast without decoding
+            if args.every > 1 and (frame_idx % args.every != 0):
+                skipped += 1
+                continue
+
             image = pil_from_jpg(jpg_bytes)
 
             record: Dict[str, Any] = {
-                "schema_version": "florence_frame_v1",
                 "frame_index": frame_idx,
                 "video_time_ms": video_time_ms,
-                "raw": {
-                    "more_detailed_caption": None,
-                    "object_detection": None,
-                    "ocr": None,
-                },
-                "derived": {
-                    "datetime_candidates": [],
-                },
+                "raw": {},
+                "text_overlay": {},
                 "meta": {
                     "generated_at_unix_ms": now_unix_ms(),
                     "model": args.model,
-                    "device_requested": args.device,
+                    "device": actual_device,
+                    "worker": "florence_worker",
+                    "every": args.every,
                 },
             }
 
             try:
-                record["raw"]["more_detailed_caption"] = run_task(vision_pipe, image, TASK_CAPTION)
+                caption = run_task(vision_pipe, image, TASK_CAPTION)
             except Exception as e:
-                record["raw"]["more_detailed_caption"] = f"[ERROR running {TASK_CAPTION}] {e}"
+                caption = f"[ERROR running {TASK_CAPTION}] {e}"
+            record["raw"]["more_detailed_caption"] = caption
 
             try:
-                record["raw"]["object_detection"] = run_task(vision_pipe, image, TASK_OD)
+                od = run_task(vision_pipe, image, TASK_OD)
             except Exception as e:
-                record["raw"]["object_detection"] = f"[ERROR running {TASK_OD}] {e}"
+                od = f"[ERROR running {TASK_OD}] {e}"
+            record["raw"]["object_detection"] = od
 
             try:
-                record["raw"]["ocr"] = run_task(vision_pipe, image, TASK_OCR)
+                ocr = run_task(vision_pipe, image, TASK_OCR)
             except Exception as e:
-                record["raw"]["ocr"] = f"[ERROR running {TASK_OCR}] {e}"
+                ocr = f"[ERROR running {TASK_OCR}] {e}"
+            record["raw"]["ocr"] = ocr
 
-            record["derived"]["datetime_candidates"] = extract_datetime_candidates(record["raw"]["ocr"] or "")
+            record["text_overlay"]["datetime_candidates"] = extract_datetime_candidates(record["raw"]["ocr"])
 
-            caption_short = (record["raw"]["more_detailed_caption"] or "").replace("\n", " ").strip()
-            if len(caption_short) > 120:
-                caption_short = caption_short[:120] + "..."
-
-            dt = record["derived"]["datetime_candidates"]
-            dt_str = dt[0] if dt else "-"
-
-            print(
-                f"🎬 Frame {frame_idx}"
-                + (f" | t={video_time_ms}ms" if video_time_ms is not None else "")
-                + f" | dt={dt_str}"
-                + f" | caption={caption_short}"
-            )
-
+            # Append JSONL
             with open(args.out, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
+            processed += 1
+            dt = record["text_overlay"]["datetime_candidates"]
+            dt_str = dt[0] if dt else "-"
+            caption_short = caption.replace("\n", " ").strip()
+            if len(caption_short) > 120:
+                caption_short = caption_short[:120] + "..."
+            print(f"🧠 Florence | Frame {frame_idx} | t={video_time_ms}ms | dt={dt_str} | caption={caption_short}")
+
     except KeyboardInterrupt:
-        print("\n[INFO] Stopped by user (florence worker).")
+        print("\n[INFO] Stopped by user (florence_worker).")
+        print(f"[STATS] processed={processed}, skipped={skipped}")
     finally:
         socket.close()
         context.term()
