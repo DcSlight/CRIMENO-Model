@@ -1,5 +1,8 @@
+broadcaster:
 python video_broadcaster.py videos/shop.mp4
 
-python florence_worker.py
+florence:
+python florence_worker.py --endpoint tcp://127.0.0.1:5560 --out florence.jsonl --device cuda
 
-python florence_worker.py --device cuda
+tracker:
+python tracker_worker.py --endpoint tcp://127.0.0.1:5561 --out tracker.jsonl

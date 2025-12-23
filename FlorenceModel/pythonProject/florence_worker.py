@@ -11,13 +11,11 @@ from PIL import Image
 from transformers import pipeline
 
 
-# --- Regex extraction (לא "הסקה" — רק חילוץ תבניות) ---
 DATE_PATTERNS = [
-    re.compile(r"\b(20\d{2})[-/\.](0[1-9]|1[0-2])[-/\.]([0-2]\d|3[01])\b"),  # YYYY-MM-DD
-    re.compile(r"\b([0-2]\d|3[01])[-/\.](0[1-9]|1[0-2])[-/\.](20\d{2})\b"),  # DD-MM-YYYY
+    re.compile(r"\b(20\d{2})[-/\.](0[1-9]|1[0-2])[-/\.]([0-2]\d|3[01])\b"),
+    re.compile(r"\b([0-2]\d|3[01])[-/\.](0[1-9]|1[0-2])[-/\.](20\d{2})\b"),
 ]
-
-TIME_PATTERN = re.compile(r"\b([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\b")  # HH:MM(:SS)
+TIME_PATTERN = re.compile(r"\b([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\b")
 
 
 def now_unix_ms() -> int:
@@ -25,9 +23,6 @@ def now_unix_ms() -> int:
 
 
 def load_florence_pipeline(model_name: str, device_str: str):
-    """
-    device_str: "cpu" | "cuda"
-    """
     if device_str == "cuda" and torch.cuda.is_available():
         device = 0
         torch_dtype = torch.float16
@@ -48,19 +43,11 @@ def load_florence_pipeline(model_name: str, device_str: str):
 
 
 def recv_frame(socket) -> Tuple[int, Optional[int], bytes]:
-    """
-    Supports:
-      - [frame_idx, jpg]
-      - [frame_idx, video_time_ms, jpg]
-      - any longer: uses first as idx, last as jpg, second as time if numeric
-    """
     parts = socket.recv_multipart()
-
     if len(parts) < 2:
         raise ValueError(f"Expected at least 2 parts, got {len(parts)}")
 
     frame_idx = int(parts[0].decode("utf-8"))
-
     video_time_ms: Optional[int] = None
     jpg_bytes = parts[-1]
 
@@ -78,9 +65,6 @@ def pil_from_jpg(jpg_bytes: bytes) -> Image.Image:
 
 
 def run_task(vision_pipe, image: Image.Image, task_text: str) -> str:
-    """
-    Florence returns list[dict|str]. We normalize into a single string.
-    """
     out = vision_pipe(image, text=task_text)
 
     if isinstance(out, list) and out:
@@ -115,23 +99,19 @@ def extract_datetime_candidates(text: str) -> List[str]:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--endpoint", default="tcp://127.0.0.1:5560")
-    parser.add_argument("--out", default="analysis.jsonl")
+    parser.add_argument("--out", default="florence.jsonl")
     parser.add_argument("--model", default="florence-community/Florence-2-base")
     parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
     args = parser.parse_args()
 
     vision_pipe = load_florence_pipeline(args.model, args.device)
 
-    # ZeroMQ
     context = zmq.Context()
     socket = context.socket(zmq.PULL)
     socket.connect(args.endpoint)
     print(f"🔗 Connected to video broadcaster on {args.endpoint}")
+    print(f"📝 Writing JSONL to: {args.out}")
 
-    out_path = args.out
-    print(f"📝 Writing JSONL to: {out_path}")
-
-    # IMPORTANT: <MORE_DETAILED_CAPTION> must be the ONLY content!
     TASK_CAPTION = "<MORE_DETAILED_CAPTION>"
     TASK_OD = "<OD>"
     TASK_OCR = "<OCR>"
@@ -142,45 +122,47 @@ def main():
             image = pil_from_jpg(jpg_bytes)
 
             record: Dict[str, Any] = {
+                "schema_version": "florence_frame_v1",
                 "frame_index": frame_idx,
                 "video_time_ms": video_time_ms,
-                "raw": {},
+                "raw": {
+                    "more_detailed_caption": None,
+                    "object_detection": None,
+                    "ocr": None,
+                },
+                "derived": {
+                    "datetime_candidates": [],
+                },
                 "meta": {
                     "generated_at_unix_ms": now_unix_ms(),
                     "model": args.model,
-                }
+                    "device_requested": args.device,
+                },
             }
 
-            # Caption
             try:
-                caption = run_task(vision_pipe, image, TASK_CAPTION)
+                record["raw"]["more_detailed_caption"] = run_task(vision_pipe, image, TASK_CAPTION)
             except Exception as e:
-                caption = f"[ERROR running {TASK_CAPTION}] {e}"
-            record["raw"]["more_detailed_caption"] = caption
+                record["raw"]["more_detailed_caption"] = f"[ERROR running {TASK_CAPTION}] {e}"
 
-            # OD
             try:
-                od = run_task(vision_pipe, image, TASK_OD)
+                record["raw"]["object_detection"] = run_task(vision_pipe, image, TASK_OD)
             except Exception as e:
-                od = f"[ERROR running {TASK_OD}] {e}"
-            record["raw"]["object_detection"] = od
+                record["raw"]["object_detection"] = f"[ERROR running {TASK_OD}] {e}"
 
-            # OCR
             try:
-                ocr = run_task(vision_pipe, image, TASK_OCR)
+                record["raw"]["ocr"] = run_task(vision_pipe, image, TASK_OCR)
             except Exception as e:
-                ocr = f"[ERROR running {TASK_OCR}] {e}"
-            record["raw"]["ocr"] = ocr
-            record["text_overlay"] = {
-                "datetime_candidates": extract_datetime_candidates(ocr),
-            }
+                record["raw"]["ocr"] = f"[ERROR running {TASK_OCR}] {e}"
 
-            # Console output (compact)
-            dt = record["text_overlay"]["datetime_candidates"]
-            dt_str = dt[0] if dt else "-"
-            caption_short = caption.replace("\n", " ").strip()
+            record["derived"]["datetime_candidates"] = extract_datetime_candidates(record["raw"]["ocr"] or "")
+
+            caption_short = (record["raw"]["more_detailed_caption"] or "").replace("\n", " ").strip()
             if len(caption_short) > 120:
                 caption_short = caption_short[:120] + "..."
+
+            dt = record["derived"]["datetime_candidates"]
+            dt_str = dt[0] if dt else "-"
 
             print(
                 f"🎬 Frame {frame_idx}"
@@ -189,12 +171,11 @@ def main():
                 + f" | caption={caption_short}"
             )
 
-            # Write JSONL
-            with open(out_path, "a", encoding="utf-8") as f:
+            with open(args.out, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     except KeyboardInterrupt:
-        print("\n[INFO] Stopped by user (worker).")
+        print("\n[INFO] Stopped by user (florence worker).")
     finally:
         socket.close()
         context.term()
