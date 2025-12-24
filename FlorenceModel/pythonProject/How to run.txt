@@ -9,4 +9,4 @@ python tracker_worker.py --device cuda --every 5 --out tracker.jsonl --yolo_buil
 
 4)visualize_tracker
 
-python visualize_tracker.py --video videos/shop.mp4 --tracker_jsonl tracker.jsonl
+python visualize_tracker.py --video videos/shop.mp4 --tracker tracker.jsonl --show
