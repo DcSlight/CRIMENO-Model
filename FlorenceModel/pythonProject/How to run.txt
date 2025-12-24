@@ -5,7 +5,7 @@ python video_broadcaster.py videos/shop.mp4 --max_fps 30
 python florence_worker.py --device cuda --every 60 --out florence.jsonl
 
 # 3) YOLO+Tracking 
-python tracker_worker.py --device cuda --every 5 --out tracker.jsonl --yolo_builtin_track
+python tracker_worker.py --device cuda --every 1 --out tracker.jsonl --yolo_builtin_track
 
 4)visualize_tracker
 
