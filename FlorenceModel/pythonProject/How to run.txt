@@ -1,5 +1,5 @@
 # 1) Broadcaster (משדר הכל)
-python video_broadcaster.py videos/shop.mp4 --max_fps 30
+python video_broadcaster_v2.py videos/shop.mp4 --max_fps 30 --resize_width 640
 
 # 2) Florence (כבד) - כל 60 פריימים
 python florence_worker.py --device cuda --every 60 --out florence.jsonl
