@@ -1,3 +1,0 @@
-python video_broadcaster.py videos/shop.mp4
-
-python florence_worker.py

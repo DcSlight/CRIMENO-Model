@@ -2,63 +2,76 @@ import cv2
 import zmq
 import time
 import sys
+import argparse
 
 
 def main():
-    # Read video path from CLI or use default
-    if len(sys.argv) < 2:
-        video_path = "videos/shop.mp4"
-        print(f"[INFO] No video path provided, using default: {video_path}")
-    else:
-        video_path = sys.argv[1]
+    parser = argparse.ArgumentParser()
+    parser.add_argument("video_path", nargs="?", default="videos/shop.mp4")
+    parser.add_argument("--endpoint", default="tcp://127.0.0.1:5560")
+    parser.add_argument("--resize_width", type=int, default=640)
+    parser.add_argument("--jpeg_quality", type=int, default=85)
+    parser.add_argument("--max_fps", type=float, default=0.0, help="0 = no throttling, otherwise cap send rate")
+    args = parser.parse_args()
 
-    # ZeroMQ PUSH socket
     context = zmq.Context()
-    socket = context.socket(zmq.PUSH)
-    socket.bind("tcp://127.0.0.1:5560")
-    print("📡 Video broadcaster bound on tcp://127.0.0.1:5560")
+    socket = context.socket(zmq.PUB)
+    socket.bind(args.endpoint)
 
-    cap = cv2.VideoCapture(video_path)
+    print(f"[INFO] Broadcasting video: {args.video_path}")
+    print(f"[INFO] ZeroMQ PUB bind: {args.endpoint}")
+    print(f"[INFO] resize_width={args.resize_width}, jpeg_quality={args.jpeg_quality}, max_fps={args.max_fps}")
+
+    cap = cv2.VideoCapture(args.video_path)
     if not cap.isOpened():
-        print(f"[ERROR] Failed to open video: {video_path}")
-        return
+        raise RuntimeError(f"Failed to open video: {args.video_path}")
 
-    EVERY_N_FRAMES = 120  # send one frame every 30 frames to reduce load
     frame_idx = 0
+    last_send_ts = time.time()
+    min_interval = (1.0 / args.max_fps) if args.max_fps and args.max_fps > 0 else 0.0
 
     try:
         while True:
-            ret, frame = cap.read()
-
-            # If we reached the end of the video – restart from beginning
-            if not ret:
+            ok, frame = cap.read()
+            if not ok:
                 print("🔁 End of video — restarting from beginning...")
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                frame_idx = 0
                 continue
 
-            # 🔻 Downscale frame to speed up processing
-            h, w = frame.shape[:2]
-            target_width = 640
-            if w > target_width:
-                target_height = int(h * target_width / w)
-                frame = cv2.resize(frame, (target_width, target_height))
+            # optional throttling
+            if min_interval > 0:
+                now = time.time()
+                elapsed = now - last_send_ts
+                if elapsed < min_interval:
+                    time.sleep(min_interval - elapsed)
+                last_send_ts = time.time()
 
-            # Send only every Nth frame
-            if frame_idx % EVERY_N_FRAMES == 0:
-                success, buffer = cv2.imencode(".jpg", frame)
-                if not success:
-                    print(f"[WARN] Failed to encode frame {frame_idx}")
-                else:
-                    jpg_bytes = buffer.tobytes()
-                    # Send: [frame_index, jpeg_bytes]
-                    socket.send_multipart(
-                        [str(frame_idx).encode("utf-8"), jpg_bytes]
-                    )
-                    print(f"📤 Sent frame {frame_idx}")
+            video_time_ms = int(cap.get(cv2.CAP_PROP_POS_MSEC))
+
+            # resize to reduce load
+            h, w = frame.shape[:2]
+            if w > args.resize_width:
+                new_h = int(h * (args.resize_width / w))
+                frame = cv2.resize(frame, (args.resize_width, new_h), interpolation=cv2.INTER_AREA)
+
+            ok2, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), args.jpeg_quality])
+            if not ok2:
+                frame_idx += 1
+                continue
+
+            jpg_bytes = buf.tobytes()
+
+            # Topic-based multipart:
+            # [topic, frame_idx, video_time_ms, jpg]
+            socket.send_multipart([
+                b"frame",
+                str(frame_idx).encode("utf-8"),
+                str(video_time_ms).encode("utf-8"),
+                jpg_bytes
+            ])
 
             frame_idx += 1
-            # Small sleep so we don't flood the worker
-            time.sleep(0.001)
 
     except KeyboardInterrupt:
         print("\n[INFO] Stopped by user (broadcaster).")
