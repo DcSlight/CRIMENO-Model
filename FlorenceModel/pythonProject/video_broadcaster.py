@@ -4,10 +4,10 @@ import time
 import argparse
 
 
-def encode_jpg(frame_bgr, quality: int) -> bytes:
-    ok, buf = cv2.imencode(".jpg", frame_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)])
+def encode_jpg(frame_bgr, jpeg_quality: int) -> bytes:
+    ok, buf = cv2.imencode(".jpg", frame_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), int(jpeg_quality)])
     if not ok:
-        return b""
+        raise RuntimeError("Failed to encode JPG")
     return buf.tobytes()
 
 
@@ -17,75 +17,79 @@ def main():
     parser.add_argument("--endpoint", default="tcp://127.0.0.1:5560")
     parser.add_argument("--resize_width", type=int, default=640)
     parser.add_argument("--jpeg_quality", type=int, default=85)
-    parser.add_argument("--max_fps", type=float, default=15.0, help="Cap send rate (0 = no throttling)")
-    parser.add_argument("--print_every", type=int, default=30)
+    parser.add_argument("--max_fps", type=float, default=0.0, help="0 = no throttling, otherwise cap send rate")
     args = parser.parse_args()
 
     context = zmq.Context()
     socket = context.socket(zmq.PUB)
     socket.bind(args.endpoint)
 
+    print(f"[INFO] Broadcasting video: {args.video_path}")
+    print(f"[INFO] ZeroMQ PUB bind: {args.endpoint}")
+    print(f"[INFO] resize_width={args.resize_width}, jpeg_quality={args.jpeg_quality}, max_fps={args.max_fps}")
+
     cap = cv2.VideoCapture(args.video_path)
     if not cap.isOpened():
-        raise RuntimeError(f"Cannot open video: {args.video_path}")
+        raise RuntimeError(f"Failed to open video: {args.video_path}")
 
-    fps_sleep = 0.0 if args.max_fps <= 0 else (1.0 / args.max_fps)
+    # Give SUB sockets time to connect (PUB/SUB pattern)
+    time.sleep(0.5)
 
-    print(f"[BROADCAST] Video: {args.video_path}")
-    print(f"[BROADCAST] ZMQ PUB bind: {args.endpoint}")
-    print(f"[BROADCAST] resize_width={args.resize_width} jpeg_quality={args.jpeg_quality} max_fps={args.max_fps}")
+    frame_index = 0
+    last_send_ts = 0.0
+    min_dt = (1.0 / args.max_fps) if args.max_fps and args.max_fps > 0 else 0.0
 
-    frame_idx = 0
-    sent = 0
-    last_log = time.time()
+    # Read original video meta
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if not fps or fps <= 0:
+        fps = 25.0
+    frame_time_ms = 1000.0 / fps
 
-    try:
-        while True:
-            ok, frame_bgr = cap.read()
-            if not ok:
-                print("[BROADCAST] End of video. Looping...")
-                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                continue
+    # Send one "meta" message at the start (optional, useful for consumers)
+    # topic: meta, [w,h,fps]
+    ret, frame0 = cap.read()
+    if not ret:
+        raise RuntimeError("Empty video")
+    h0, w0 = frame0.shape[:2]
+    socket.send_multipart([b"meta", str(w0).encode(), str(h0).encode(), str(fps).encode()])
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
-            if args.resize_width > 0:
-                h, w = frame_bgr.shape[:2]
-                if w != args.resize_width:
-                    new_h = int(h * (args.resize_width / w))
-                    frame_bgr = cv2.resize(frame_bgr, (args.resize_width, new_h), interpolation=cv2.INTER_AREA)
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            # Loop for "realtime dashboard" demo
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            frame_index = 0
+            continue
 
-            video_time_ms = int(cap.get(cv2.CAP_PROP_POS_MSEC))
-            jpg_bytes = encode_jpg(frame_bgr, args.jpeg_quality)
-            if not jpg_bytes:
-                frame_idx += 1
-                continue
+        # Resize while keeping aspect ratio
+        h, w = frame.shape[:2]
+        if args.resize_width and w > args.resize_width:
+            scale = args.resize_width / float(w)
+            new_w = int(w * scale)
+            new_h = int(h * scale)
+            frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
-            # Multipart: [topic, frame_index, video_time_ms, jpg_bytes]
-            socket.send_multipart([
-                b"frame",
-                str(frame_idx).encode("utf-8"),
-                str(video_time_ms).encode("utf-8"),
-                jpg_bytes
-            ])
+        now = time.time()
+        if min_dt > 0 and (now - last_send_ts) < min_dt:
+            continue
+        last_send_ts = now
 
-            sent += 1
-            frame_idx += 1
+        video_time_ms = int(frame_index * frame_time_ms)
+        jpg = encode_jpg(frame, args.jpeg_quality)
 
-            if args.print_every > 0 and (sent % args.print_every == 0):
-                now = time.time()
-                dt = now - last_log
-                last_log = now
-                approx_fps = args.print_every / dt if dt > 0 else 0.0
-                print(f"[BROADCAST] sent={sent} last_frame={frame_idx-1} t_ms={video_time_ms} ~fps={approx_fps:.1f}")
+        # topic: frame, [frame_idx, video_time_ms, jpg_bytes]
+        socket.send_multipart([
+            b"frame",
+            str(frame_index).encode("utf-8"),
+            str(video_time_ms).encode("utf-8"),
+            jpg,
+        ])
 
-            if fps_sleep > 0:
-                time.sleep(fps_sleep)
+        if frame_index % 60 == 0:
+            print(f"[BROADCAST] frame={frame_index} t={video_time_ms}ms size={len(jpg)}B")
 
-    except KeyboardInterrupt:
-        print("\n[BROADCAST] Stopped by user.")
-    finally:
-        cap.release()
-        socket.close()
-        context.term()
+        frame_index += 1
 
 
 if __name__ == "__main__":

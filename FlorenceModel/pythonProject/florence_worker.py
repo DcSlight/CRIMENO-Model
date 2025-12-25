@@ -1,130 +1,153 @@
+"""
+Florence Worker (Layer 1)
+
+- Subscribes to ZeroMQ video frames
+- Every N frames runs Florence image-to-text
+- Writes results to JSONL (light I/O)
+"""
+
 import argparse
 import json
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Dict, Any
 
 import zmq
-from PIL import Image
-import io
+import cv2
+import numpy as np
+import torch
+from transformers import AutoProcessor, AutoModelForCausalLM
 
 
-def now_unix_ms() -> int:
-    return int(time.time() * 1000)
+# -------------------------
+# ZMQ helpers
+# -------------------------
+def recv_frame(socket):
+    """
+    Expected multipart:
+    [topic, frame_index, video_time_ms, jpg_bytes]
+    """
+    parts = socket.recv_multipart()
+    if len(parts) < 4:
+        raise RuntimeError("Invalid ZMQ frame message")
 
-
-def recv_frame_sub(sub_socket) -> Tuple[int, Optional[int], bytes]:
-    parts = sub_socket.recv_multipart()
-    frame_idx = int(parts[1].decode("utf-8"))
-    video_time_ms = int(parts[2].decode("utf-8")) if parts[2] else None
+    frame_index = int(parts[1].decode())
+    video_time_ms = int(parts[2].decode())
     jpg_bytes = parts[3]
-    return frame_idx, video_time_ms, jpg_bytes
+    return frame_index, video_time_ms, jpg_bytes
 
 
-def safe_extract_text(model_out: Any) -> str:
-    """
-    Florence output format can vary; keep it safe.
-    """
-    if model_out is None:
-        return ""
-
-    # common HF pipeline output: list[dict]
-    if isinstance(model_out, list) and model_out:
-        item = model_out[0]
-        if isinstance(item, dict):
-            for k in ["generated_text", "text", "caption", "answer"]:
-                if k in item and isinstance(item[k], str):
-                    return item[k]
-        if isinstance(item, str):
-            return item
-
-    if isinstance(model_out, dict):
-        for k in ["generated_text", "text", "caption", "answer"]:
-            if k in model_out and isinstance(model_out[k], str):
-                return model_out[k]
-
-    if isinstance(model_out, str):
-        return model_out
-
-    return str(model_out)[:2000]
+def decode_jpg(jpg_bytes: bytes) -> np.ndarray:
+    arr = np.frombuffer(jpg_bytes, dtype=np.uint8)
+    frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if frame is None:
+        raise RuntimeError("Failed to decode JPG")
+    return frame
 
 
+# -------------------------
+# Florence inference
+# -------------------------
+def run_florence(
+    model,
+    processor,
+    image_bgr: np.ndarray,
+    prompt: str,
+    device: str,
+) -> str:
+    image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+
+    inputs = processor(
+        text=prompt,
+        images=image_rgb,
+        return_tensors="pt",
+    ).to(device)
+
+    with torch.no_grad():
+        generated_ids = model.generate(
+            **inputs,
+            max_new_tokens=256,
+        )
+
+    result = processor.batch_decode(
+        generated_ids,
+        skip_special_tokens=True,
+    )[0]
+
+    return result.strip()
+
+
+# -------------------------
+# Main
+# -------------------------
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--frames_endpoint", default="tcp://127.0.0.1:5560")
-    parser.add_argument("--pub_endpoint", default="tcp://127.0.0.1:5572")
-    parser.add_argument("--every", type=int, default=30)
-    parser.add_argument("--device", default="cpu")
-    parser.add_argument("--out_jsonl", default="", help="Optional JSONL output path (debug)")
-    parser.add_argument("--print_every", type=int, default=10)
+    parser.add_argument("--sub_endpoint", default="tcp://127.0.0.1:5560")
+    parser.add_argument("--every_n_frames", type=int, default=60)
+    parser.add_argument("--out", default="florence.jsonl")
+    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument(
+        "--prompt",
+        default="Describe the scene and any suspicious or criminal activity.",
+    )
     args = parser.parse_args()
 
-    # Your existing pipeline init (keep yours if already working)
-    from transformers import pipeline
-    vision_pipe = pipeline("image-to-text", model="microsoft/Florence-2-base", device=args.device)
+    print("[FLORENCE] Loading model...")
+    processor = AutoProcessor.from_pretrained("microsoft/Florence-2-base")
+    model = AutoModelForCausalLM.from_pretrained(
+        "microsoft/Florence-2-base",
+        torch_dtype=torch.float16 if args.device == "cuda" else torch.float32,
+    ).to(args.device)
+    model.eval()
 
-    ctx = zmq.Context()
+    print(f"[FLORENCE] Device: {args.device}")
 
-    sub = ctx.socket(zmq.SUB)
-    sub.connect(args.frames_endpoint)
+    # ZMQ SUB
+    context = zmq.Context()
+    sub = context.socket(zmq.SUB)
+    sub.connect(args.sub_endpoint)
     sub.setsockopt(zmq.SUBSCRIBE, b"frame")
+    sub.setsockopt(zmq.RCVHWM, 5)
 
-    pub = ctx.socket(zmq.PUB)
-    pub.bind(args.pub_endpoint)
+    print(f"[FLORENCE] Subscribed to {args.sub_endpoint}")
+    print(f"[FLORENCE] Writing to {args.out} every {args.every_n_frames} frames")
 
-    print(f"[FLORENCE] SUB frames: {args.frames_endpoint} (topic=frame)")
-    print(f"[FLORENCE] PUB results bind: {args.pub_endpoint} (topic=florence)")
-    print(f"[FLORENCE] every={args.every} device={args.device}")
+    last_log = time.time()
 
-    processed = 0
-    skipped = 0
+    while True:
+        frame_index, video_time_ms, jpg_bytes = recv_frame(sub)
 
-    def write_jsonl(path: str, rec: Dict[str, Any]) -> None:
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        if frame_index % args.every_n_frames != 0:
+            continue
 
-    try:
-        while True:
-            frame_idx, video_time_ms, jpg_bytes = recv_frame_sub(sub)
+        frame = decode_jpg(jpg_bytes)
 
-            if args.every > 1 and (frame_idx % args.every != 0):
-                skipped += 1
-                continue
+        try:
+            caption = run_florence(
+                model=model,
+                processor=processor,
+                image_bgr=frame,
+                prompt=args.prompt,
+                device=args.device,
+            )
+        except Exception as e:
+            print(f"[FLORENCE] Inference failed: {e}")
+            continue
 
-            image = Image.open(io.BytesIO(jpg_bytes)).convert("RGB")
+        record: Dict[str, Any] = {
+            "frame_index": frame_index,
+            "video_time_ms": video_time_ms,
+            "prompt": args.prompt,
+            "caption": caption,
+            "ts_unix_ms": int(time.time() * 1000),
+        }
 
-            # Florence output format can vary; keep it safe.
-            out = vision_pipe(image)
-            text = safe_extract_text(out)
+        with open(args.out, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-            record: Dict[str, Any] = {
-                "frame_index": frame_idx,
-                "video_time_ms": video_time_ms,
-                "meta": {
-                    "generated_at_unix_ms": now_unix_ms(),
-                    "worker": "florence_worker_rt",
-                    "device": args.device,
-                    "every": args.every,
-                },
-                "caption": text,
-                "raw": out if isinstance(out, (dict, list, str)) else str(out),
-            }
-
-            pub.send_multipart([b"florence", json.dumps(record).encode("utf-8")])
-
-            if args.out_jsonl:
-                write_jsonl(args.out_jsonl, record)
-
-            processed += 1
-            if args.print_every > 0 and (processed % args.print_every == 0):
-                t_ms = f"{video_time_ms}ms" if video_time_ms is not None else "-"
-                print(f"[FLORENCE] processed={processed} skipped={skipped} frame={frame_idx} t={t_ms} text_len={len(text)}")
-
-    except KeyboardInterrupt:
-        print("\n[FLORENCE] Stopped by user.")
-    finally:
-        sub.close()
-        pub.close()
-        ctx.term()
+        now = time.time()
+        if now - last_log > 2:
+            print(f"[FLORENCE] wrote frame={frame_index}")
+            last_log = now
 
 
 if __name__ == "__main__":
