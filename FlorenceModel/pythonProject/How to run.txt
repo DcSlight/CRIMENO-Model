@@ -1,11 +1,11 @@
 # 1) Broadcaster (משדר הכל)
-python video_broadcaster.py videos/shop.mp4 --endpoint tcp://127.0.0.1:5560
+python video_broadcaster.py videos/shop.mp4 --max_fps 15
 
 # 2) Florence (כבד) - כל 60 פריימים
-python florence_worker.py --frames_endpoint tcp://127.0.0.1:5560 --push_endpoint tcp://127.0.0.1:5572 --device cuda
+python florence_worker.py --device cpu --every 30
 
 # 3) YOLO+Tracking 
-python tracker_worker.py --frames_endpoint tcp://127.0.0.1:5560 --push_endpoint tcp://127.0.0.1:5571 --device cuda
+python tracker_worker.py --device cpu --every 1
 
 4)visualize_tracker
 
