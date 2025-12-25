@@ -10,3 +10,7 @@ python tracker_worker.py --ws_url ws://127.0.0.1:3000/ws/tracker
 4)visualize_tracker
 
 python visualize_tracker.py --video videos/shop.mp4 --tracker tracker.jsonl --show
+
+5)test socket
+
+python ws_test_server.py
