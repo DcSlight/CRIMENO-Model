@@ -1,35 +1,52 @@
-# florence_worker.py
-# - Subscribes to ZeroMQ PUB stream (topic: "frame")
-# - Runs Florence tasks every N frames
-# - Writes results to JSONL
-# - Sends results to NestJS via WebSocket (optional)
-#
-# Comments are intentionally in English only.
-
-import argparse
-import asyncio
+import io
 import json
 import re
 import time
-from typing import Any, Dict, List, Tuple
+import argparse
+from typing import Any, Dict, List, Optional, Tuple
 
 import zmq
+import torch
 from PIL import Image
 from transformers import pipeline
 
 
-# -------------------------
-# Helpers
-# -------------------------
+DATE_PATTERNS = [
+    re.compile(r"\b(20\d{2})[-/\.](0[1-9]|1[0-2])[-/\.]([0-2]\d|3[01])\b"),
+    re.compile(r"\b([0-2]\d|3[01])[-/\.](0[1-9]|1[0-2])[-/\.](20\d{2})\b"),
+]
+TIME_PATTERN = re.compile(r"\b([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\b")
+
+
 def now_unix_ms() -> int:
     return int(time.time() * 1000)
 
 
-def recv_frame_sub(socket) -> Tuple[int, int, bytes]:
-    """
-    Expects multipart: [topic, frame_idx, video_time_ms, jpg]
-    """
+def load_florence_pipeline(model_name: str, device_str: str):
+    if device_str == "cuda" and torch.cuda.is_available():
+        device = 0
+        torch_dtype = torch.float16
+        actual_device = "cuda"
+        print("Device set to use cuda")
+    else:
+        device = -1
+        torch_dtype = torch.float32
+        actual_device = "cpu"
+        print("Device set to use cpu")
+
+    vision_pipe = pipeline(
+        "image-text-to-text",
+        model=model_name,
+        device=device,
+        torch_dtype=torch_dtype,
+    )
+    print(f"✅ Florence-2 pipeline loaded ({model_name}) on {actual_device}")
+    return vision_pipe, actual_device
+
+
+def recv_frame_sub(socket) -> Tuple[int, Optional[int], bytes]:
     parts = socket.recv_multipart()
+    # [topic, frame_idx, video_time_ms, jpg]
     if len(parts) < 4:
         raise ValueError(f"Expected 4 parts, got {len(parts)}")
 
@@ -37,80 +54,56 @@ def recv_frame_sub(socket) -> Tuple[int, int, bytes]:
     try:
         video_time_ms = int(parts[2].decode("utf-8"))
     except Exception:
-        video_time_ms = -1
+        video_time_ms = None
 
     jpg_bytes = parts[3]
     return frame_idx, video_time_ms, jpg_bytes
 
 
 def pil_from_jpg(jpg_bytes: bytes) -> Image.Image:
-    import io
-
     return Image.open(io.BytesIO(jpg_bytes)).convert("RGB")
 
 
-def load_florence_pipeline(model_name: str, device: str):
-    # device: "cpu" or "cuda"
-    # transformers pipeline expects device index: -1 for cpu, 0 for cuda
-    device_idx = 0 if device == "cuda" else -1
+def run_task(vision_pipe, image: Image.Image, task_text: str) -> str:
+    out = vision_pipe(image, text=task_text)
 
-    vision_pipe = pipeline(
-        task="image-to-text",
-        model=model_name,
-        device=device_idx,
-        trust_remote_code=True,
-    )
+    if isinstance(out, list) and out:
+        first = out[0]
+        if isinstance(first, dict):
+            if "generated_text" in first:
+                return str(first["generated_text"])
+            return json.dumps(first, ensure_ascii=False)
+        return str(first)
 
-    actual_device = "cuda" if device_idx == 0 else "cpu"
-    return vision_pipe, actual_device
-
-
-def run_task(vision_pipe, image: Image.Image, task_token: str) -> str:
-    # Florence style: prompt token + image
-    # Keep it simple: pipe(image, prompt=...)
-    out = vision_pipe(image, prompt=task_token)
-    if isinstance(out, list) and len(out) > 0:
-        item = out[0]
-        if isinstance(item, dict) and "generated_text" in item:
-            return str(item["generated_text"])
-        return str(item)
     return str(out)
 
 
-DATE_PATTERNS = [
-    re.compile(r"\b(20\d{2})[-/\.](0[1-9]|1[0-2])[-/\.]([0-2]\d|3[01])\b"),  # YYYY-MM-DD
-    re.compile(r"\b([0-2]\d|3[01])[-/\.](0[1-9]|1[0-2])[-/\.](20\d{2})\b"),  # DD-MM-YYYY
-]
-TIME_PATTERN = re.compile(r"\b([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\b")
-
-
 def extract_datetime_candidates(text: str) -> List[str]:
-    if not text:
-        return []
-
-    found: List[str] = []
+    cands: List[str] = []
+    t = text.replace("<OCR>", "").strip()
 
     for pat in DATE_PATTERNS:
-        for m in pat.finditer(text):
-            found.append(m.group(0))
+        for m in pat.finditer(t):
+            cands.append(m.group(0))
 
-    for m in TIME_PATTERN.finditer(text):
-        found.append(m.group(0))
+    for m in TIME_PATTERN.finditer(t):
+        cands.append(m.group(0))
 
-    # de-dup while keeping order
-    seen = set()
-    out = []
-    for x in found:
-        if x not in seen:
-            seen.add(x)
-            out.append(x)
-    return out[:10]
+    uniq: List[str] = []
+    for x in cands:
+        if x not in uniq:
+            uniq.append(x)
+    return uniq
 
 
 # -------------------------
-# WebSocket sender
+# WebSocket sender (NestJS PromptsGateway)
 # -------------------------
 async def ws_connect_loop(ws_url: str):
+    """
+    Keeps trying to connect, returns an open websocket.
+    """
+    import asyncio
     import websockets  # lazy import
 
     backoff = 0.25
@@ -126,13 +119,16 @@ async def ws_connect_loop(ws_url: str):
 
 
 async def ws_send_json(ws, payload: Dict[str, Any]):
-    await ws.send(json.dumps(payload, ensure_ascii=False))
+    import json as _json
+    await ws.send(_json.dumps(payload, ensure_ascii=False))
 
 
 # -------------------------
 # Main loop
 # -------------------------
 async def main_async():
+    import asyncio
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--endpoint", default="tcp://127.0.0.1:5560")
     parser.add_argument("--out", default="florence.jsonl")
@@ -140,9 +136,18 @@ async def main_async():
     parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
     parser.add_argument("--every", type=int, default=60, help="process every N frames")
 
-    # NEW:
-    parser.add_argument("--ws_url", default="ws://127.0.0.1:3000/ws/prompts", help="NestJS WS endpoint")
-    parser.add_argument("--send_ws", type=int, default=1, help="1=send to WS, 0=only JSONL")
+    # New: send the SAME record to NestJS over WS (PromptsGateway)
+    parser.add_argument(
+        "--ws_url",
+        default="ws://127.0.0.1:3000/ws/prompts",
+        help="NestJS WS endpoint (PromptsGateway)",
+    )
+    parser.add_argument(
+        "--ws_enable",
+        type=int,
+        default=1,
+        help="1=send to NestJS via WS, 0=disable WS sending",
+    )
 
     args = parser.parse_args()
 
@@ -152,27 +157,35 @@ async def main_async():
     socket = context.socket(zmq.SUB)
     socket.connect(args.endpoint)
     socket.setsockopt(zmq.SUBSCRIBE, b"frame")
-
     print(f"🔗 SUB connected to broadcaster on {args.endpoint}")
     print(f"📝 Writing JSONL to: {args.out}")
     print(f"⚙️ Florence processes every {args.every} frames")
-    print(f"🌐 WS target: {args.ws_url} (send_ws={args.send_ws})")
+    if args.ws_enable == 1:
+        print(f"🌐 WS send enabled -> {args.ws_url}")
+    else:
+        print("🌐 WS send disabled")
 
     TASK_CAPTION = "<MORE_DETAILED_CAPTION>"
     TASK_OD = "<OD>"
     TASK_OCR = "<OCR>"
 
-    ws = None
-    if args.send_ws == 1:
-        ws = await ws_connect_loop(args.ws_url)
-
     processed = 0
     skipped = 0
 
+    ws = None
+    if args.ws_enable == 1:
+        try:
+            ws = await ws_connect_loop(args.ws_url)
+        except Exception as e:
+            print(f"[WS] Disabled (failed to init): {e}")
+            ws = None
+
     try:
         while True:
-            frame_idx, video_time_ms, jpg_bytes = recv_frame_sub(socket)
+            # ZMQ recv is blocking; run it in a thread to not block asyncio loop
+            frame_idx, video_time_ms, jpg_bytes = await asyncio.to_thread(recv_frame_sub, socket)
 
+            # Skip fast without decoding
             if args.every > 1 and (frame_idx % args.every != 0):
                 skipped += 1
                 continue
@@ -180,7 +193,7 @@ async def main_async():
             image = pil_from_jpg(jpg_bytes)
 
             record: Dict[str, Any] = {
-                "type": "florence_frame",  # NEW: so Nest/React can route it
+                "type": "florence_frame",  # for NestJS PromptsGateway log routing
                 "frame_index": frame_idx,
                 "video_time_ms": video_time_ms,
                 "raw": {},
@@ -214,12 +227,12 @@ async def main_async():
 
             record["text_overlay"]["datetime_candidates"] = extract_datetime_candidates(record["raw"]["ocr"])
 
-            # Append JSONL
+            # Append JSONL (same as before)
             with open(args.out, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-            # Send to WS (with reconnect)
-            if args.send_ws == 1 and ws is not None:
+            # Send to NestJS via WS (same record)
+            if ws is not None:
                 try:
                     await ws_send_json(ws, record)
                 except Exception as e:
@@ -228,10 +241,13 @@ async def main_async():
                         await ws.close()
                     except Exception:
                         pass
-                    ws = await ws_connect_loop(args.ws_url)
+                    try:
+                        ws = await ws_connect_loop(args.ws_url)
+                    except Exception as e2:
+                        print(f"[WS] Reconnect failed, disabling WS: {e2}")
+                        ws = None
 
             processed += 1
-
             dt = record["text_overlay"]["datetime_candidates"]
             dt_str = dt[0] if dt else "-"
             caption_short = caption.replace("\n", " ").strip()
@@ -253,6 +269,7 @@ async def main_async():
 
 
 def main():
+    import asyncio
     asyncio.run(main_async())
 
 
