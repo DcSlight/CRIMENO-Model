@@ -1,52 +1,35 @@
-import io
+# florence_worker.py
+# - Subscribes to ZeroMQ PUB stream (topic: "frame")
+# - Runs Florence tasks every N frames
+# - Writes results to JSONL
+# - Sends results to NestJS via WebSocket (optional)
+#
+# Comments are intentionally in English only.
+
+import argparse
+import asyncio
 import json
 import re
 import time
-import argparse
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import zmq
-import torch
 from PIL import Image
 from transformers import pipeline
 
 
-DATE_PATTERNS = [
-    re.compile(r"\b(20\d{2})[-/\.](0[1-9]|1[0-2])[-/\.]([0-2]\d|3[01])\b"),
-    re.compile(r"\b([0-2]\d|3[01])[-/\.](0[1-9]|1[0-2])[-/\.](20\d{2})\b"),
-]
-TIME_PATTERN = re.compile(r"\b([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\b")
-
-
+# -------------------------
+# Helpers
+# -------------------------
 def now_unix_ms() -> int:
     return int(time.time() * 1000)
 
 
-def load_florence_pipeline(model_name: str, device_str: str):
-    if device_str == "cuda" and torch.cuda.is_available():
-        device = 0
-        torch_dtype = torch.float16
-        actual_device = "cuda"
-        print("Device set to use cuda")
-    else:
-        device = -1
-        torch_dtype = torch.float32
-        actual_device = "cpu"
-        print("Device set to use cpu")
-
-    vision_pipe = pipeline(
-        "image-text-to-text",
-        model=model_name,
-        device=device,
-        torch_dtype=torch_dtype,
-    )
-    print(f"✅ Florence-2 pipeline loaded ({model_name}) on {actual_device}")
-    return vision_pipe, actual_device
-
-
-def recv_frame_sub(socket) -> Tuple[int, Optional[int], bytes]:
+def recv_frame_sub(socket) -> Tuple[int, int, bytes]:
+    """
+    Expects multipart: [topic, frame_idx, video_time_ms, jpg]
+    """
     parts = socket.recv_multipart()
-    # [topic, frame_idx, video_time_ms, jpg]
     if len(parts) < 4:
         raise ValueError(f"Expected 4 parts, got {len(parts)}")
 
@@ -54,55 +37,113 @@ def recv_frame_sub(socket) -> Tuple[int, Optional[int], bytes]:
     try:
         video_time_ms = int(parts[2].decode("utf-8"))
     except Exception:
-        video_time_ms = None
+        video_time_ms = -1
 
     jpg_bytes = parts[3]
     return frame_idx, video_time_ms, jpg_bytes
 
 
 def pil_from_jpg(jpg_bytes: bytes) -> Image.Image:
+    import io
+
     return Image.open(io.BytesIO(jpg_bytes)).convert("RGB")
 
 
-def run_task(vision_pipe, image: Image.Image, task_text: str) -> str:
-    out = vision_pipe(image, text=task_text)
+def load_florence_pipeline(model_name: str, device: str):
+    # device: "cpu" or "cuda"
+    # transformers pipeline expects device index: -1 for cpu, 0 for cuda
+    device_idx = 0 if device == "cuda" else -1
 
-    if isinstance(out, list) and out:
-        first = out[0]
-        if isinstance(first, dict):
-            if "generated_text" in first:
-                return str(first["generated_text"])
-            return json.dumps(first, ensure_ascii=False)
-        return str(first)
+    vision_pipe = pipeline(
+        task="image-to-text",
+        model=model_name,
+        device=device_idx,
+        trust_remote_code=True,
+    )
 
+    actual_device = "cuda" if device_idx == 0 else "cpu"
+    return vision_pipe, actual_device
+
+
+def run_task(vision_pipe, image: Image.Image, task_token: str) -> str:
+    # Florence style: prompt token + image
+    # Keep it simple: pipe(image, prompt=...)
+    out = vision_pipe(image, prompt=task_token)
+    if isinstance(out, list) and len(out) > 0:
+        item = out[0]
+        if isinstance(item, dict) and "generated_text" in item:
+            return str(item["generated_text"])
+        return str(item)
     return str(out)
 
 
+DATE_PATTERNS = [
+    re.compile(r"\b(20\d{2})[-/\.](0[1-9]|1[0-2])[-/\.]([0-2]\d|3[01])\b"),  # YYYY-MM-DD
+    re.compile(r"\b([0-2]\d|3[01])[-/\.](0[1-9]|1[0-2])[-/\.](20\d{2})\b"),  # DD-MM-YYYY
+]
+TIME_PATTERN = re.compile(r"\b([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\b")
+
+
 def extract_datetime_candidates(text: str) -> List[str]:
-    cands: List[str] = []
-    t = text.replace("<OCR>", "").strip()
+    if not text:
+        return []
+
+    found: List[str] = []
 
     for pat in DATE_PATTERNS:
-        for m in pat.finditer(t):
-            cands.append(m.group(0))
+        for m in pat.finditer(text):
+            found.append(m.group(0))
 
-    for m in TIME_PATTERN.finditer(t):
-        cands.append(m.group(0))
+    for m in TIME_PATTERN.finditer(text):
+        found.append(m.group(0))
 
-    uniq: List[str] = []
-    for x in cands:
-        if x not in uniq:
-            uniq.append(x)
-    return uniq
+    # de-dup while keeping order
+    seen = set()
+    out = []
+    for x in found:
+        if x not in seen:
+            seen.add(x)
+            out.append(x)
+    return out[:10]
 
 
-def main():
+# -------------------------
+# WebSocket sender
+# -------------------------
+async def ws_connect_loop(ws_url: str):
+    import websockets  # lazy import
+
+    backoff = 0.25
+    while True:
+        try:
+            ws = await websockets.connect(ws_url, max_size=16 * 1024 * 1024)
+            print(f"[WS] Connected: {ws_url}")
+            return ws
+        except Exception as e:
+            print(f"[WS] Connect failed: {e} (retry in {backoff:.2f}s)")
+            await asyncio.sleep(backoff)
+            backoff = min(5.0, backoff * 1.7)
+
+
+async def ws_send_json(ws, payload: Dict[str, Any]):
+    await ws.send(json.dumps(payload, ensure_ascii=False))
+
+
+# -------------------------
+# Main loop
+# -------------------------
+async def main_async():
     parser = argparse.ArgumentParser()
     parser.add_argument("--endpoint", default="tcp://127.0.0.1:5560")
     parser.add_argument("--out", default="florence.jsonl")
     parser.add_argument("--model", default="florence-community/Florence-2-base")
     parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
     parser.add_argument("--every", type=int, default=60, help="process every N frames")
+
+    # NEW:
+    parser.add_argument("--ws_url", default="ws://127.0.0.1:3000/ws/prompts", help="NestJS WS endpoint")
+    parser.add_argument("--send_ws", type=int, default=1, help="1=send to WS, 0=only JSONL")
+
     args = parser.parse_args()
 
     vision_pipe, actual_device = load_florence_pipeline(args.model, args.device)
@@ -111,13 +152,19 @@ def main():
     socket = context.socket(zmq.SUB)
     socket.connect(args.endpoint)
     socket.setsockopt(zmq.SUBSCRIBE, b"frame")
+
     print(f"🔗 SUB connected to broadcaster on {args.endpoint}")
     print(f"📝 Writing JSONL to: {args.out}")
     print(f"⚙️ Florence processes every {args.every} frames")
+    print(f"🌐 WS target: {args.ws_url} (send_ws={args.send_ws})")
 
     TASK_CAPTION = "<MORE_DETAILED_CAPTION>"
     TASK_OD = "<OD>"
     TASK_OCR = "<OCR>"
+
+    ws = None
+    if args.send_ws == 1:
+        ws = await ws_connect_loop(args.ws_url)
 
     processed = 0
     skipped = 0
@@ -126,7 +173,6 @@ def main():
         while True:
             frame_idx, video_time_ms, jpg_bytes = recv_frame_sub(socket)
 
-            # Skip fast without decoding
             if args.every > 1 and (frame_idx % args.every != 0):
                 skipped += 1
                 continue
@@ -134,6 +180,7 @@ def main():
             image = pil_from_jpg(jpg_bytes)
 
             record: Dict[str, Any] = {
+                "type": "florence_frame",  # NEW: so Nest/React can route it
                 "frame_index": frame_idx,
                 "video_time_ms": video_time_ms,
                 "raw": {},
@@ -171,20 +218,42 @@ def main():
             with open(args.out, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
+            # Send to WS (with reconnect)
+            if args.send_ws == 1 and ws is not None:
+                try:
+                    await ws_send_json(ws, record)
+                except Exception as e:
+                    print(f"[WS] Send failed: {e} -> reconnect")
+                    try:
+                        await ws.close()
+                    except Exception:
+                        pass
+                    ws = await ws_connect_loop(args.ws_url)
+
             processed += 1
+
             dt = record["text_overlay"]["datetime_candidates"]
             dt_str = dt[0] if dt else "-"
             caption_short = caption.replace("\n", " ").strip()
             if len(caption_short) > 120:
-                caption_short = caption_short[:120] + "..."
+                caption_short = caption_short[:120] + "."
             print(f"🧠 Florence | Frame {frame_idx} | t={video_time_ms}ms | dt={dt_str} | caption={caption_short}")
 
     except KeyboardInterrupt:
         print("\n[INFO] Stopped by user (florence_worker).")
         print(f"[STATS] processed={processed}, skipped={skipped}")
     finally:
+        try:
+            if ws is not None:
+                await ws.close()
+        except Exception:
+            pass
         socket.close()
         context.term()
+
+
+def main():
+    asyncio.run(main_async())
 
 
 if __name__ == "__main__":
