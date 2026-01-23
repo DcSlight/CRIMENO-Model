@@ -12,7 +12,7 @@ def encode_jpg(frame_bgr, jpeg_quality: int) -> bytes:
 
 def main():
     parser = argparse.ArgumentParser()
-    # default is None so it won't start any video automatically
+    # No default video is loaded at startup
     parser.add_argument("video_path", nargs="?", default=None)
     parser.add_argument("--endpoint", default="tcp://127.0.0.1:5560")
     parser.add_argument("--cmd_endpoint", default="tcp://127.0.0.1:5561")
@@ -23,15 +23,14 @@ def main():
 
     context = zmq.Context()
     
-    # PUB socket for broadcasting frames to Tracker and Florence
+    # PUB socket for broadcasting frames (Tracker/Florence)
     pub_socket = context.socket(zmq.PUB)
     pub_socket.bind(args.endpoint)
 
-    # REP socket for receiving control commands from NestJS
+    # REP socket for receiving commands from NestJS
     cmd_socket = context.socket(zmq.REP)
     cmd_socket.bind(args.cmd_endpoint)
     
-    # Use Poller to check for commands without blocking the video loop
     poller = zmq.Poller()
     poller.register(cmd_socket, zmq.POLLIN)
 
@@ -41,73 +40,69 @@ def main():
     last_send_ts = 0.0
     
     print(f"[INFO] Broadcaster initialized. PUB: {args.endpoint}, CMD: {args.cmd_endpoint}")
-    print(f"[STATUS] Waiting for 'play' command from NestJS...")
+    print(f"[STATUS] Waiting for 'play' command...")
 
     while True:
-        # 1. Check for new commands from NestJS (Non-blocking)
-        # We check even if cap is None to receive the first command
+        # 1. Check for commands from NestJS
         socks = dict(poller.poll(1)) 
         if cmd_socket in socks:
             msg = cmd_socket.recv_json()
             if msg.get("cmd") == "play":
                 new_path = msg.get("video")
-                print(f"[CONTROL] New video request: {new_path}")
+                print(f"[CONTROL] Received play command: {new_path}")
                 
-                # Close existing capture if running
                 if cap is not None:
                     cap.release()
                 
-                # Open the new video stream
                 cap = cv2.VideoCapture(new_path)
                 current_video = new_path
                 frame_index = 0
                 
-                # Send confirmation back to NestJS to prevent request timeout
                 cmd_socket.send_json({"status": "ok", "video": new_path})
                 
-                # Optional: Send meta-data (width, height, fps) for the new video
+                # Meta-data broadcast for the new stream
                 ret, frame0 = cap.read()
                 if ret:
                     h0, w0 = frame0.shape[:2]
                     fps0 = cap.get(cv2.CAP_PROP_FPS) or 25.0
                     pub_socket.send_multipart([b"meta", str(w0).encode(), str(h0).encode(), str(fps0).encode()])
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0) # Reset to start
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
             else:
                 cmd_socket.send_json({"status": "error", "msg": "unknown command"})
 
-        # 2. Idle state: If no video is loaded, wait and loop
+        # 2. Idle check
         if cap is None or not cap.isOpened():
             time.sleep(0.1) 
             continue
 
-        # 3. Processing & Broadcasting logic
+        # 3. Read and Broadcast
         ret, frame = cap.read()
         if not ret:
-            # End of video: Loop back to beginning
-            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            frame_index = 0
+            # Video reached the end - stop broadcasting and wait for next command
+            print(f"[INFO] Video {current_video} finished.")
+            cap.release()
+            cap = None
+            current_video = None
             continue
 
-        # Resize logic (preserving original logic)
+        # Resize logic
         h, w = frame.shape[:2]
         if args.resize_width and w > args.resize_width:
             scale = args.resize_width / float(w)
             frame = cv2.resize(frame, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
 
-        # Throttling/FPS control
+        # FPS Throttling
         min_dt = (1.0 / args.max_fps) if args.max_fps > 0 else 0.0
         now = time.time()
         if min_dt > 0 and (now - last_send_ts) < min_dt:
             continue
         last_send_ts = now
 
-        # Prepare for broadcast
+        # Broadcast to PUB subscribers
         fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
         video_time_ms = int(frame_index * (1000.0 / fps))
         jpg = encode_jpg(frame, args.jpeg_quality)
 
-        # Send multipart message: [topic, index, timestamp, bytes]
-        # This is consumed by tracker_worker.py
         pub_socket.send_multipart([
             b"frame",
             str(frame_index).encode(),
@@ -116,7 +111,7 @@ def main():
         ])
 
         if frame_index % 60 == 0:
-            print(f"[BROADCASTING] {current_video} | frame={frame_index}")
+            print(f"[STREAMING] {current_video} | frame={frame_index}")
 
         frame_index += 1
 
