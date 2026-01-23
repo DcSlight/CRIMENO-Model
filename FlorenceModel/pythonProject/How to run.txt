@@ -1,5 +1,5 @@
 # 1) Broadcaster 
-python video_broadcaster_server.py
+python video_broadcaster.py
 
 # 2) Florence (כבד) - כל 60 פריימים
 python florence_worker.py --device cuda --every 30 --ws_url ws://127.0.0.1:3000/ws/prompts
