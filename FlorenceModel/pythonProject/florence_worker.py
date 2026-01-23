@@ -96,13 +96,59 @@ def extract_datetime_candidates(text: str) -> List[str]:
     return uniq
 
 
-def main():
+# -------------------------
+# WebSocket sender (NestJS PromptsGateway)
+# -------------------------
+async def ws_connect_loop(ws_url: str):
+    """
+    Keeps trying to connect, returns an open websocket.
+    """
+    import asyncio
+    import websockets  # lazy import
+
+    backoff = 0.25
+    while True:
+        try:
+            ws = await websockets.connect(ws_url, max_size=16 * 1024 * 1024)
+            print(f"[WS] Connected: {ws_url}")
+            return ws
+        except Exception as e:
+            print(f"[WS] Connect failed: {e} (retry in {backoff:.2f}s)")
+            await asyncio.sleep(backoff)
+            backoff = min(5.0, backoff * 1.7)
+
+
+async def ws_send_json(ws, payload: Dict[str, Any]):
+    import json as _json
+    await ws.send(_json.dumps(payload, ensure_ascii=False))
+
+
+# -------------------------
+# Main loop
+# -------------------------
+async def main_async():
+    import asyncio
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--endpoint", default="tcp://127.0.0.1:5560")
     parser.add_argument("--out", default="florence.jsonl")
     parser.add_argument("--model", default="florence-community/Florence-2-base")
     parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
     parser.add_argument("--every", type=int, default=60, help="process every N frames")
+
+    # New: send the SAME record to NestJS over WS (PromptsGateway)
+    parser.add_argument(
+        "--ws_url",
+        default="ws://127.0.0.1:3000/ws/prompts",
+        help="NestJS WS endpoint (PromptsGateway)",
+    )
+    parser.add_argument(
+        "--ws_enable",
+        type=int,
+        default=1,
+        help="1=send to NestJS via WS, 0=disable WS sending",
+    )
+
     args = parser.parse_args()
 
     vision_pipe, actual_device = load_florence_pipeline(args.model, args.device)
@@ -114,6 +160,10 @@ def main():
     print(f"🔗 SUB connected to broadcaster on {args.endpoint}")
     print(f"📝 Writing JSONL to: {args.out}")
     print(f"⚙️ Florence processes every {args.every} frames")
+    if args.ws_enable == 1:
+        print(f"🌐 WS send enabled -> {args.ws_url}")
+    else:
+        print("🌐 WS send disabled")
 
     TASK_CAPTION = "<MORE_DETAILED_CAPTION>"
     TASK_OD = "<OD>"
@@ -122,9 +172,18 @@ def main():
     processed = 0
     skipped = 0
 
+    ws = None
+    if args.ws_enable == 1:
+        try:
+            ws = await ws_connect_loop(args.ws_url)
+        except Exception as e:
+            print(f"[WS] Disabled (failed to init): {e}")
+            ws = None
+
     try:
         while True:
-            frame_idx, video_time_ms, jpg_bytes = recv_frame_sub(socket)
+            # ZMQ recv is blocking; run it in a thread to not block asyncio loop
+            frame_idx, video_time_ms, jpg_bytes = await asyncio.to_thread(recv_frame_sub, socket)
 
             # Skip fast without decoding
             if args.every > 1 and (frame_idx % args.every != 0):
@@ -134,6 +193,7 @@ def main():
             image = pil_from_jpg(jpg_bytes)
 
             record: Dict[str, Any] = {
+                "type": "florence_frame",  # for NestJS PromptsGateway log routing
                 "frame_index": frame_idx,
                 "video_time_ms": video_time_ms,
                 "raw": {},
@@ -167,24 +227,50 @@ def main():
 
             record["text_overlay"]["datetime_candidates"] = extract_datetime_candidates(record["raw"]["ocr"])
 
-            # Append JSONL
+            # Append JSONL (same as before)
             with open(args.out, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+            # Send to NestJS via WS (same record)
+            if ws is not None:
+                try:
+                    await ws_send_json(ws, record)
+                except Exception as e:
+                    print(f"[WS] Send failed: {e} -> reconnect")
+                    try:
+                        await ws.close()
+                    except Exception:
+                        pass
+                    try:
+                        ws = await ws_connect_loop(args.ws_url)
+                    except Exception as e2:
+                        print(f"[WS] Reconnect failed, disabling WS: {e2}")
+                        ws = None
 
             processed += 1
             dt = record["text_overlay"]["datetime_candidates"]
             dt_str = dt[0] if dt else "-"
             caption_short = caption.replace("\n", " ").strip()
             if len(caption_short) > 120:
-                caption_short = caption_short[:120] + "..."
+                caption_short = caption_short[:120] + "."
             print(f"🧠 Florence | Frame {frame_idx} | t={video_time_ms}ms | dt={dt_str} | caption={caption_short}")
 
     except KeyboardInterrupt:
         print("\n[INFO] Stopped by user (florence_worker).")
         print(f"[STATS] processed={processed}, skipped={skipped}")
     finally:
+        try:
+            if ws is not None:
+                await ws.close()
+        except Exception:
+            pass
         socket.close()
         context.term()
+
+
+def main():
+    import asyncio
+    asyncio.run(main_async())
 
 
 if __name__ == "__main__":

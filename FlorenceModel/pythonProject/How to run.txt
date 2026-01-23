@@ -1,8 +1,17 @@
-# 1) Broadcaster (משדר הכל)
-python video_broadcaster.py videos/shop.mp4 --max_fps 30
+# 1) Broadcaster 
+python video_broadcaster.py
 
 # 2) Florence (כבד) - כל 60 פריימים
-python florence_worker.py --device cuda --every 60 --out florence.jsonl
+python florence_worker.py --device cuda --every 30 --ws_url ws://127.0.0.1:3000/ws/prompts
 
 # 3) YOLO+Tracking 
-python tracker_worker.py --device cuda --every 5 --out tracker.jsonl --yolo_builtin_track
+python tracker_worker.py --ws_url ws://127.0.0.1:3000/ws/tracker --send_overlay 0 --send_every_n_frames 2
+
+
+4)visualize_tracker
+
+python visualize_tracker.py --video videos/shop.mp4 --tracker tracker.jsonl --show
+
+5)test socket
+
+python ws_test_server.py

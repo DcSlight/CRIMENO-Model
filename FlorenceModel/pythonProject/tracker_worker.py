@@ -1,13 +1,15 @@
-# tracker_worker_v2.py
-# Multi-class detection + tracking for "Layer 1".
-# - Subscribes to the same PUB stream as Florence (topic: "frame").
-# - Runs YOLOv8 (COCO) multi-class detection and assigns stable IDs.
-# - Adds a motion-based fallback (MOG2) to capture moving blobs even when YOLO misses / can't classify.
-# - Writes one JSONL record per processed frame.
+# tracker_worker.py
+# Real-time multi-class detection + tracking
+# - Subscribes to ZeroMQ PUB stream (topic: "frame")
+# - Runs YOLOv8 (COCO) + simple IOU tracker
+# - Optional motion fallback (MOG2)
+# - Sends results to NestJS via WebSocket (NO per-frame JSONL I/O)
 #
 # Comments are intentionally in English only.
 
 import argparse
+import asyncio
+import base64
 import json
 import time
 from dataclasses import dataclass
@@ -17,18 +19,16 @@ import cv2
 import numpy as np
 import zmq
 
-
-def now_unix_ms() -> int:
-    return int(time.time() * 1000)
-
-
-def decode_jpg_to_bgr(jpg_bytes: bytes) -> Optional[np.ndarray]:
-    buf = np.frombuffer(jpg_bytes, dtype=np.uint8)
-    frame = cv2.imdecode(buf, cv2.IMREAD_COLOR)
-    return frame
+try:
+    from ultralytics import YOLO
+except Exception as e:
+    YOLO = None
 
 
-def recv_frame_sub(socket) -> Tuple[int, Optional[int], bytes]:
+# -------------------------
+# ZMQ receive
+# -------------------------
+def recv_frame_sub(socket) -> Tuple[int, int, bytes]:
     """
     Expects multipart: [topic, frame_idx, video_time_ms, jpg]
     """
@@ -40,12 +40,30 @@ def recv_frame_sub(socket) -> Tuple[int, Optional[int], bytes]:
     try:
         video_time_ms = int(parts[2].decode("utf-8"))
     except Exception:
-        video_time_ms = None
+        video_time_ms = -1
 
     jpg_bytes = parts[3]
     return frame_idx, video_time_ms, jpg_bytes
 
 
+def decode_jpg(jpg_bytes: bytes) -> np.ndarray:
+    arr = np.frombuffer(jpg_bytes, dtype=np.uint8)
+    frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if frame is None:
+        raise RuntimeError("Failed to decode JPG")
+    return frame
+
+
+def encode_jpg(frame_bgr: np.ndarray, jpeg_quality: int) -> bytes:
+    ok, buf = cv2.imencode(".jpg", frame_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), int(jpeg_quality)])
+    if not ok:
+        raise RuntimeError("Failed to encode overlay JPG")
+    return buf.tobytes()
+
+
+# -------------------------
+# Simple tracker helpers
+# -------------------------
 def iou_xyxy(a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]) -> float:
     ax1, ay1, ax2, ay2 = a
     bx1, by1, bx2, by2 = b
@@ -59,13 +77,13 @@ def iou_xyxy(a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]) -> floa
     inter_h = max(0, inter_y2 - inter_y1)
     inter_area = inter_w * inter_h
 
-    a_area = max(0, ax2 - ax1) * max(0, ay2 - ay1)
-    b_area = max(0, bx2 - bx1) * max(0, by2 - by1)
+    area_a = max(0, ax2 - ax1) * max(0, ay2 - ay1)
+    area_b = max(0, bx2 - bx1) * max(0, by2 - by1)
 
-    denom = float(a_area + b_area - inter_area)
-    if denom <= 0:
+    union = area_a + area_b - inter_area
+    if union <= 0:
         return 0.0
-    return float(inter_area) / denom
+    return inter_area / union
 
 
 @dataclass
@@ -77,344 +95,241 @@ class Track:
     last_seen_frame: int
 
 
-class SimpleIoUTracker:
-    """
-    Lightweight tracker: assigns track IDs by IoU matching between consecutive frames.
-    This complements YOLO when native track IDs are missing or unstable.
-    """
-
-    def __init__(self, iou_threshold: float = 0.35, max_age_frames: int = 45):
-        self.iou_threshold = iou_threshold
-        self.max_age_frames = max_age_frames
-        self._next_id = 1
-        self._tracks: List[Track] = []
-
-    def update(self, frame_idx: int, detections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        # Purge old tracks
-        alive: List[Track] = []
-        for tr in self._tracks:
-            if frame_idx - tr.last_seen_frame <= self.max_age_frames:
-                alive.append(tr)
-        self._tracks = alive
-
-        assigned: List[Optional[int]] = [None] * len(detections)
-        used_track_ids = set()
-
-        for det_i, det in enumerate(detections):
-            bbox = tuple(det["bbox_xyxy"])
-            cls_name = det.get("cls_name", "unknown")
-
-            best_score = 0.0
-            best_track: Optional[Track] = None
-
-            for tr in self._tracks:
-                if tr.track_id in used_track_ids:
-                    continue
-                same_class_bonus = 0.05 if tr.cls_name == cls_name else 0.0
-                score = iou_xyxy(tr.bbox, bbox) + same_class_bonus
-                if score > best_score:
-                    best_score = score
-                    best_track = tr
-
-            if best_track is not None and best_score >= self.iou_threshold:
-                assigned[det_i] = best_track.track_id
-                used_track_ids.add(best_track.track_id)
-
-                best_track.bbox = bbox
-                best_track.cls_name = cls_name
-                best_track.conf = float(det.get("conf", 0.0) or 0.0)
-                best_track.last_seen_frame = frame_idx
-
-        for det_i, det in enumerate(detections):
-            if assigned[det_i] is not None:
-                continue
-            bbox = tuple(det["bbox_xyxy"])
-            cls_name = det.get("cls_name", "unknown")
-            conf = float(det.get("conf", 0.0) or 0.0)
-
-            new_id = self._next_id
-            self._next_id += 1
-            self._tracks.append(
-                Track(
-                    track_id=new_id,
-                    bbox=bbox,
-                    cls_name=cls_name,
-                    conf=conf,
-                    last_seen_frame=frame_idx,
-                )
-            )
-            assigned[det_i] = new_id
-
-        out: List[Dict[str, Any]] = []
-        for det_i, det in enumerate(detections):
-            det_out = dict(det)
-            det_out["track_id"] = int(assigned[det_i]) if assigned[det_i] is not None else None
-            out.append(det_out)
-        return out
+def draw_tracks(frame: np.ndarray, tracks: List[Track]) -> np.ndarray:
+    out = frame.copy()
+    for t in tracks:
+        x1, y1, x2, y2 = t.bbox
+        cv2.rectangle(out, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        label = f"id={t.track_id} {t.cls_name} {t.conf:.2f}"
+        cv2.putText(out, label, (x1, max(0, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+    return out
 
 
+# -------------------------
+# Motion fallback (optional)
+# -------------------------
 class MotionDetector:
-    """
-    Motion-based blob detector (MOG2).
-    Produces bounding boxes for moving regions, then tracks them using IoU.
-    """
+    def __init__(self):
+        self.bg = cv2.createBackgroundSubtractorMOG2(history=200, varThreshold=32, detectShadows=False)
 
-    def __init__(
-        self,
-        min_area: int = 900,
-        history: int = 300,
-        var_threshold: int = 40,
-        detect_shadows: bool = True,
-        morph_kernel: int = 5,
-        iou_threshold: float = 0.25,
-        max_age_frames: int = 20,
-    ):
-        self.min_area = min_area
-        self.bg = cv2.createBackgroundSubtractorMOG2(
-            history=history,
-            varThreshold=var_threshold,
-            detectShadows=detect_shadows,
-        )
-        self.kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (morph_kernel, morph_kernel))
-        self.tracker = SimpleIoUTracker(iou_threshold=iou_threshold, max_age_frames=max_age_frames)
+    def detect(self, frame_bgr: np.ndarray) -> List[Tuple[int, int, int, int]]:
+        mask = self.bg.apply(frame_bgr)
+        mask = cv2.medianBlur(mask, 5)
+        _, mask = cv2.threshold(mask, 180, 255, cv2.THRESH_BINARY)
 
-    def detect(self, frame_bgr: np.ndarray, frame_idx: int) -> List[Dict[str, Any]]:
-        fg = self.bg.apply(frame_bgr)
-
-        # Remove shadows (MOG2 shadows often ~127)
-        _, fg_bin = cv2.threshold(fg, 200, 255, cv2.THRESH_BINARY)
-
-        fg_bin = cv2.morphologyEx(fg_bin, cv2.MORPH_OPEN, self.kernel, iterations=1)
-        fg_bin = cv2.morphologyEx(fg_bin, cv2.MORPH_DILATE, self.kernel, iterations=2)
-
-        contours, _ = cv2.findContours(fg_bin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        dets: List[Dict[str, Any]] = []
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        boxes: List[Tuple[int, int, int, int]] = []
         for c in contours:
             area = cv2.contourArea(c)
-            if area < self.min_area:
+            if area < 600:
                 continue
             x, y, w, h = cv2.boundingRect(c)
-            dets.append(
-                {
-                    "bbox_xyxy": [int(x), int(y), int(x + w), int(y + h)],
-                    "cls_id": None,
-                    "cls_name": "moving_object",
-                    "conf": None,
-                    "source": "motion",
-                    "area_px": float(area),
-                }
-            )
-
-        tracked = self.tracker.update(frame_idx, dets)
-        for t in tracked:
-            t["motion_track_id"] = t.pop("track_id")
-        return tracked
+            boxes.append((x, y, x + w, y + h))
+        return boxes
 
 
-class YoloDetector:
+# -------------------------
+# YOLO detection
+# -------------------------
+def run_yolo(model, frame_bgr: np.ndarray, conf_th: float) -> List[Dict[str, Any]]:
     """
-    YOLOv8 detector with optional built-in tracking (ByteTrack when available).
-    If 'track' API fails, falls back to 'predict' + IoU tracking.
+    Returns list of detections: {bbox(x1,y1,x2,y2), cls_name, conf}
     """
+    results = model.predict(frame_bgr, conf=conf_th, verbose=False)
+    dets: List[Dict[str, Any]] = []
 
-    def __init__(self, model_name: str, device: str, conf: float, imgsz: int, use_builtin_track: bool):
-        self.available = False
-        self.model = None
-        self.names: Dict[int, str] = {}
-        self.model_name = model_name
-        self.device = device
-        self.conf = conf
-        self.imgsz = imgsz
-        self.use_builtin_track = use_builtin_track
+    if not results:
+        return dets
 
+    r = results[0]
+    if r.boxes is None:
+        return dets
+
+    names = model.names if hasattr(model, "names") else {}
+    for b in r.boxes:
+        xyxy = b.xyxy[0].tolist()  # [x1,y1,x2,y2]
+        cls_id = int(b.cls[0].item()) if b.cls is not None else -1
+        conf = float(b.conf[0].item()) if b.conf is not None else 0.0
+
+        x1, y1, x2, y2 = [int(v) for v in xyxy]
+        cls_name = names.get(cls_id, str(cls_id))
+        dets.append({
+            "bbox": (x1, y1, x2, y2),
+            "cls_name": cls_name,
+            "conf": conf,
+        })
+
+    return dets
+
+
+# -------------------------
+# WebSocket sender
+# -------------------------
+async def ws_connect_loop(ws_url: str):
+    """
+    Keeps trying to connect, returns an open websocket.
+    """
+    import websockets  # lazy import
+
+    backoff = 0.25
+    while True:
         try:
-            from ultralytics import YOLO  # type: ignore
-            self.model = YOLO(model_name)
-            self.available = True
-            self.names = getattr(self.model.model, "names", {}) or {}
-            print(f"✅ YOLO loaded: {model_name} device={device} conf={conf} imgsz={imgsz}")
+            ws = await websockets.connect(ws_url, max_size=16 * 1024 * 1024)
+            print(f"[WS] Connected: {ws_url}")
+            return ws
         except Exception as e:
-            self.available = False
-            print(f"⚠️ YOLO not available ({e}). Will run motion-only fallback.")
+            print(f"[WS] Connect failed: {e} (retry in {backoff:.2f}s)")
+            await asyncio.sleep(backoff)
+            backoff = min(5.0, backoff * 1.7)
 
-    def _boxes_to_dets(self, boxes) -> List[Dict[str, Any]]:
-        out: List[Dict[str, Any]] = []
-        for b in boxes:
-            xyxy = b.xyxy[0].tolist()
-            cls_id = int(b.cls[0].item()) if b.cls is not None else -1
-            conf = float(b.conf[0].item()) if b.conf is not None else 0.0
 
-            x1, y1, x2, y2 = [int(round(v)) for v in xyxy]
-            cls_name = self.names.get(cls_id, str(cls_id))
+async def ws_send_json(ws, payload: Dict[str, Any]):
+    await ws.send(json.dumps(payload, ensure_ascii=False))
 
-            det: Dict[str, Any] = {
-                "bbox_xyxy": [x1, y1, x2, y2],
-                "cls_id": cls_id,
-                "cls_name": cls_name,
-                "conf": conf,
-                "source": "yolo",
-            }
 
-            tid = getattr(b, "id", None)
-            if tid is not None:
-                try:
-                    det["track_id"] = int(tid[0].item())
-                except Exception:
-                    det["track_id"] = None
+# -------------------------
+# Main loop
+# -------------------------
+async def main_async():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--sub_endpoint", default="tcp://127.0.0.1:5560")
+    parser.add_argument("--ws_url", default="ws://127.0.0.1:3000/ws/tracker", help="NestJS WS endpoint")
+    parser.add_argument("--yolo_model", default="yolov8n.pt")
+    parser.add_argument("--conf_th", type=float, default=0.35)
+    parser.add_argument("--send_every_n_frames", type=int, default=1)
+    parser.add_argument("--send_overlay", type=int, default=1, help="1=send JPG overlay, 0=send raw bbox only")
+    parser.add_argument("--overlay_jpeg_quality", type=int, default=80)
+    parser.add_argument("--use_motion_fallback", type=int, default=1)
+    parser.add_argument("--max_track_age", type=int, default=30)
+    parser.add_argument("--iou_match_th", type=float, default=0.30)
+    args = parser.parse_args()
 
-            out.append(det)
-        return out
+    if YOLO is None:
+        raise RuntimeError("ultralytics is not installed. Install it: pip install ultralytics")
 
-    def detect(self, frame_bgr: np.ndarray) -> List[Dict[str, Any]]:
-        if not self.available or self.model is None:
-            return []
+    model = YOLO(args.yolo_model)
+    motion = MotionDetector() if args.use_motion_fallback else None
 
-        try:
-            if self.use_builtin_track:
-                results = self.model.track(
-                    source=frame_bgr,
-                    conf=self.conf,
-                    imgsz=self.imgsz,
-                    device=self.device,
-                    persist=True,
-                    verbose=False,
-                )
+    # ZMQ SUB
+    context = zmq.Context()
+    sub = context.socket(zmq.SUB)
+    sub.connect(args.sub_endpoint)
+    sub.setsockopt(zmq.SUBSCRIBE, b"frame")
+    sub.setsockopt(zmq.RCVHWM, 5)
+
+    print(f"[TRACKER] SUB connect: {args.sub_endpoint} topic=frame")
+    print(f"[TRACKER] WS target: {args.ws_url}")
+    print(f"[TRACKER] send_overlay={args.send_overlay}, send_every_n_frames={args.send_every_n_frames}")
+
+    ws = await ws_connect_loop(args.ws_url)
+
+    next_track_id = 1
+    tracks: List[Track] = []
+
+    last_log_ts = time.time()
+    frames_processed = 0
+
+    while True:
+        # ZMQ recv is blocking; run it in a thread to not block asyncio loop
+        frame_idx, video_time_ms, jpg_bytes = await asyncio.to_thread(recv_frame_sub, sub)
+
+        if args.send_every_n_frames > 1 and (frame_idx % args.send_every_n_frames) != 0:
+            continue
+
+        frame = decode_jpg(jpg_bytes)
+        h, w = frame.shape[:2]
+
+        dets = run_yolo(model, frame, args.conf_th)
+
+        # Optional motion fallback: add unlabeled moving blobs if YOLO has few detections
+        if motion is not None and len(dets) == 0:
+            blobs = motion.detect(frame)
+            for bb in blobs:
+                dets.append({"bbox": bb, "cls_name": "moving_object", "conf": 1.0})
+
+        # Match detections to existing tracks by IOU
+        used_tracks = set()
+        new_tracks: List[Track] = []
+
+        for d in dets:
+            bb = d["bbox"]
+            best_iou = 0.0
+            best_track: Optional[Track] = None
+
+            for t in tracks:
+                if t.track_id in used_tracks:
+                    continue
+                i = iou_xyxy(t.bbox, bb)
+                if i > best_iou:
+                    best_iou = i
+                    best_track = t
+
+            if best_track is not None and best_iou >= args.iou_match_th:
+                used_tracks.add(best_track.track_id)
+                best_track.bbox = bb
+                best_track.cls_name = d["cls_name"]
+                best_track.conf = float(d["conf"])
+                best_track.last_seen_frame = frame_idx
+                new_tracks.append(best_track)
             else:
-                results = self.model.predict(
-                    source=frame_bgr,
-                    conf=self.conf,
-                    imgsz=self.imgsz,
-                    device=self.device,
-                    verbose=False,
+                t = Track(
+                    track_id=next_track_id,
+                    bbox=bb,
+                    cls_name=d["cls_name"],
+                    conf=float(d["conf"]),
+                    last_seen_frame=frame_idx,
                 )
-        except Exception as e:
-            print(f"⚠️ YOLO inference failed: {e}")
-            return []
+                next_track_id += 1
+                used_tracks.add(t.track_id)
+                new_tracks.append(t)
 
-        if not results:
-            return []
+        # Keep recent tracks (age-based)
+        tracks = [t for t in new_tracks if (frame_idx - t.last_seen_frame) <= args.max_track_age]
 
-        r0 = results[0]
-        boxes = getattr(r0, "boxes", None)
-        if boxes is None:
-            return []
+        # Prepare payload
+        tracks_payload = []
+        for t in tracks:
+            x1, y1, x2, y2 = t.bbox
+            tracks_payload.append({
+                "track_id": t.track_id,
+                "cls": t.cls_name,
+                "conf": t.conf,
+                "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
+            })
 
+        payload: Dict[str, Any] = {
+            "type": "tracker_frame",
+            "frame_index": frame_idx,
+            "video_time_ms": video_time_ms,
+            "frame_size": {"w": w, "h": h},
+            "tracks": tracks_payload,
+        }
+
+        if args.send_overlay == 1:
+            overlay = draw_tracks(frame, tracks)
+            overlay_jpg = encode_jpg(overlay, args.overlay_jpeg_quality)
+            payload["overlay_jpg_b64"] = base64.b64encode(overlay_jpg).decode("ascii")
+
+        # Send to WS (with reconnect)
         try:
-            return self._boxes_to_dets(boxes)
+            await ws_send_json(ws, payload)
         except Exception as e:
-            print(f"⚠️ YOLO parse failed: {e}")
-            return []
+            print(f"[WS] Send failed: {e} -> reconnect")
+            try:
+                await ws.close()
+            except Exception:
+                pass
+            ws = await ws_connect_loop(args.ws_url)
 
-
-def write_jsonl(path: str, record: Dict[str, Any]) -> None:
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        frames_processed += 1
+        now = time.time()
+        if now - last_log_ts >= 2.0:
+            print(f"[TRACKER] processed={frames_processed} last_frame={frame_idx} tracks={len(tracks)}")
+            last_log_ts = now
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--endpoint", default="tcp://127.0.0.1:5560", help="ZeroMQ PUB endpoint (same as broadcaster).")
-    parser.add_argument("--out", default="tracker.jsonl", help="Output JSONL path.")
-    parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"], help="YOLO device selection.")
-    parser.add_argument("--every", type=int, default=5, help="Process every N frames.")
-    parser.add_argument("--yolo_model", default="yolov8n.pt", help="YOLO model (e.g., yolov8n.pt, yolov8s.pt).")
-    parser.add_argument("--yolo_conf", type=float, default=0.25, help="YOLO confidence threshold.")
-    parser.add_argument("--yolo_imgsz", type=int, default=640, help="YOLO inference image size.")
-    parser.add_argument("--yolo_builtin_track", action="store_true", help="Use YOLO built-in tracking when available.")
-    parser.add_argument("--min_motion_area", type=int, default=900, help="Min area (px) for motion blobs.")
-    parser.add_argument("--print_every", type=int, default=30, help="Console print interval (processed frames).")
-    args = parser.parse_args()
-
-    yolo = YoloDetector(
-        model_name=args.yolo_model,
-        device=args.device,
-        conf=args.yolo_conf,
-        imgsz=args.yolo_imgsz,
-        use_builtin_track=args.yolo_builtin_track,
-    )
-
-    yolo_iou_tracker = SimpleIoUTracker(iou_threshold=0.35, max_age_frames=45)
-    motion = MotionDetector(min_area=args.min_motion_area)
-
-    context = zmq.Context()
-    socket = context.socket(zmq.SUB)
-    socket.connect(args.endpoint)
-    socket.setsockopt(zmq.SUBSCRIBE, b"frame")
-
-    print(f"🔗 Tracker SUB connected to broadcaster on {args.endpoint}")
-    print(f"📝 Writing tracker JSONL to: {args.out}")
-    print(f"⚙️ Tracker processes every {args.every} frames")
-
-    processed = 0
-    skipped = 0
-
-    try:
-        while True:
-            frame_idx, video_time_ms, jpg_bytes = recv_frame_sub(socket)
-
-            if args.every > 1 and (frame_idx % args.every != 0):
-                skipped += 1
-                continue
-
-            frame_bgr = decode_jpg_to_bgr(jpg_bytes)
-            if frame_bgr is None:
-                continue
-
-            record: Dict[str, Any] = {
-                "frame_index": frame_idx,
-                "video_time_ms": video_time_ms,
-                "meta": {
-                    "generated_at_unix_ms": now_unix_ms(),
-                    "worker": "tracker_worker_v2",
-                    "device": args.device,
-                    "yolo_model": args.yolo_model if yolo.available else None,
-                    "yolo_builtin_track": bool(args.yolo_builtin_track),
-                    "every": args.every,
-                },
-                "detections": {
-                    "yolo": [],
-                    "motion": [],
-                },
-            }
-
-            yolo_dets = yolo.detect(frame_bgr)
-
-            need_iou = False
-            for d in yolo_dets:
-                if d.get("track_id") is None:
-                    need_iou = True
-                    break
-
-            if yolo_dets and need_iou:
-                sanitized: List[Dict[str, Any]] = []
-                for d in yolo_dets:
-                    dd = dict(d)
-                    if "track_id" in dd:
-                        dd.pop("track_id")
-                    sanitized.append(dd)
-                yolo_tracked = yolo_iou_tracker.update(frame_idx, sanitized)
-            else:
-                yolo_tracked = yolo_dets
-
-            record["detections"]["yolo"] = yolo_tracked
-            record["detections"]["motion"] = motion.detect(frame_bgr, frame_idx)
-
-            write_jsonl(args.out, record)
-
-            processed += 1
-            if args.print_every > 0 and (processed % args.print_every == 0):
-                y_count = len(record["detections"]["yolo"])
-                m_count = len(record["detections"]["motion"])
-                t_ms = f"{video_time_ms}ms" if video_time_ms is not None else "-"
-                print(f"🎯 Tracker | Frame={frame_idx} t={t_ms} | yolo={y_count} motion={m_count}")
-
-    except KeyboardInterrupt:
-        print("\n[INFO] Stopped by user (tracker_worker_v2).")
-        print(f"[STATS] processed={processed}, skipped={skipped}")
-    finally:
-        socket.close()
-        context.term()
+    asyncio.run(main_async())
 
 
 if __name__ == "__main__":
