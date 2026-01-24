@@ -352,7 +352,7 @@ async def main_async():
             overlay_jpg = encode_jpg(overlay, args.overlay_jpeg_quality)
             payload["overlay_jpg_b64"] = base64.b64encode(overlay_jpg).decode("ascii")
 
-        # Send to WS (with reconnect)
+        # Send to WS immediately - broadcaster controls timing
         try:
             await ws_send_json(ws, payload)
         except Exception as e:
