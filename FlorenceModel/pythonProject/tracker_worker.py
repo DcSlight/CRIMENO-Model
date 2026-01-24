@@ -5,7 +5,7 @@
 # - Optional motion fallback (MOG2)
 # - Sends results to NestJS via WebSocket (NO per-frame JSONL I/O)
 #
-# Comments are intentionally in English only.
+# Optimized for low latency startup and real-time streaming
 
 import argparse
 import asyncio
@@ -224,7 +224,19 @@ async def main_async():
     if YOLO is None:
         raise RuntimeError("ultralytics is not installed. Install it: pip install ultralytics")
 
+    # Pre-load model BEFORE connecting to ZMQ/WS to avoid startup delay
+    print(f"[TRACKER] Loading YOLO model: {args.yolo_model}...")
+    load_start = time.time()
     model = YOLO(args.yolo_model)
+    
+    # Warm up the model with a dummy frame to ensure everything is loaded
+    print("[TRACKER] Warming up model...")
+    dummy_frame = np.zeros((640, 640, 3), dtype=np.uint8)
+    _ = model.predict(dummy_frame, conf=0.5, verbose=False)
+    
+    load_time = time.time() - load_start
+    print(f"[TRACKER] ✓ Model loaded and ready ({load_time:.2f}s)")
+    
     motion = MotionDetector() if args.use_motion_fallback else None
 
     # ZMQ SUB
@@ -233,11 +245,14 @@ async def main_async():
     sub.connect(args.sub_endpoint)
     sub.setsockopt(zmq.SUBSCRIBE, b"frame")
     sub.setsockopt(zmq.RCVHWM, 5)
+    # Set receive timeout to avoid blocking forever
+    sub.setsockopt(zmq.RCVTIMEO, 1000)  # 1 second timeout
 
     print(f"[TRACKER] SUB connect: {args.sub_endpoint} topic=frame")
     print(f"[TRACKER] WS target: {args.ws_url}")
     print(f"[TRACKER] send_overlay={args.send_overlay}, send_every_n_frames={args.send_every_n_frames}")
 
+    # Connect to WebSocket
     ws = await ws_connect_loop(args.ws_url)
 
     next_track_id = 1
@@ -245,10 +260,20 @@ async def main_async():
 
     last_log_ts = time.time()
     frames_processed = 0
+    first_frame = True
 
     while True:
-        # ZMQ recv is blocking; run it in a thread to not block asyncio loop
-        frame_idx, video_time_ms, jpg_bytes = await asyncio.to_thread(recv_frame_sub, sub)
+        try:
+            # ZMQ recv is blocking; run it in a thread to not block asyncio loop
+            frame_idx, video_time_ms, jpg_bytes = await asyncio.to_thread(recv_frame_sub, sub)
+        except Exception as e:
+            # Timeout or other error - continue waiting
+            await asyncio.sleep(0.01)
+            continue
+
+        if first_frame:
+            print(f"[TRACKER] ✓ First frame received (idx={frame_idx}) - processing started!")
+            first_frame = False
 
         if args.send_every_n_frames > 1 and (frame_idx % args.send_every_n_frames) != 0:
             continue
