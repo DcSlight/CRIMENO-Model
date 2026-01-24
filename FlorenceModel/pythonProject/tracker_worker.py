@@ -261,8 +261,6 @@ async def main_async():
     last_log_ts = time.time()
     frames_processed = 0
     first_frame = True
-    start_real_time_ms = 0
-    start_video_time_ms = 0
 
     while True:
         try:
@@ -354,27 +352,7 @@ async def main_async():
             overlay_jpg = encode_jpg(overlay, args.overlay_jpeg_quality)
             payload["overlay_jpg_b64"] = base64.b64encode(overlay_jpg).decode("ascii")
 
-        # IMPORTANT: Delay sending to match video playback timeline
-        # This ensures bboxes appear at the correct time in the React player
-        if video_time_ms >= 0:
-            # Calculate how long to wait before sending this frame's data
-            current_time_ms = int(time.time() * 1000)
-            if frames_processed == 1:
-                # First frame - record when we started
-                start_real_time_ms = current_time_ms
-                start_video_time_ms = video_time_ms
-            
-            # Calculate when this frame should be sent
-            time_since_start_ms = current_time_ms - start_real_time_ms
-            video_elapsed_ms = video_time_ms - start_video_time_ms
-            
-            # If we're ahead of the video timeline, wait
-            if video_elapsed_ms > time_since_start_ms:
-                delay_ms = video_elapsed_ms - time_since_start_ms
-                if delay_ms > 0 and delay_ms < 5000:  # Max 5 sec delay for sanity
-                    await asyncio.sleep(delay_ms / 1000.0)
-        
-        # Send to WS (with reconnect)
+        # Send to WS immediately - broadcaster controls timing
         try:
             await ws_send_json(ws, payload)
         except Exception as e:
