@@ -1,7 +1,11 @@
 # tracker_worker.py
 # Real-time multi-class detection + tracking
 # - Subscribes to ZeroMQ PUB stream (topics: "frame", "meta")
-# - Resets tracks and IDs when a "meta" message is received.
+# - Runs YOLOv8 (COCO) + simple IOU tracker
+# - Optional motion fallback (MOG2)
+# - Sends results to NestJS via WebSocket (NO per-frame JSONL I/O)
+#
+# Comments are intentionally in English only.
 
 import argparse
 import asyncio
@@ -20,6 +24,7 @@ try:
 except Exception as e:
     YOLO = None
 
+
 # -------------------------
 # ZMQ receive
 # -------------------------
@@ -36,11 +41,13 @@ def decode_jpg(jpg_bytes: bytes) -> np.ndarray:
         raise RuntimeError("Failed to decode JPG")
     return frame
 
+
 def encode_jpg(frame_bgr: np.ndarray, jpeg_quality: int) -> bytes:
     ok, buf = cv2.imencode(".jpg", frame_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), int(jpeg_quality)])
     if not ok:
         raise RuntimeError("Failed to encode overlay JPG")
     return buf.tobytes()
+
 
 # -------------------------
 # Simple tracker helpers
@@ -66,6 +73,7 @@ def iou_xyxy(a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]) -> floa
         return 0.0
     return inter_area / union
 
+
 @dataclass
 class Track:
     track_id: int
@@ -73,6 +81,7 @@ class Track:
     cls_name: str
     conf: float
     last_seen_frame: int
+
 
 def draw_tracks(frame: np.ndarray, tracks: List[Track]) -> np.ndarray:
     out = frame.copy()
@@ -82,6 +91,7 @@ def draw_tracks(frame: np.ndarray, tracks: List[Track]) -> np.ndarray:
         label = f"id={t.track_id} {t.cls_name} {t.conf:.2f}"
         cv2.putText(out, label, (x1, max(0, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
     return out
+
 
 # -------------------------
 # Motion fallback (optional)
@@ -105,30 +115,50 @@ class MotionDetector:
             boxes.append((x, y, x + w, y + h))
         return boxes
 
+
 # -------------------------
 # YOLO detection
 # -------------------------
 def run_yolo(model, frame_bgr: np.ndarray, conf_th: float) -> List[Dict[str, Any]]:
+    """
+    Returns list of detections: {bbox(x1,y1,x2,y2), cls_name, conf}
+    """
     results = model.predict(frame_bgr, conf=conf_th, verbose=False)
     dets: List[Dict[str, Any]] = []
-    if not results: return dets
+
+    if not results:
+        return dets
+
     r = results[0]
-    if r.boxes is None: return dets
+    if r.boxes is None:
+        return dets
+
     names = model.names if hasattr(model, "names") else {}
     for b in r.boxes:
-        xyxy = b.xyxy[0].tolist()
+        xyxy = b.xyxy[0].tolist()  # [x1,y1,x2,y2]
         cls_id = int(b.cls[0].item()) if b.cls is not None else -1
         conf = float(b.conf[0].item()) if b.conf is not None else 0.0
+
         x1, y1, x2, y2 = [int(v) for v in xyxy]
         cls_name = names.get(cls_id, str(cls_id))
-        dets.append({"bbox": (x1, y1, x2, y2), "cls_name": cls_name, "conf": conf})
+        dets.append({
+            "bbox": (x1, y1, x2, y2),
+            "cls_name": cls_name,
+            "conf": conf,
+        })
+
     return dets
+
 
 # -------------------------
 # WebSocket sender
 # -------------------------
 async def ws_connect_loop(ws_url: str):
-    import websockets
+    """
+    Keeps trying to connect, returns an open websocket.
+    """
+    import websockets  # lazy import
+
     backoff = 0.25
     while True:
         try:
@@ -140,8 +170,10 @@ async def ws_connect_loop(ws_url: str):
             await asyncio.sleep(backoff)
             backoff = min(5.0, backoff * 1.7)
 
+
 async def ws_send_json(ws, payload: Dict[str, Any]):
     await ws.send(json.dumps(payload, ensure_ascii=False))
+
 
 # -------------------------
 # Main loop
@@ -149,56 +181,63 @@ async def ws_send_json(ws, payload: Dict[str, Any]):
 async def main_async():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sub_endpoint", default="tcp://127.0.0.1:5560")
-    parser.add_argument("--ws_url", default="ws://127.0.0.1:3000/ws/tracker")
+    parser.add_argument("--ws_url", default="ws://127.0.0.1:3000/ws/tracker", help="NestJS WS endpoint")
     parser.add_argument("--yolo_model", default="yolov8n.pt")
     parser.add_argument("--conf_th", type=float, default=0.35)
     parser.add_argument("--send_every_n_frames", type=int, default=1)
-    parser.add_argument("--send_overlay", type=int, default=1)
+    parser.add_argument("--send_overlay", type=int, default=1, help="1=send JPG overlay, 0=send raw bbox only")
     parser.add_argument("--overlay_jpeg_quality", type=int, default=80)
     parser.add_argument("--use_motion_fallback", type=int, default=1)
     parser.add_argument("--max_track_age", type=int, default=30)
     parser.add_argument("--iou_match_th", type=float, default=0.30)
     args = parser.parse_args()
 
-    if YOLO is None: raise RuntimeError("ultralytics is not installed.")
+    if YOLO is None:
+        raise RuntimeError("ultralytics is not installed. Install it: pip install ultralytics")
 
     model = YOLO(args.yolo_model)
     motion = MotionDetector() if args.use_motion_fallback else None
 
+    # ZMQ SUB
     context = zmq.Context()
     sub = context.socket(zmq.SUB)
     sub.connect(args.sub_endpoint)
+    # SUBSCRIBE to both frame and meta topics
     sub.setsockopt(zmq.SUBSCRIBE, b"frame")
-    sub.setsockopt(zmq.SUBSCRIBE, b"meta") # הוספת האזנה לנושא meta
+    sub.setsockopt(zmq.SUBSCRIBE, b"meta")
     sub.setsockopt(zmq.RCVHWM, 5)
 
     print(f"[TRACKER] SUB connect: {args.sub_endpoint} topics=frame,meta")
+    print(f"[TRACKER] WS target: {args.ws_url}")
+
     ws = await ws_connect_loop(args.ws_url)
 
     next_track_id = 1
     tracks: List[Track] = []
+
     last_log_ts = time.time()
     frames_processed = 0
 
     while True:
-        # קבלת הודעה מ-ZMQ (multipart)
+        # Use multipart receive to distinguish between 'frame' and 'meta'
         parts = await asyncio.to_thread(recv_multipart_sub, sub)
         topic = parts[0].decode("utf-8")
 
-        # --- טיפול בהודעת META (איפוס) ---
+        # --- NEW VIDEO / META LOGIC ---
         if topic == "meta":
-            print("[TRACKER] Received 'meta' - Resetting tracks and next_track_id")
+            print("[TRACKER] Received 'meta' topic. Resetting internal state.")
             tracks = []
             next_track_id = 1
             continue
 
-        # --- טיפול בהודעת FRAME (הלוגיקה המקורית שלך) ---
+        # --- FRAME PROCESSING LOGIC ---
         if topic == "frame":
             frame_idx = int(parts[1].decode("utf-8"))
             try:
                 video_time_ms = int(parts[2].decode("utf-8"))
-            except:
+            except Exception:
                 video_time_ms = -1
+
             jpg_bytes = parts[3]
 
             if args.send_every_n_frames > 1 and (frame_idx % args.send_every_n_frames) != 0:
@@ -206,12 +245,16 @@ async def main_async():
 
             frame = decode_jpg(jpg_bytes)
             h, w = frame.shape[:2]
+
             dets = run_yolo(model, frame, args.conf_th)
 
+            # Optional motion fallback
             if motion is not None and len(dets) == 0:
                 blobs = motion.detect(frame)
-                for bb in blobs: dets.append({"bbox": bb, "cls_name": "moving_object", "conf": 1.0})
+                for bb in blobs:
+                    dets.append({"bbox": bb, "cls_name": "moving_object", "conf": 1.0})
 
+            # Match detections to existing tracks by IOU
             used_tracks = set()
             new_tracks: List[Track] = []
 
@@ -221,7 +264,8 @@ async def main_async():
                 best_track: Optional[Track] = None
 
                 for t in tracks:
-                    if t.track_id in used_tracks: continue
+                    if t.track_id in used_tracks:
+                        continue
                     i = iou_xyxy(t.bbox, bb)
                     if i > best_iou:
                         best_iou = i
@@ -235,31 +279,53 @@ async def main_async():
                     best_track.last_seen_frame = frame_idx
                     new_tracks.append(best_track)
                 else:
-                    t = Track(track_id=next_track_id, bbox=bb, cls_name=d["cls_name"], conf=float(d["conf"]), last_seen_frame=frame_idx)
+                    t = Track(
+                        track_id=next_track_id,
+                        bbox=bb,
+                        cls_name=d["cls_name"],
+                        conf=float(d["conf"]),
+                        last_seen_frame=frame_idx,
+                    )
                     next_track_id += 1
                     used_tracks.add(t.track_id)
                     new_tracks.append(t)
 
+            # Keep recent tracks (age-based)
             tracks = [t for t in new_tracks if (frame_idx - t.last_seen_frame) <= args.max_track_age]
 
+            # Prepare payload
             tracks_payload = []
             for t in tracks:
                 x1, y1, x2, y2 = t.bbox
-                tracks_payload.append({"track_id": t.track_id, "cls": t.cls_name, "conf": t.conf, "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2}})
+                tracks_payload.append({
+                    "track_id": t.track_id,
+                    "cls": t.cls_name,
+                    "conf": t.conf,
+                    "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
+                })
 
-            payload = {"type": "tracker_frame", "frame_index": frame_idx, "video_time_ms": video_time_ms, "frame_size": {"w": w, "h": h}, "tracks": tracks_payload}
+            payload: Dict[str, Any] = {
+                "type": "tracker_frame",
+                "frame_index": frame_idx,
+                "video_time_ms": video_time_ms,
+                "frame_size": {"w": w, "h": h},
+                "tracks": tracks_payload,
+            }
 
             if args.send_overlay == 1:
                 overlay = draw_tracks(frame, tracks)
                 overlay_jpg = encode_jpg(overlay, args.overlay_jpeg_quality)
                 payload["overlay_jpg_b64"] = base64.b64encode(overlay_jpg).decode("ascii")
 
+            # Send to WS
             try:
                 await ws_send_json(ws, payload)
             except Exception as e:
                 print(f"[WS] Send failed: {e} -> reconnect")
-                try: await ws.close()
-                except: pass
+                try:
+                    await ws.close()
+                except Exception:
+                    pass
                 ws = await ws_connect_loop(args.ws_url)
 
             frames_processed += 1
@@ -268,8 +334,10 @@ async def main_async():
                 print(f"[TRACKER] processed={frames_processed} last_frame={frame_idx} tracks={len(tracks)}")
                 last_log_ts = now
 
+
 def main():
     asyncio.run(main_async())
+
 
 if __name__ == "__main__":
     main()
