@@ -15,3 +15,8 @@ python visualize_tracker.py --video videos/shop.mp4 --tracker tracker.jsonl --sh
 5)test socket
 
 python ws_test_server.py
+
+
+
+6) run tracker with existing model
+python tracker_worker.py --yolo_model path/to/weapons-yolo.pt

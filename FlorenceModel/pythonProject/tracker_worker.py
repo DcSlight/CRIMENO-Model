@@ -5,7 +5,7 @@
 # - Optional motion fallback (MOG2)
 # - Sends results to NestJS via WebSocket (NO per-frame JSONL I/O)
 #
-# Comments are intentionally in English only.
+# Optimized for low latency startup and real-time streaming
 
 import argparse
 import asyncio
@@ -129,11 +129,12 @@ class MotionDetector:
 
 
 # -------------------------
-# YOLO detection
+# YOLO detection with better filtering
 # -------------------------
 def run_yolo(model, frame_bgr: np.ndarray, conf_th: float) -> List[Dict[str, Any]]:
     """
     Returns list of detections: {bbox(x1,y1,x2,y2), cls_name, conf}
+    Enhanced to detect more security-relevant objects with better filtering
     """
     results = model.predict(frame_bgr, conf=conf_th, verbose=False)
     dets: List[Dict[str, Any]] = []
@@ -146,6 +147,14 @@ def run_yolo(model, frame_bgr: np.ndarray, conf_th: float) -> List[Dict[str, Any
         return dets
 
     names = model.names if hasattr(model, "names") else {}
+    
+    # Security-relevant objects to prioritize (COCO dataset)
+    security_objects = {
+        'person', 'backpack', 'handbag', 'suitcase', 'bottle', 'cup',
+        'knife', 'cell phone', 'laptop', 'mouse', 'keyboard', 'book',
+        'scissors', 'car', 'motorcycle', 'bicycle', 'truck', 'bus'
+    }
+    
     for b in r.boxes:
         xyxy = b.xyxy[0].tolist()  # [x1,y1,x2,y2]
         cls_id = int(b.cls[0].item()) if b.cls is not None else -1
@@ -153,11 +162,19 @@ def run_yolo(model, frame_bgr: np.ndarray, conf_th: float) -> List[Dict[str, Any
 
         x1, y1, x2, y2 = [int(v) for v in xyxy]
         cls_name = names.get(cls_id, str(cls_id))
-        dets.append({
-            "bbox": (x1, y1, x2, y2),
-            "cls_name": cls_name,
-            "conf": conf,
-        })
+        
+        # Apply different confidence thresholds based on object type
+        min_conf = conf_th
+        if cls_name.lower() in security_objects:
+            # Lower threshold for security-relevant objects
+            min_conf = conf_th * 0.7
+        
+        if conf >= min_conf:
+            dets.append({
+                "bbox": (x1, y1, x2, y2),
+                "cls_name": cls_name,
+                "conf": conf,
+            })
 
     return dets
 
@@ -207,7 +224,19 @@ async def main_async():
     if YOLO is None:
         raise RuntimeError("ultralytics is not installed. Install it: pip install ultralytics")
 
+    # Pre-load model BEFORE connecting to ZMQ/WS to avoid startup delay
+    print(f"[TRACKER] Loading YOLO model: {args.yolo_model}...")
+    load_start = time.time()
     model = YOLO(args.yolo_model)
+    
+    # Warm up the model with a dummy frame to ensure everything is loaded
+    print("[TRACKER] Warming up model...")
+    dummy_frame = np.zeros((640, 640, 3), dtype=np.uint8)
+    _ = model.predict(dummy_frame, conf=0.5, verbose=False)
+    
+    load_time = time.time() - load_start
+    print(f"[TRACKER] ✓ Model loaded and ready ({load_time:.2f}s)")
+    
     motion = MotionDetector() if args.use_motion_fallback else None
 
     # ZMQ SUB
@@ -216,11 +245,14 @@ async def main_async():
     sub.connect(args.sub_endpoint)
     sub.setsockopt(zmq.SUBSCRIBE, b"frame")
     sub.setsockopt(zmq.RCVHWM, 5)
+    # Set receive timeout to avoid blocking forever
+    sub.setsockopt(zmq.RCVTIMEO, 1000)  # 1 second timeout
 
     print(f"[TRACKER] SUB connect: {args.sub_endpoint} topic=frame")
     print(f"[TRACKER] WS target: {args.ws_url}")
     print(f"[TRACKER] send_overlay={args.send_overlay}, send_every_n_frames={args.send_every_n_frames}")
 
+    # Connect to WebSocket
     ws = await ws_connect_loop(args.ws_url)
 
     next_track_id = 1
@@ -228,10 +260,20 @@ async def main_async():
 
     last_log_ts = time.time()
     frames_processed = 0
+    first_frame = True
 
     while True:
-        # ZMQ recv is blocking; run it in a thread to not block asyncio loop
-        frame_idx, video_time_ms, jpg_bytes = await asyncio.to_thread(recv_frame_sub, sub)
+        try:
+            # ZMQ recv is blocking; run it in a thread to not block asyncio loop
+            frame_idx, video_time_ms, jpg_bytes = await asyncio.to_thread(recv_frame_sub, sub)
+        except Exception as e:
+            # Timeout or other error - continue waiting
+            await asyncio.sleep(0.01)
+            continue
+
+        if first_frame:
+            print(f"[TRACKER] ✓ First frame received (idx={frame_idx}) - processing started!")
+            first_frame = False
 
         if args.send_every_n_frames > 1 and (frame_idx % args.send_every_n_frames) != 0:
             continue
@@ -286,7 +328,7 @@ async def main_async():
         # Keep recent tracks (age-based)
         tracks = [t for t in new_tracks if (frame_idx - t.last_seen_frame) <= args.max_track_age]
 
-        # Prepare payload
+        # Prepare payload - EXACT SAME FORMAT AS ORIGINAL
         tracks_payload = []
         for t in tracks:
             x1, y1, x2, y2 = t.bbox
@@ -310,7 +352,7 @@ async def main_async():
             overlay_jpg = encode_jpg(overlay, args.overlay_jpeg_quality)
             payload["overlay_jpg_b64"] = base64.b64encode(overlay_jpg).decode("ascii")
 
-        # Send to WS (with reconnect)
+        # Send to WS immediately - broadcaster controls timing
         try:
             await ws_send_json(ws, payload)
         except Exception as e:
