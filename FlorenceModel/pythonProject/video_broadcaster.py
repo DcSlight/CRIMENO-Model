@@ -12,7 +12,6 @@ def encode_jpg(frame_bgr, jpeg_quality: int) -> bytes:
 
 def main():
     parser = argparse.ArgumentParser()
-    # No default video is loaded at startup
     parser.add_argument("video_path", nargs="?", default=None)
     parser.add_argument("--endpoint", default="tcp://127.0.0.1:5560")
     parser.add_argument("--cmd_endpoint", default="tcp://127.0.0.1:5561")
@@ -23,7 +22,7 @@ def main():
 
     context = zmq.Context()
     
-    # PUB socket for broadcasting frames (Tracker/Florence)
+    # PUB socket for broadcasting frames and meta-data
     pub_socket = context.socket(zmq.PUB)
     pub_socket.bind(args.endpoint)
 
@@ -60,12 +59,19 @@ def main():
                 
                 cmd_socket.send_json({"status": "ok", "video": new_path})
                 
-                # Meta-data broadcast for the new stream
+                # IMPORTANT: Broadcast 'meta' message to signal a new stream
+                # This triggers the Tracker to reset its internal state
                 ret, frame0 = cap.read()
                 if ret:
                     h0, w0 = frame0.shape[:2]
                     fps0 = cap.get(cv2.CAP_PROP_FPS) or 25.0
-                    pub_socket.send_multipart([b"meta", str(w0).encode(), str(h0).encode(), str(fps0).encode()])
+                    pub_socket.send_multipart([
+                        b"meta", 
+                        str(w0).encode(), 
+                        str(h0).encode(), 
+                        str(fps0).encode()
+                    ])
+                    # Reset to start of video after reading first frame for meta
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
             else:
                 cmd_socket.send_json({"status": "error", "msg": "unknown command"})
@@ -78,7 +84,6 @@ def main():
         # 3. Read and Broadcast
         ret, frame = cap.read()
         if not ret:
-            # Video reached the end - stop broadcasting and wait for next command
             print(f"[INFO] Video {current_video} finished.")
             cap.release()
             cap = None
@@ -98,7 +103,7 @@ def main():
             continue
         last_send_ts = now
 
-        # Broadcast to PUB subscribers
+        # Broadcast frame to subscribers
         fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
         video_time_ms = int(frame_index * (1000.0 / fps))
         jpg = encode_jpg(frame, args.jpeg_quality)
