@@ -209,7 +209,7 @@ async def ws_send_json(ws, payload: Dict[str, Any]):
 # -------------------------
 async def main_async():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--sub_endpoint", default="tcp://127.0.0.1:5560")
+    parser.add_argument("--sub_endpoint", default="tcp://127.0.0.1:5562")
     parser.add_argument("--ws_url", default="ws://127.0.0.1:3000/ws/tracker", help="NestJS WS endpoint")
     parser.add_argument("--yolo_model", default="yolov8n.pt")
     parser.add_argument("--conf_th", type=float, default=0.35)
