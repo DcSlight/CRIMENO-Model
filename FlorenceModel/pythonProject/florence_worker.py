@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import zmq
 import torch
+import numpy as np
 from PIL import Image
 from transformers import pipeline
 
@@ -23,16 +24,19 @@ def now_unix_ms() -> int:
 
 
 def load_florence_pipeline(model_name: str, device_str: str):
+    print(f"[FLORENCE] Loading model: {model_name}...")
+    load_start = time.time()
+    
     if device_str == "cuda" and torch.cuda.is_available():
         device = 0
         torch_dtype = torch.float16
         actual_device = "cuda"
-        print("Device set to use cuda")
+        print("[FLORENCE] Device set to use CUDA")
     else:
         device = -1
         torch_dtype = torch.float32
         actual_device = "cpu"
-        print("Device set to use cpu")
+        print("[FLORENCE] Device set to use CPU")
 
     vision_pipe = pipeline(
         "image-text-to-text",
@@ -40,7 +44,37 @@ def load_florence_pipeline(model_name: str, device_str: str):
         device=device,
         torch_dtype=torch_dtype,
     )
-    print(f"✅ Florence-2 pipeline loaded ({model_name}) on {actual_device}")
+    
+    load_time = time.time() - load_start
+    print(f"[FLORENCE] ✓ Model loaded ({load_time:.2f}s)")
+    
+    # CRITICAL: Warm up the model with dummy inference
+    print("[FLORENCE] Warming up model with dummy inference...")
+    warmup_start = time.time()
+    
+    # Create a realistic dummy image (640x480 RGB)
+    dummy_img = Image.fromarray(
+        np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
+    )
+    
+    # Run all three tasks to warm up everything
+    tasks = [
+        "<MORE_DETAILED_CAPTION>",
+        "<OD>",
+        "<OCR>"
+    ]
+    
+    for task in tasks:
+        try:
+            _ = vision_pipe(dummy_img, text=task)
+        except Exception as e:
+            print(f"[FLORENCE] Warmup task {task} failed: {e}")
+    
+    warmup_time = time.time() - warmup_start
+    print(f"[FLORENCE] ✓ Warmup complete ({warmup_time:.2f}s)")
+    print(f"[FLORENCE] ✓ Total initialization: {load_time + warmup_time:.2f}s")
+    print("[FLORENCE] Ready to process frames!")
+    
     return vision_pipe, actual_device
 
 
@@ -130,7 +164,7 @@ async def main_async():
     import asyncio
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--endpoint", default="tcp://127.0.0.1:5560")
+    parser.add_argument("--endpoint", default="tcp://127.0.0.1:5562")  # Updated default to real-time endpoint
     parser.add_argument("--out", default="florence.jsonl")
     parser.add_argument("--model", default="florence-community/Florence-2-base")
     parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
@@ -151,12 +185,17 @@ async def main_async():
 
     args = parser.parse_args()
 
+    # Load and warm up model BEFORE connecting to ZMQ
     vision_pipe, actual_device = load_florence_pipeline(args.model, args.device)
 
+    # Now connect to ZMQ
     context = zmq.Context()
     socket = context.socket(zmq.SUB)
     socket.connect(args.endpoint)
     socket.setsockopt(zmq.SUBSCRIBE, b"frame")
+    # Set receive timeout to avoid blocking forever
+    socket.setsockopt(zmq.RCVTIMEO, 1000)  # 1 second timeout
+    
     print(f"🔗 SUB connected to broadcaster on {args.endpoint}")
     print(f"📝 Writing JSONL to: {args.out}")
     print(f"⚙️ Florence processes every {args.every} frames")
@@ -171,6 +210,7 @@ async def main_async():
 
     processed = 0
     skipped = 0
+    first_frame = True
 
     ws = None
     if args.ws_enable == 1:
@@ -182,14 +222,26 @@ async def main_async():
 
     try:
         while True:
-            # ZMQ recv is blocking; run it in a thread to not block asyncio loop
-            frame_idx, video_time_ms, jpg_bytes = await asyncio.to_thread(recv_frame_sub, socket)
+            try:
+                # ZMQ recv is blocking; run it in a thread to not block asyncio loop
+                frame_idx, video_time_ms, jpg_bytes = await asyncio.to_thread(recv_frame_sub, socket)
+            except Exception as e:
+                # Timeout or other error - continue waiting
+                await asyncio.sleep(0.01)
+                continue
+
+            if first_frame:
+                print(f"[FLORENCE] ✓ First frame received (idx={frame_idx}) - processing started!")
+                first_frame = False
 
             # Skip fast without decoding
             if args.every > 1 and (frame_idx % args.every != 0):
                 skipped += 1
                 continue
 
+            # Track processing time for first few frames
+            process_start = time.time()
+            
             image = pil_from_jpg(jpg_bytes)
 
             record: Dict[str, Any] = {
@@ -248,12 +300,20 @@ async def main_async():
                         ws = None
 
             processed += 1
+            process_time = time.time() - process_start
+            
             dt = record["text_overlay"]["datetime_candidates"]
             dt_str = dt[0] if dt else "-"
             caption_short = caption.replace("\n", " ").strip()
             if len(caption_short) > 120:
-                caption_short = caption_short[:120] + "."
-            print(f"🧠 Florence | Frame {frame_idx} | t={video_time_ms}ms | dt={dt_str} | caption={caption_short}")
+                caption_short = caption_short[:120] + "..."
+            
+            # Show processing time for first 5 frames to verify warmup worked
+            if processed <= 5:
+                print(f"🧠 Florence | Frame {frame_idx} | t={video_time_ms}ms | dt={dt_str} | Process time: {process_time:.2f}s")
+                print(f"   Caption: {caption_short}")
+            else:
+                print(f"🧠 Florence | Frame {frame_idx} | t={video_time_ms}ms | dt={dt_str} | caption={caption_short}")
 
     except KeyboardInterrupt:
         print("\n[INFO] Stopped by user (florence_worker).")
