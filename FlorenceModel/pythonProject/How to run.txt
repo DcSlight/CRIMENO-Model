@@ -3,15 +3,21 @@
 # ARCHITECTURE:
 # Broadcaster (5560) → Florence + Tracker (parallel)
 #                   ↓
-#            ┌─ All push to ZMQ 5580 ─┐
-#            ↓                        ↓
-#         Florence                  Tracker
-#            ↓                        ↓
-#         Qwen (listens 5580, processes, pushes 5580)
+#            ┌─ Push to ZMQ 5581 (Qwen input) ─┐
+#            ↓                                  ↓
+#         Florence                           Tracker
+#            ↓                                  ↓
+#         Qwen (listens 5581, processes, pushes to 5582)
 #            ↓
-#      Message Broker (listens 5580, forwards WebSocket 3000)
+#      Message Broker (listens 5582, forwards WebSocket 3000)
 #            ↓
 #         NestJS (ws://127.0.0.1:3000)
+
+# IMPORTANT: Each model uses separate ports to avoid "already in use" errors
+# - Port 5560: Video broadcaster (PUB)
+# - Port 5561: Video commands (REP)
+# - Port 5581: Qwen input from Florence + Tracker (PULL)
+# - Port 5582: Message broker input from workers (PULL)
 
 # Process 1: Video Broadcaster
 python video_broadcaster.py videos/shop.mp4

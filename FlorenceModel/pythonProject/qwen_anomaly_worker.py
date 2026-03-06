@@ -6,19 +6,31 @@ import argparse
 from typing import List, Dict, Any, Optional
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 
+# Import centralized configuration
+from config import (
+    QWEN_MODEL,
+    ZMQ_QWEN_INPUT_ENDPOINT,
+    ZMQ_MESSAGE_BROKER_ENDPOINT,
+    QWEN_BASE_WINDOW_SIZE,
+    QWEN_MAX_QUEUE_SIZE,
+    QWEN_MAX_EVENT_HISTORY,
+    QWEN_CONTEXT_LOG_FILE
+)
+
 # ============================================================
 # Configuration
 # ============================================================
 
-MODEL_NAME = "Qwen/Qwen2.5-3B-Instruct"
+MODEL_NAME = QWEN_MODEL
 DEVICE = "cuda"  # or "cpu"
-ZMQ_ENDPOINT = "tcp://127.0.0.1:5580"
+ZMQ_INPUT_ENDPOINT = ZMQ_QWEN_INPUT_ENDPOINT  # Receive from Florence + Tracker (PULL)
+ZMQ_OUTPUT_ENDPOINT = ZMQ_MESSAGE_BROKER_ENDPOINT  # Send to Message Broker (PUSH)
 
-BASE_WINDOW_SIZE = 3
-MAX_QUEUE_SIZE = 30
-MAX_EVENT_HISTORY = 10
+BASE_WINDOW_SIZE = QWEN_BASE_WINDOW_SIZE
+MAX_QUEUE_SIZE = QWEN_MAX_QUEUE_SIZE
+MAX_EVENT_HISTORY = QWEN_MAX_EVENT_HISTORY
 
-CONTEXT_LOG_FILE = "qwen_context_log.txt"
+CONTEXT_LOG_FILE = QWEN_CONTEXT_LOG_FILE
 
 
 # ============================================================
@@ -394,14 +406,15 @@ def main():
     print("🔗 Connecting to ZMQ...")
 
     context = zmq.Context()
-    socket = context.socket(zmq.PULL)
-    socket.bind(ZMQ_ENDPOINT)  # both Florence + tracker connect here
-    print(f"✅ Qwen worker bound on {ZMQ_ENDPOINT}")
+    # Input socket: receive from Florence + Tracker
+    input_socket = context.socket(zmq.PULL)
+    input_socket.bind(ZMQ_INPUT_ENDPOINT)
+    print(f"✅ Qwen worker bound (PULL) on {ZMQ_INPUT_ENDPOINT} (receiving from Florence + Tracker)")
 
-    # ZMQ output socket to send results to message broker
-    qwen_socket = context.socket(zmq.PUSH)
-    qwen_socket.connect(ZMQ_ENDPOINT)
-    print(f"✅ Qwen connected to message broker on {ZMQ_ENDPOINT}")
+    # Output socket: send results to message broker
+    output_socket = context.socket(zmq.PUSH)
+    output_socket.connect(ZMQ_OUTPUT_ENDPOINT)
+    print(f"✅ Qwen connected (PUSH) to message broker on {ZMQ_OUTPUT_ENDPOINT}")
     print("="*60 + "\n")
 
     raw_queue: List[Dict[str, Any]] = []
@@ -415,7 +428,7 @@ def main():
 
     try:
         while True:
-            msg = socket.recv()
+            msg = input_socket.recv()
             rec = json.loads(msg.decode("utf-8"))
 
             # ✨ NEW: if this is a tracker frame → store and continue
@@ -514,7 +527,7 @@ def main():
                     "frame_range": {"start": frame_start, "end": frame_end},
                     "result": result
                 }
-                qwen_socket.send(json.dumps(result_record, ensure_ascii=False).encode("utf-8"))
+                output_socket.send(json.dumps(result_record, ensure_ascii=False).encode("utf-8"))
                 print("[QWEN] Sent anomaly result to broker")
             except Exception as e:
                 print(f"[QWEN] Failed to send result: {e}")

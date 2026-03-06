@@ -110,12 +110,20 @@ def extract_datetime_candidates(text: str) -> List[str]:
 
 
 def main():
+    from config import (
+        ZMQ_VIDEO_BROADCASTER_ENDPOINT,
+        ZMQ_QWEN_INPUT_ENDPOINT,
+        FLORENCE_MODEL,
+        FLORENCE_PROCESS_EVERY_N_FRAMES,
+        FLORENCE_OUTPUT_FILE
+    )
+    
     parser = argparse.ArgumentParser()
-    parser.add_argument("--video-endpoint", default="tcp://127.0.0.1:5560",
+    parser.add_argument("--video-endpoint", default=ZMQ_VIDEO_BROADCASTER_ENDPOINT,
                         help="ZeroMQ endpoint to receive video frames (PULL).")
-    parser.add_argument("--qwen-endpoint", default="tcp://127.0.0.1:5580",
+    parser.add_argument("--qwen-endpoint", default=ZMQ_QWEN_INPUT_ENDPOINT,
                         help="ZeroMQ endpoint to send text records to Qwen worker (PUSH).")
-    parser.add_argument("--model", default="florence-community/Florence-2-base")
+    parser.add_argument("--model", default=FLORENCE_MODEL)
     parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
     parser.add_argument("--out", default="analysis.jsonl")
     parser.add_argument("--process_every_n_frames", "--every", dest="process_every_n_frames", type=int, default=30,

@@ -8,7 +8,10 @@ All ports, endpoints, and settings defined in one place
 # ============================================================
 ZMQ_VIDEO_BROADCASTER_ENDPOINT = "tcp://127.0.0.1:5560"  # Video frames (PUB)
 ZMQ_VIDEO_CMD_ENDPOINT = "tcp://127.0.0.1:5561"          # Video commands (REP)
-ZMQ_MESSAGE_BROKER_ENDPOINT = "tcp://127.0.0.1:5580"     # All workers communicate here (PULL -> PUSH)
+
+# Worker communication ports
+ZMQ_QWEN_INPUT_ENDPOINT = "tcp://127.0.0.1:5581"         # Florence + Tracker → Qwen (PUSH → PULL)
+ZMQ_MESSAGE_BROKER_ENDPOINT = "tcp://127.0.0.1:5582"     # All workers → Message Broker (PUSH → PULL)
 
 # ============================================================
 # WebSocket Configuration

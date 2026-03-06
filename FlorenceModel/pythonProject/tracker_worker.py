@@ -198,11 +198,14 @@ def main():
 
     print(f"[TRACKER] SUB connect: {args.sub_endpoint}")
 
-    # ZMQ PUSH to Qwen worker (port 5580)
+    # Import config for Qwen endpoint
+    from config import ZMQ_QWEN_INPUT_ENDPOINT
+    
+    # ZMQ PUSH to Qwen worker
     qwen_context = zmq.Context()
     qwen_socket = qwen_context.socket(zmq.PUSH)
-    qwen_socket.connect("tcp://127.0.0.1:5580")
-    print("[TRACKER] Connected to Qwen worker via ZMQ PUSH (tcp://127.0.0.1:5580)")
+    qwen_socket.connect(ZMQ_QWEN_INPUT_ENDPOINT)
+    print(f"[TRACKER] Connected to Qwen worker via ZMQ PUSH ({ZMQ_QWEN_INPUT_ENDPOINT})")
 
     next_track_id = 1
     tracks: List[Track] = []
