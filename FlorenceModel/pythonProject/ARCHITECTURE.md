@@ -43,25 +43,40 @@ Clean layered architecture with proper separation of concerns. All workers commu
                        │
                        │ PUSH 5580
                        ▼
-            ┌──────────────────────┐
-            │  MESSAGE_BROKER.py   │
-            │  (PULL 5580)         │
-            │                      │
-            │ - Central hub        │
-            │ - Receives all data  │
-            │ - Broadcasts via WS  │
-            └──────────┬───────────┘
-                       │
-                       │ WebSocket 3000
-                       ▼
-            ┌──────────────────────┐
-            │   NESTJS FRONTEND    │
-            │   (React + API)      │
-            │                      │
-            │ - Real-time updates  │
-            │ - Dashboard          │
-            │ - Controls broadcast │
-            └──────────────────────┘
+            ┌──────────────────────────────┐
+            │  MESSAGE_BROKER.py           │
+            │  (PULL 5580 - Routes by type)│
+            │                              │
+            │  Routes:                     │
+            │  - florence_frame → /ws/... │
+            │  - tracker_frame → /ws/...  │
+            │  - qwen_anomaly → /ws/...   │
+            └──────┬──────────┬──────────┬─┘
+                   │          │          │
+                   ▼          ▼          ▼
+         /ws/florence   /ws/tracker   /ws/qwen
+                   │          │          │
+            ┌──────┴──────────┴──────────┘
+            │
+            ▼
+    ┌──────────────────────┐
+    │   NESTJS GATEWAYS    │
+    │ (3 separate paths)   │
+    │                      │
+    │ - Florence Gateway   │
+    │ - Tracker Gateway    │
+    │ - Qwen Gateway       │
+    └──────────┬───────────┘
+               │
+               ▼
+    ┌──────────────────────┐
+    │   NESTJS FRONTEND    │
+    │   (React + API)      │
+    │                      │
+    │ - Real-time updates  │
+    │ - Dashboard          │
+    │ - Controls broadcast │
+    └──────────────────────┘
 ```
 
 ## Port Configuration
@@ -71,7 +86,13 @@ Clean layered architecture with proper separation of concerns. All workers commu
 | 5560 | ZMQ PUB/SUB   | Frame streaming    | Broadcaster                      | Florence, Tracker |
 | 5561 | ZMQ REP/REQ   | Control commands   | NestJS                           | Broadcaster       |
 | 5580 | ZMQ PUSH/PULL | Results & analysis | Florence, Tracker, Qwen → Broker | Message Broker    |
-| 3000 | WebSocket     | Frontend updates   | Message Broker                   | NestJS            |
+| 3000 | WebSocket     | Frontend updates   | Message Broker (routes by type)  | NestJS Gateways   |
+
+**WebSocket Routing (Port 3000):**
+
+- `florence_frame` → `/ws/florence`
+- `tracker_frame` → `/ws/tracker`
+- `qwen_anomaly` → `/ws/qwen`
 
 ## Layer Separation
 
