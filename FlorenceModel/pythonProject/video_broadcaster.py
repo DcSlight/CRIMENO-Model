@@ -4,12 +4,14 @@ import zmq
 import time
 import argparse
 
+
 def encode_jpg(frame_bgr, jpeg_quality: int) -> bytes:
     """Encodes a BGR frame into a JPEG buffer."""
     ok, buf = cv2.imencode(".jpg", frame_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), int(jpeg_quality)])
     if not ok:
         raise RuntimeError("Failed to encode JPG")
     return buf.tobytes()
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -23,7 +25,7 @@ def main():
     args = parser.parse_args()
 
     context = zmq.Context()
-    
+
     # PUB socket for broadcasting frames (Tracker/Florence)
     pub_socket = context.socket(zmq.PUB)
     pub_socket.bind(args.endpoint)
@@ -31,7 +33,7 @@ def main():
     # REP socket for receiving commands from NestJS
     cmd_socket = context.socket(zmq.REP)
     cmd_socket.bind(args.cmd_endpoint)
-    
+
     poller = zmq.Poller()
     poller.register(cmd_socket, zmq.POLLIN)
 
@@ -41,36 +43,50 @@ def main():
     video_fps = 25.0
     last_send_ts = 0.0
     stream_start_time = 0.0
-    
+
     print(f"[INFO] Broadcaster initialized. PUB: {args.endpoint}, CMD: {args.cmd_endpoint}")
     print(f"[STATUS] Waiting for 'play' command...")
 
+    # AUTO-PLAY MODE: if video_path was provided directly, start streaming immediately
+    if args.video_path is not None:
+        print(f"[AUTO-PLAY] Starting video immediately: {args.video_path}")
+        cap = cv2.VideoCapture(args.video_path)
+        current_video = args.video_path
+        frame_index = 0
+        stream_start_time = time.time()
+
+        video_fps = cap.get(cv2.CAP_PROP_FPS)
+        if video_fps <= 0 or video_fps > 120:
+            video_fps = 25.0
+
+        print(f"[AUTO-PLAY] FPS={video_fps}")
+
     while True:
         # 1. Check for commands from NestJS
-        socks = dict(poller.poll(1)) 
+        socks = dict(poller.poll(1))
         if cmd_socket in socks:
             msg = cmd_socket.recv_json()
             if msg.get("cmd") == "play":
                 new_path = msg.get("video")
                 print(f"[CONTROL] Received play command: {new_path}")
-                
+
                 if cap is not None:
                     cap.release()
-                
+
                 cap = cv2.VideoCapture(new_path)
                 current_video = new_path
                 frame_index = 0
                 stream_start_time = time.time()
-                
+
                 # Get video FPS
                 video_fps = cap.get(cv2.CAP_PROP_FPS)
                 if video_fps <= 0 or video_fps > 120:
                     video_fps = 25.0  # Fallback to 25 FPS
-                
+
                 print(f"[INFO] Video FPS: {video_fps}")
-                
+
                 cmd_socket.send_json({"status": "ok", "video": new_path})
-                
+
                 # Meta-data broadcast for the new stream
                 ret, frame0 = cap.read()
                 if ret:
@@ -82,7 +98,7 @@ def main():
 
         # 2. Idle check
         if cap is None or not cap.isOpened():
-            time.sleep(0.1) 
+            time.sleep(0.1)
             continue
 
         # 3. Read frame
@@ -105,7 +121,7 @@ def main():
         # Calculate when this frame should be sent based on video FPS
         expected_time = stream_start_time + (frame_index / video_fps)
         current_time = time.time()
-        
+
         # If we're ahead of schedule, wait
         time_diff = expected_time - current_time
         if time_diff > 0:
@@ -113,7 +129,7 @@ def main():
 
         # Calculate video timestamp
         video_time_ms = int(frame_index * (1000.0 / video_fps))
-        
+
         # Encode and broadcast
         jpg = encode_jpg(frame, args.jpeg_quality)
         pub_socket.send_multipart([
@@ -127,6 +143,7 @@ def main():
             print(f"[STREAMING] {current_video} | frame={frame_index} | time={video_time_ms}ms | fps={video_fps}")
 
         frame_index += 1
+
 
 if __name__ == "__main__":
     main()

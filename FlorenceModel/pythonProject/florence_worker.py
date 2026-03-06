@@ -3,6 +3,7 @@ import json
 import re
 import time
 import argparse
+import asyncio
 from typing import Any, Dict, List, Optional, Tuple
 
 import zmq
@@ -10,12 +11,12 @@ import torch
 from PIL import Image
 from transformers import pipeline
 
-
+# --- Regex extraction ---
 DATE_PATTERNS = [
-    re.compile(r"\b(20\d{2})[-/\.](0[1-9]|1[0-2])[-/\.]([0-2]\d|3[01])\b"),
-    re.compile(r"\b([0-2]\d|3[01])[-/\.](0[1-9]|1[0-2])[-/\.](20\d{2})\b"),
+    re.compile(r"\b(20\d{2})[-/\.](0[1-9]|1[0-2])[-/\.]([0-2]\d|3[01])\b"),  # YYYY-MM-DD
+    re.compile(r"\b([0-2]\d|3[01])[-/\.](0[1-9]|1[0-2])[-/\.](20\d{2})\b"),  # DD-MM-YYYY
 ]
-TIME_PATTERN = re.compile(r"\b([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\b")
+TIME_PATTERN = re.compile(r"\b([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\b")    # HH:MM(:SS)
 
 
 def now_unix_ms() -> int:
@@ -26,12 +27,10 @@ def load_florence_pipeline(model_name: str, device_str: str):
     if device_str == "cuda" and torch.cuda.is_available():
         device = 0
         torch_dtype = torch.float16
-        actual_device = "cuda"
         print("Device set to use cuda")
     else:
         device = -1
         torch_dtype = torch.float32
-        actual_device = "cpu"
         print("Device set to use cpu")
 
     vision_pipe = pipeline(
@@ -40,24 +39,39 @@ def load_florence_pipeline(model_name: str, device_str: str):
         device=device,
         torch_dtype=torch_dtype,
     )
-    print(f"✅ Florence-2 pipeline loaded ({model_name}) on {actual_device}")
-    return vision_pipe, actual_device
+    print(f"✅ Florence-2 pipeline loaded ({model_name}) on {device_str if device != -1 else 'cpu'}")
+    return vision_pipe
 
 
-def recv_frame_sub(socket) -> Tuple[int, Optional[int], bytes]:
+def recv_frame(socket) -> Tuple[int, Optional[int], bytes]:
     parts = socket.recv_multipart()
-    # [topic, frame_idx, video_time_ms, jpg]
-    if len(parts) < 4:
-        raise ValueError(f"Expected 4 parts, got {len(parts)}")
 
-    frame_idx = int(parts[1].decode("utf-8"))
-    try:
-        video_time_ms = int(parts[2].decode("utf-8"))
-    except Exception:
-        video_time_ms = None
+    # Supports both formats:
+    # 1) [topic, frame_idx, video_time_ms, jpg]
+    # 2) [frame_idx, video_time_ms, jpg]
+    if len(parts) == 4:
+        # New broadcaster format with topic
+        _, frame_idx_b, video_time_b, jpg_bytes = parts
+        frame_idx = int(frame_idx_b.decode("utf-8"))
+        try:
+            video_time_ms = int(video_time_b.decode("utf-8"))
+        except:
+            video_time_ms = None
+        return frame_idx, video_time_ms, jpg_bytes
 
-    jpg_bytes = parts[3]
-    return frame_idx, video_time_ms, jpg_bytes
+    elif len(parts) == 3:
+        # Old broadcaster format
+        frame_idx = int(parts[0].decode("utf-8"))
+        try:
+            video_time_ms = int(parts[1].decode("utf-8"))
+        except:
+            video_time_ms = None
+        jpg_bytes = parts[2]
+        return frame_idx, video_time_ms, jpg_bytes
+
+    else:
+        raise ValueError(f"Unexpected multipart format: {len(parts)} parts")
+
 
 
 def pil_from_jpg(jpg_bytes: bytes) -> Image.Image:
@@ -96,15 +110,12 @@ def extract_datetime_candidates(text: str) -> List[str]:
     return uniq
 
 
-# -------------------------
-# WebSocket sender (NestJS PromptsGateway)
-# -------------------------
 async def ws_connect_loop(ws_url: str):
-    """
-    Keeps trying to connect, returns an open websocket.
-    """
-    import asyncio
-    import websockets  # lazy import
+    import websockets
+
+    if ws_url.lower() == "none":
+        print("[WS] Disabled (ws_url=none)")
+        return None
 
     backoff = 0.25
     while True:
@@ -119,157 +130,140 @@ async def ws_connect_loop(ws_url: str):
 
 
 async def ws_send_json(ws, payload: Dict[str, Any]):
-    import json as _json
-    await ws.send(_json.dumps(payload, ensure_ascii=False))
+    if ws is not None:
+        await ws.send(json.dumps(payload, ensure_ascii=False))
 
 
-# -------------------------
-# Main loop
-# -------------------------
 async def main_async():
-    import asyncio
-
     parser = argparse.ArgumentParser()
-    parser.add_argument("--endpoint", default="tcp://127.0.0.1:5560")
-    parser.add_argument("--out", default="florence.jsonl")
+    parser.add_argument("--video-endpoint", default="tcp://127.0.0.1:5560",
+                        help="ZeroMQ endpoint to receive video frames (PULL).")
+    parser.add_argument("--qwen-endpoint", default="tcp://127.0.0.1:5580",
+                        help="ZeroMQ endpoint to send text records to Qwen worker (PUSH).")
+    parser.add_argument("--ws-url", default="none",
+                        help="WebSocket URL for forwarding records (or 'none' to disable).")
     parser.add_argument("--model", default="florence-community/Florence-2-base")
     parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
-    parser.add_argument("--every", type=int, default=60, help="process every N frames")
-
-    # New: send the SAME record to NestJS over WS (PromptsGateway)
-    parser.add_argument(
-        "--ws_url",
-        default="ws://127.0.0.1:3000/ws/prompts",
-        help="NestJS WS endpoint (PromptsGateway)",
-    )
-    parser.add_argument(
-        "--ws_enable",
-        type=int,
-        default=1,
-        help="1=send to NestJS via WS, 0=disable WS sending",
-    )
-
+    parser.add_argument("--out", default="analysis.jsonl")
+    parser.add_argument("--process_every_n_frames", type=int, default=30)
     args = parser.parse_args()
 
-    vision_pipe, actual_device = load_florence_pipeline(args.model, args.device)
+    vision_pipe = load_florence_pipeline(args.model, args.device)
 
+    # ZeroMQ – input (video frames)
     context = zmq.Context()
-    socket = context.socket(zmq.SUB)
-    socket.connect(args.endpoint)
-    socket.setsockopt(zmq.SUBSCRIBE, b"frame")
-    print(f"🔗 SUB connected to broadcaster on {args.endpoint}")
-    print(f"📝 Writing JSONL to: {args.out}")
-    print(f"⚙️ Florence processes every {args.every} frames")
-    if args.ws_enable == 1:
-        print(f"🌐 WS send enabled -> {args.ws_url}")
-    else:
-        print("🌐 WS send disabled")
+    video_socket = context.socket(zmq.SUB)
+    video_socket.connect(args.video_endpoint)
+    video_socket.setsockopt(zmq.SUBSCRIBE, b"frame")
+    print(f"🔗 Connected to video broadcaster on {args.video_endpoint}")
 
+    # ZeroMQ – output (text to Qwen)
+    qwen_socket = context.socket(zmq.PUSH)
+    qwen_socket.connect(args.qwen_endpoint)
+    print(f"🔗 Connected Qwen text output PUSH on {args.qwen_endpoint}")
+
+    ws = await ws_connect_loop(args.ws_url)
+
+    # Tasks
     TASK_CAPTION = "<MORE_DETAILED_CAPTION>"
     TASK_OD = "<OD>"
     TASK_OCR = "<OCR>"
+    WEAPON_QUERY = "gun, handgun, pistol, revolver, firearm, rifle, shotgun, knife, blade, switchblade"
+    TASK_WEAPONS = f"<OPEN_VOCABULARY_DETECTION>{WEAPON_QUERY}"
 
-    processed = 0
-    skipped = 0
-
-    ws = None
-    if args.ws_enable == 1:
-        try:
-            ws = await ws_connect_loop(args.ws_url)
-        except Exception as e:
-            print(f"[WS] Disabled (failed to init): {e}")
-            ws = None
+    # Open output file (append)
+    out_path = args.out
+    print(f"📝 Writing JSONL to: {out_path}")
 
     try:
         while True:
-            # ZMQ recv is blocking; run it in a thread to not block asyncio loop
-            frame_idx, video_time_ms, jpg_bytes = await asyncio.to_thread(recv_frame_sub, socket)
-
-            # Skip fast without decoding
-            if args.every > 1 and (frame_idx % args.every != 0):
-                skipped += 1
+            frame_idx, video_time_ms, jpg_bytes = await asyncio.to_thread(recv_frame, video_socket)
+            if frame_idx % args.process_every_n_frames != 0:
                 continue
-
             image = pil_from_jpg(jpg_bytes)
 
             record: Dict[str, Any] = {
-                "type": "florence_frame",  # for NestJS PromptsGateway log routing
                 "frame_index": frame_idx,
                 "video_time_ms": video_time_ms,
                 "raw": {},
-                "text_overlay": {},
                 "meta": {
                     "generated_at_unix_ms": now_unix_ms(),
                     "model": args.model,
-                    "device": actual_device,
-                    "worker": "florence_worker",
-                    "every": args.every,
-                },
+                }
             }
 
+            # Caption
             try:
                 caption = run_task(vision_pipe, image, TASK_CAPTION)
             except Exception as e:
                 caption = f"[ERROR running {TASK_CAPTION}] {e}"
             record["raw"]["more_detailed_caption"] = caption
 
+            # OD
             try:
                 od = run_task(vision_pipe, image, TASK_OD)
             except Exception as e:
                 od = f"[ERROR running {TASK_OD}] {e}"
             record["raw"]["object_detection"] = od
 
+            # OCR
             try:
                 ocr = run_task(vision_pipe, image, TASK_OCR)
             except Exception as e:
                 ocr = f"[ERROR running {TASK_OCR}] {e}"
             record["raw"]["ocr"] = ocr
+            record["text_overlay"] = {
+                "datetime_candidates": extract_datetime_candidates(ocr),
+            }
 
-            record["text_overlay"]["datetime_candidates"] = extract_datetime_candidates(record["raw"]["ocr"])
+            # Open vocab weapons
+            try:
+                weapons = run_task(vision_pipe, image, TASK_WEAPONS)
+            except Exception as e:
+                weapons = f"[ERROR running <OPEN_VOCABULARY_DETECTION>] {e}"
+            record["raw"]["open_vocab_weapons"] = weapons
 
-            # Append JSONL (same as before)
-            with open(args.out, "a", encoding="utf-8") as f:
-                f.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-            # Send to NestJS via WS (same record)
-            if ws is not None:
-                try:
-                    await ws_send_json(ws, record)
-                except Exception as e:
-                    print(f"[WS] Send failed: {e} -> reconnect")
-                    try:
-                        await ws.close()
-                    except Exception:
-                        pass
-                    try:
-                        ws = await ws_connect_loop(args.ws_url)
-                    except Exception as e2:
-                        print(f"[WS] Reconnect failed, disabling WS: {e2}")
-                        ws = None
-
-            processed += 1
+            # Console output
             dt = record["text_overlay"]["datetime_candidates"]
             dt_str = dt[0] if dt else "-"
             caption_short = caption.replace("\n", " ").strip()
             if len(caption_short) > 120:
-                caption_short = caption_short[:120] + "."
-            print(f"🧠 Florence | Frame {frame_idx} | t={video_time_ms}ms | dt={dt_str} | caption={caption_short}")
+                caption_short = caption_short[:120] + "..."
+
+            print(f"🎬 Frame {frame_idx}"
+                  + (f" | t={video_time_ms}ms" if video_time_ms is not None else "")
+                  + f" | dt={dt_str}"
+                  + f" | caption={caption_short}")
+
+            # ✨ NEW: send to Qwen worker via ZeroMQ (as JSON-line string)
+            msg = json.dumps(record, ensure_ascii=False).encode("utf-8")
+            qwen_socket.send(msg)
+
+            # Send to WebSocket (if enabled)
+            try:
+                await ws_send_json(ws, record)
+            except Exception as e:
+                print(f"[WS] Send failed: {e}. Reconnecting...")
+                ws = await ws_connect_loop(args.ws_url)
+
+            # --- Write JSONL ---
+            with open(out_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     except KeyboardInterrupt:
-        print("\n[INFO] Stopped by user (florence_worker).")
-        print(f"[STATS] processed={processed}, skipped={skipped}")
+        print("\n[INFO] Stopped by user (Florence worker).")
     finally:
-        try:
-            if ws is not None:
+        if ws is not None:
+            try:
                 await ws.close()
-        except Exception:
-            pass
-        socket.close()
+            except Exception:
+                pass
+        video_socket.close()
+        qwen_socket.close()
         context.term()
 
 
 def main():
-    import asyncio
     asyncio.run(main_async())
 
 
