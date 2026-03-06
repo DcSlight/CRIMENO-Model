@@ -1,0 +1,164 @@
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from two sources:
+    1. Florence (semantic captions, OCR, object descriptions, behaviors, interactions)
+    2. YOLO tracker (object IDs, classes, bounding boxes, continuity across frames)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+
+    ### 3. HOW TO USE THE INPUTS
+    - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
+    - YOLO tracker data (IDs, classes, bounding boxes) is SECONDARY and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF YOLO DATA
+    You MUST NOT use YOLO tracker data as evidence of anomaly.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use “ID 1”, “ID 2”, etc. as key moments.
+    - DO NOT treat “multiple people detected” as suspicious by itself.
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - be based ONLY on semantic content from Florence (captions, OCR, behaviors)
+    - describe meaningful actions, interactions, or unusual events
+    - NOT include YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "man holding phone instead of payment method"
+    - "customer leaning over cash register"
+    - "person reaching into backpack"
+    - "individual looking around nervously"
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+    - "bounding box moved left"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe behavioral or contextual anomalies
+    - be based on Florence semantic content
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Recent context:
+- There are three people in the image, two men and a woman, standing in front of a cash register. The cash register is in the center of the image and is surrounded by various items on display. The man on the left is wearing a blue t-shirt and jeans and is holding a credit card in his hand. YOLO tracker detected: ID 1: person (confidence 0.89) at [382,31,508,269]; ID 2: person (confidence 0.83) at [548,0,623,155]; ID 3: person (confidence 0.81) at [201,88,296,348]; ID 5: skateboard (confidence 0.70) at [395,216,436,289]; ID 4: person (confidence 0.61) at [484,2,554,170].
+- There are two people in the image, one wearing a blue tank top and the other wearing a black tank top, standing in front of a cash register. The cash register is on a wooden countertop and there are several other items on the countertop. In the background, there are other people walking around the store. YOLO tracker detected: ID 10: person (confidence 0.74) at [188,84,289,348]; ID 1: person (confidence 0.74) at [439,72,587,297]; ID 11: person (confidence 0.62) at [494,2,553,113]; ID 12: person (confidence 0.60) at [567,0,621,105]; ID 13: person (confidence 0.59) at [453,0,552,156].
+- In the center of the image, there is a cash register with a woman standing behind it. The woman is wearing a blue t-shirt and jeans and appears to be paying for something. On the right side of the cash register, there are two men, one wearing a black shirt and the other wearing a white shirt. YOLO tracker detected: ID 13: person (confidence 0.87) at [456,5,554,174]; ID 12: person (confidence 0.84) at [552,1,622,157]; ID 10: person (confidence 0.80) at [194,57,304,269].
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from two sources:
+    1. Florence (semantic captions, OCR, object descriptions, behaviors, interactions)
+    2. YOLO tracker (object IDs, classes, bounding boxes, continuity across frames)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+
+    ### 3. HOW TO USE THE INPUTS
+    - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
+    - YOLO tracker data (IDs, classes, bounding boxes) is SECONDARY and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF YOLO DATA
+    You MUST NOT use YOLO tracker data as evidence of anomaly.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use “ID 1”, “ID 2”, etc. as key moments.
+    - DO NOT treat “multiple people detected” as suspicious by itself.
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - be based ONLY on semantic content from Florence (captions, OCR, behaviors)
+    - describe meaningful actions, interactions, or unusual events
+    - NOT include YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "man holding phone instead of payment method"
+    - "customer leaning over cash register"
+    - "person reaching into backpack"
+    - "individual looking around nervously"
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+    - "bounding box moved left"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe behavioral or contextual anomalies
+    - be based on Florence semantic content
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Recent context:
+- There are three people in the image, two men and a woman, standing in front of a cash register. The cash register is in the center of the image and is surrounded by various items on display. The man on the left is wearing a blue t-shirt and jeans and is holding a credit card in his hand. YOLO tracker detected: ID 1: person (confidence 0.89) at [382,31,508,269]; ID 2: person (confidence 0.83) at [548,0,623,155]; ID 3: person (confidence 0.81) at [201,88,296,348]; ID 5: skateboard (confidence 0.70) at [395,216,436,289]; ID 4: person (confidence 0.61) at [484,2,554,170].
+- There are two people in the image, one wearing a blue tank top and the other wearing a black tank top, standing in front of a cash register. The cash register is on a wooden countertop and there are several other items on the countertop. In the background, there are other people walking around the store. YOLO tracker detected: ID 10: person (confidence 0.74) at [188,84,289,348]; ID 1: person (confidence 0.74) at [439,72,587,297]; ID 11: person (confidence 0.62) at [494,2,553,113]; ID 12: person (confidence 0.60) at [567,0,621,105]; ID 13: person (confidence 0.59) at [453,0,552,156].
+- In the center of the image, there is a cash register with a woman standing behind it. The woman is wearing a blue t-shirt and jeans and appears to be paying for something. On the right side of the cash register, there are two men, one wearing a black shirt and the other wearing a white shirt. YOLO tracker detected: ID 13: person (confidence 0.87) at [456,5,554,174]; ID 12: person (confidence 0.84) at [552,1,622,157]; ID 10: person (confidence 0.80) at [194,57,304,269].
+- The cash register is filled with various items such as bottles, cans, and other household items. The man on the left is wearing a blue t-shirt and jeans, and the man in the middle is wearing black pants and a black shirt. The other two men are wearing blue shirts and black pants. YOLO tracker detected: ID 10: person (confidence 0.86) at [217,30,304,242]; ID 13: person (confidence 0.84) at [430,16,536,222]; ID 12: person (confidence 0.77) at [549,1,621,142]; ID 17: skateboard (confidence 0.71) at [559,82,611,155]; ID 16: skateboard (confidence 0.60) at [556,102,600,156].
+- The image is a CCTV footage of a convenience store. The cash register is in the center of the image and appears to be in the middle of a transaction. The woman is on the left side of the counter, wearing a blue shirt and jeans, and the man on the right side is wearing a black t-shirt and jeans. YOLO tracker detected: ID 10: person (confidence 0.87) at [199,41,307,279]; ID 12: person (confidence 0.80) at [535,0,617,154]; ID 13: person (confidence 0.78) at [407,41,536,237]; ID 28: skateboard (confidence 0.38) at [430,134,514,238].
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================

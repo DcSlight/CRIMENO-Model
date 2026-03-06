@@ -130,7 +130,7 @@ python tracker_worker.py --ws_url ws://localhost:3000/ws/tracker
 ### 5. Start Video Broadcaster (Last)
 
 ```bash
-python video_broadcaster.py path/to/video.mp4
+python video_broadcaster.py videos/shop.mp4
 ```
 
 ## Testing Without NestJS

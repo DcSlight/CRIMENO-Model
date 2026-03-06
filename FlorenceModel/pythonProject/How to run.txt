@@ -13,7 +13,4 @@ python tracker_worker.py --ws_url ws://127.0.0.1:3000/ws/tracker --send_overlay 
 python qwen_anomaly_worker.py --device cuda
 
 
-
-
-
 python video_broadcaster.py videos/shop.mp4
