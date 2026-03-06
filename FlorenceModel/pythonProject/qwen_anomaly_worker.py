@@ -537,7 +537,8 @@ def main():
     except KeyboardInterrupt:
         print("\n[INFO] Stopped by user (Qwen anomaly worker).")
     finally:
-        socket.close()
+        input_socket.close()
+        output_socket.close()
         context.term()
 
 

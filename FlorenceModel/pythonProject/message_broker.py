@@ -38,6 +38,8 @@ class MessageBroker:
         
         # ZMQ socket to forward Florence/Tracker data to Qwen
         self.qwen_push_socket = self.zmq_context.socket(zmq.PUSH)
+        self.qwen_push_socket.setsockopt(zmq.SNDHWM, 1000)
+        self.qwen_push_socket.setsockopt(zmq.SNDTIMEO, 0)
         self.qwen_push_socket.connect(ZMQ_QWEN_INPUT_ENDPOINT)
         
         # WebSocket client connections to NestJS gateways
@@ -47,6 +49,19 @@ class MessageBroker:
         
         logger.info(f"✅ ZMQ PULL bound on {ZMQ_PULL_ENDPOINT}")
         logger.info(f"✅ ZMQ PUSH to Qwen on {ZMQ_QWEN_INPUT_ENDPOINT}")
+
+    def try_send_to_qwen(self, msg: bytes, msg_type: str, frame_idx) -> bool:
+        """Non-blocking forward to Qwen. Never blocks broker loop."""
+        try:
+            self.qwen_push_socket.send(msg, flags=zmq.DONTWAIT)
+            logger.info(f"➡️  Forwarded to Qwen | type={msg_type} | frame={frame_idx}")
+            return True
+        except zmq.Again:
+            logger.warning(f"⚠️  Dropped for Qwen (backpressure) | type={msg_type} | frame={frame_idx}")
+            return False
+        except Exception as e:
+            logger.error(f"❌ Failed forwarding to Qwen | type={msg_type} | frame={frame_idx} | err={e}")
+            return False
     
     async def connect_to_nestjs(self):
         """Connect to NestJS WebSocket gateways as a client."""
@@ -93,27 +108,25 @@ class MessageBroker:
                 if msg_type == "florence_frame":
                     frame_idx = payload.get("frame_index", "-")
                     logger.info(f"📨 Received florence_frame | frame={frame_idx}")
-                    # Send IMMEDIATELY to NestJS (no waiting!)
-                    await self.send_to_florence(msg_str)
-                    # Also forward to Qwen for analysis
-                    await loop.run_in_executor(None, self.qwen_push_socket.send, msg)
+                    # Independent tunnels: do not await one destination before the other.
+                    asyncio.create_task(self.send_to_florence(msg_str, frame_idx))
+                    self.try_send_to_qwen(msg, msg_type, frame_idx)
                 
                 elif msg_type == "tracker_frame":
                     frame_idx = payload.get("frame_index", "-")
                     logger.info(f"📨 Received tracker_frame | frame={frame_idx}")
-                    # Send IMMEDIATELY to NestJS (no waiting!)
-                    await self.send_to_tracker(msg_str)
-                    # Also forward to Qwen for analysis
-                    await loop.run_in_executor(None, self.qwen_push_socket.send, msg)
+                    # Independent tunnels: do not await one destination before the other.
+                    asyncio.create_task(self.send_to_tracker(msg_str, frame_idx))
+                    self.try_send_to_qwen(msg, msg_type, frame_idx)
                 
                 elif msg_type == "qwen_anomaly":
                     frame_start = payload.get("frame_range", {}).get("start", "-")
                     logger.info(f"📨 Received qwen_anomaly | frame_start={frame_start}")
-                    # Qwen results go directly to NestJS
-                    await self.send_to_qwen(msg_str)
+                    # Qwen output has its own tunnel to NestJS.
+                    asyncio.create_task(self.send_to_qwen(msg_str, frame_start))
                 
                 else:
-                    logger.warn(f"⚠️  Unknown message type: {msg_type}")
+                    logger.warning(f"⚠️  Unknown message type: {msg_type}")
                 
             except zmq.Again:
                 # No message available, wait a bit
@@ -122,38 +135,41 @@ class MessageBroker:
                 logger.error(f"❌ ZMQ listener error: {e}")
                 await asyncio.sleep(0.1)
     
-    async def send_to_florence(self, message: str):
+    async def send_to_florence(self, message: str, frame_idx="-"):
         """Send message to NestJS Florence gateway."""
         if not self.florence_ws or self.florence_ws.closed:
-            logger.warn("⚠️  Florence WS not connected")
+            logger.warning("⚠️  Florence WS not connected")
             return
         
         try:
             await self.florence_ws.send(message)
+            logger.info(f"✅ Sent to NestJS Florence | frame={frame_idx}")
         except Exception as e:
             logger.error(f"❌ Failed to send to Florence gateway: {e}")
             self.florence_ws = None
     
-    async def send_to_tracker(self, message: str):
+    async def send_to_tracker(self, message: str, frame_idx="-"):
         """Send message to NestJS Tracker gateway."""
         if not self.tracker_ws or self.tracker_ws.closed:
-            logger.warn("⚠️  Tracker WS not connected")
+            logger.warning("⚠️  Tracker WS not connected")
             return
         
         try:
             await self.tracker_ws.send(message)
+            logger.info(f"✅ Sent to NestJS Tracker | frame={frame_idx}")
         except Exception as e:
             logger.error(f"❌ Failed to send to Tracker gateway: {e}")
             self.tracker_ws = None
     
-    async def send_to_qwen(self, message: str):
+    async def send_to_qwen(self, message: str, frame_start="-"):
         """Send message to NestJS Qwen gateway."""
         if not self.qwen_ws or self.qwen_ws.closed:
-            logger.warn("⚠️  Qwen WS not connected")
+            logger.warning("⚠️  Qwen WS not connected")
             return
         
         try:
             await self.qwen_ws.send(message)
+            logger.info(f"✅ Sent to NestJS Qwen | frame_start={frame_start}")
         except Exception as e:
             logger.error(f"❌ Failed to send to Qwen gateway: {e}")
             self.qwen_ws = None

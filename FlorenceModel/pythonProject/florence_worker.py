@@ -228,7 +228,7 @@ def main():
         print("\n[INFO] Stopped by user (Florence worker).")
     finally:
         video_socket.close()
-        qwen_socket.close()
+        output_socket.close()
         context.term()
 
 

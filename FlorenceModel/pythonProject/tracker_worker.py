@@ -318,9 +318,9 @@ def main():
         print("\n[INFO] Stopped by user (Tracker worker).")
     finally:
         sub.close()
-        qwen_socket.close()
+        output_socket.close()
         context.term()
-        qwen_context.term()
+        output_context.term()
 
 
 if __name__ == "__main__":
