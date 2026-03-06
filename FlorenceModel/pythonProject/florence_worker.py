@@ -3,7 +3,6 @@ import json
 import re
 import time
 import argparse
-import asyncio
 from typing import Any, Dict, List, Optional, Tuple
 
 import zmq
@@ -110,38 +109,12 @@ def extract_datetime_candidates(text: str) -> List[str]:
     return uniq
 
 
-async def ws_connect_loop(ws_url: str):
-    import websockets
-
-    if ws_url.lower() == "none":
-        print("[WS] Disabled (ws_url=none)")
-        return None
-
-    backoff = 0.25
-    while True:
-        try:
-            ws = await websockets.connect(ws_url, max_size=16 * 1024 * 1024)
-            print(f"[WS] Connected: {ws_url}")
-            return ws
-        except Exception as e:
-            print(f"[WS] Connect failed: {e} (retry in {backoff:.2f}s)")
-            await asyncio.sleep(backoff)
-            backoff = min(5.0, backoff * 1.7)
-
-
-async def ws_send_json(ws, payload: Dict[str, Any]):
-    if ws is not None:
-        await ws.send(json.dumps(payload, ensure_ascii=False))
-
-
-async def main_async():
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--video-endpoint", default="tcp://127.0.0.1:5560",
                         help="ZeroMQ endpoint to receive video frames (PULL).")
     parser.add_argument("--qwen-endpoint", default="tcp://127.0.0.1:5580",
                         help="ZeroMQ endpoint to send text records to Qwen worker (PUSH).")
-    parser.add_argument("--ws-url", "--ws_url", dest="ws_url", default="none",
-                        help="WebSocket URL for forwarding records (or 'none' to disable).")
     parser.add_argument("--model", default="florence-community/Florence-2-base")
     parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
     parser.add_argument("--out", default="analysis.jsonl")
@@ -163,8 +136,6 @@ async def main_async():
     qwen_socket.connect(args.qwen_endpoint)
     print(f"🔗 Connected Qwen text output PUSH on {args.qwen_endpoint}")
 
-    ws = await ws_connect_loop(args.ws_url)
-
     # Tasks
     TASK_CAPTION = "<MORE_DETAILED_CAPTION>"
     TASK_OD = "<OD>"
@@ -178,12 +149,13 @@ async def main_async():
 
     try:
         while True:
-            frame_idx, video_time_ms, jpg_bytes = await asyncio.to_thread(recv_frame, video_socket)
+            frame_idx, video_time_ms, jpg_bytes = recv_frame(video_socket)
             if frame_idx % args.process_every_n_frames != 0:
                 continue
             image = pil_from_jpg(jpg_bytes)
 
             record: Dict[str, Any] = {
+                "type": "florence_frame",
                 "frame_index": frame_idx,
                 "video_time_ms": video_time_ms,
                 "raw": {},
@@ -236,16 +208,9 @@ async def main_async():
                   + f" | dt={dt_str}"
                   + f" | caption={caption_short}")
 
-            # ✨ NEW: send to Qwen worker via ZeroMQ (as JSON-line string)
+            # Send to Qwen worker via ZeroMQ (as JSON-line string)
             msg = json.dumps(record, ensure_ascii=False).encode("utf-8")
             qwen_socket.send(msg)
-
-            # Send to WebSocket (if enabled)
-            try:
-                await ws_send_json(ws, record)
-            except Exception as e:
-                print(f"[WS] Send failed: {e}. Reconnecting...")
-                ws = await ws_connect_loop(args.ws_url)
 
             # --- Write JSONL ---
             with open(out_path, "a", encoding="utf-8") as f:
@@ -254,18 +219,9 @@ async def main_async():
     except KeyboardInterrupt:
         print("\n[INFO] Stopped by user (Florence worker).")
     finally:
-        if ws is not None:
-            try:
-                await ws.close()
-            except Exception:
-                pass
         video_socket.close()
         qwen_socket.close()
         context.term()
-
-
-def main():
-    asyncio.run(main_async())
 
 
 if __name__ == "__main__":

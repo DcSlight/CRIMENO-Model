@@ -3,11 +3,9 @@
 # - Subscribes to ZeroMQ PUB stream (topic: "frame")
 # - Runs YOLOv8 (COCO) + simple IOU tracker
 # - Optional motion fallback (MOG2)
-# - Sends results to NestJS via WebSocket
-# - ✨ Also sends tracking data to Qwen worker via ZeroMQ PUSH (port 5580)
+# - Sends tracking data to Qwen worker via ZeroMQ PUSH (port 5580)
 
 import argparse
-import asyncio
 import base64
 import json
 import time
@@ -162,39 +160,11 @@ def run_yolo(model, frame_bgr: np.ndarray, conf_th: float) -> List[Dict[str, Any
 
 
 # -------------------------
-# WebSocket sender
-# -------------------------
-async def ws_connect_loop(ws_url: str):
-    import websockets
-
-    if ws_url.lower() == "none":
-        print("[WS] Disabled (ws_url=none)")
-        return None
-
-    backoff = 0.25
-    while True:
-        try:
-            ws = await websockets.connect(ws_url, max_size=16 * 1024 * 1024)
-            print(f"[WS] Connected: {ws_url}")
-            return ws
-        except Exception as e:
-            print(f"[WS] Connect failed: {e} (retry in {backoff:.2f}s)")
-            await asyncio.sleep(backoff)
-            backoff = min(5.0, backoff * 1.7)
-
-
-async def ws_send_json(ws, payload: Dict[str, Any]):
-    if ws is not None:
-        await ws.send(json.dumps(payload, ensure_ascii=False))
-
-
-# -------------------------
 # Main loop
 # -------------------------
-async def main_async():
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sub_endpoint", default="tcp://127.0.0.1:5560")
-    parser.add_argument("--ws_url", default="none")
     parser.add_argument("--yolo_model", default="yolov8n.pt")
     parser.add_argument("--conf_th", type=float, default=0.35)
     parser.add_argument("--send_every_n_frames", type=int, default=1)
@@ -228,13 +198,11 @@ async def main_async():
 
     print(f"[TRACKER] SUB connect: {args.sub_endpoint}")
 
-    # ✨ NEW: ZMQ PUSH to Qwen worker (port 5580)
+    # ZMQ PUSH to Qwen worker (port 5580)
     qwen_context = zmq.Context()
     qwen_socket = qwen_context.socket(zmq.PUSH)
     qwen_socket.connect("tcp://127.0.0.1:5580")
     print("[TRACKER] Connected to Qwen worker via ZMQ PUSH (tcp://127.0.0.1:5580)")
-
-    ws = await ws_connect_loop(args.ws_url)
 
     next_track_id = 1
     tracks: List[Track] = []
@@ -243,112 +211,113 @@ async def main_async():
     last_log_ts = time.time()
     frames_processed = 0
 
-    while True:
-        try:
-            frame_idx, video_time_ms, jpg_bytes = await asyncio.to_thread(recv_frame_sub, sub)
-        except Exception:
-            await asyncio.sleep(0.01)
-            continue
+    try:
+        while True:
+            try:
+                frame_idx, video_time_ms, jpg_bytes = recv_frame_sub(sub)
+            except Exception:
+                time.sleep(0.01)
+                continue
 
-        if first_frame:
-            print(f"[TRACKER] First frame received (idx={frame_idx})")
-            first_frame = False
+            if first_frame:
+                print(f"[TRACKER] First frame received (idx={frame_idx})")
+                first_frame = False
 
-        if args.send_every_n_frames > 1 and (frame_idx % args.send_every_n_frames) != 0:
-            continue
+            if args.send_every_n_frames > 1 and (frame_idx % args.send_every_n_frames) != 0:
+                continue
 
-        frame = decode_jpg(jpg_bytes)
-        h, w = frame.shape[:2]
+            frame = decode_jpg(jpg_bytes)
+            h, w = frame.shape[:2]
 
-        dets = run_yolo(model, frame, args.conf_th)
+            dets = run_yolo(model, frame, args.conf_th)
 
-        if motion is not None and len(dets) == 0:
-            blobs = motion.detect(frame)
-            for bb in blobs:
-                dets.append({"bbox": bb, "cls_name": "moving_object", "conf": 1.0})
+            if motion is not None and len(dets) == 0:
+                blobs = motion.detect(frame)
+                for bb in blobs:
+                    dets.append({"bbox": bb, "cls_name": "moving_object", "conf": 1.0})
 
-        used_tracks = set()
-        new_tracks: List[Track] = []
+            used_tracks = set()
+            new_tracks: List[Track] = []
 
-        for d in dets:
-            bb = d["bbox"]
-            best_iou = 0.0
-            best_track = None
+            for d in dets:
+                bb = d["bbox"]
+                best_iou = 0.0
+                best_track = None
 
-            for t in tracks:
-                if t.track_id in used_tracks:
-                    continue
-                i = iou_xyxy(t.bbox, bb)
-                if i > best_iou:
-                    best_iou = i
-                    best_track = t
+                for t in tracks:
+                    if t.track_id in used_tracks:
+                        continue
+                    i = iou_xyxy(t.bbox, bb)
+                    if i > best_iou:
+                        best_iou = i
+                        best_track = t
 
-            if best_track is not None and best_iou >= args.iou_match_th:
-                used_tracks.add(best_track.track_id)
-                best_track.bbox = bb
-                best_track.cls_name = d["cls_name"]
-                best_track.conf = float(d["conf"])
-                best_track.last_seen_frame = frame_idx
-                new_tracks.append(best_track)
-            else:
-                t = Track(
-                    track_id=next_track_id,
-                    bbox=bb,
-                    cls_name=d["cls_name"],
-                    conf=float(d["conf"]),
-                    last_seen_frame=frame_idx,
-                )
-                next_track_id += 1
+                if best_track is not None and best_iou >= args.iou_match_th:
+                    used_tracks.add(best_track.track_id)
+                    best_track.bbox = bb
+                    best_track.cls_name = d["cls_name"]
+                    best_track.conf = float(d["conf"])
+                    best_track.last_seen_frame = frame_idx
+                    new_tracks.append(best_track)
+                else:
+                    t = Track(
+                        track_id=next_track_id,
+                        bbox=bb,
+                        cls_name=d["cls_name"],
+                        conf=float(d["conf"]),
+                        last_seen_frame=frame_idx,
+                    )
+                    next_track_id += 1
+                    used_tracks.add(t.track_id)
+                    new_tracks.append(t)
                 used_tracks.add(t.track_id)
                 new_tracks.append(t)
 
-        tracks = [t for t in new_tracks if (frame_idx - t.last_seen_frame) <= args.max_track_age]
+            tracks = [t for t in new_tracks if (frame_idx - t.last_seen_frame) <= args.max_track_age]
 
-        tracks_payload = []
-        for t in tracks:
-            x1, y1, x2, y2 = t.bbox
-            tracks_payload.append({
-                "track_id": t.track_id,
-                "cls": t.cls_name,
-                "conf": t.conf,
-                "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
-            })
+            tracks_payload = []
+            for t in tracks:
+                x1, y1, x2, y2 = t.bbox
+                tracks_payload.append({
+                    "track_id": t.track_id,
+                    "cls": t.cls_name,
+                    "conf": t.conf,
+                    "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
+                })
 
-        payload = {
-            "type": "tracker_frame",
-            "frame_index": frame_idx,
-            "video_time_ms": video_time_ms,
-            "frame_size": {"w": w, "h": h},
-            "tracks": tracks_payload,
-        }
+            payload = {
+                "type": "tracker_frame",
+                "frame_index": frame_idx,
+                "video_time_ms": video_time_ms,
+                "frame_size": {"w": w, "h": h},
+                "tracks": tracks_payload,
+            }
 
-        if args.send_overlay == 1:
-            overlay = draw_tracks(frame, tracks)
-            overlay_jpg = encode_jpg(overlay, args.overlay_jpeg_quality)
-            payload["overlay_jpg_b64"] = base64.b64encode(overlay_jpg).decode("ascii")
+            if args.send_overlay == 1:
+                overlay = draw_tracks(frame, tracks)
+                overlay_jpg = encode_jpg(overlay, args.overlay_jpeg_quality)
+                payload["overlay_jpg_b64"] = base64.b64encode(overlay_jpg).decode("ascii")
 
-        # ✨ Send to Qwen worker
-        try:
-            qwen_socket.send(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
-            print("[TRACKER] Sending to Qwen:", payload)
-        except Exception as e:
-            print(f"[TRACKER] Failed to send to Qwen: {e}")
+            # Send to Qwen worker
+            try:
+                qwen_socket.send(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+                print("[TRACKER] Sending to Qwen:", payload)
+            except Exception as e:
+                print(f"[TRACKER] Failed to send to Qwen: {e}")
 
-        # Send to WS (if enabled)
-        try:
-            await ws_send_json(ws, payload)
-        except Exception:
-            pass
+            frames_processed += 1
+            now = time.time()
+            if now - last_log_ts >= 2.0:
+                print(f"[TRACKER] processed={frames_processed} last_frame={frame_idx} tracks={len(tracks)}")
+                last_log_ts = now
 
-        frames_processed += 1
-        now = time.time()
-        if now - last_log_ts >= 2.0:
-            print(f"[TRACKER] processed={frames_processed} last_frame={frame_idx} tracks={len(tracks)}")
-            last_log_ts = now
-
-
-def main():
-    asyncio.run(main_async())
+    except KeyboardInterrupt:
+        print("\n[INFO] Stopped by user (Tracker worker).")
+    finally:
+        sub.close()
+        qwen_socket.close()
+        context.term()
+        qwen_context.term()
 
 
 if __name__ == "__main__":

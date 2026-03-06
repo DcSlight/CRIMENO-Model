@@ -2,6 +2,7 @@ import json
 import re
 import zmq
 import torch
+import argparse
 from typing import List, Dict, Any, Optional
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 
@@ -366,12 +367,21 @@ def call_qwen_for_anomaly(text_gen, prompt: str) -> Dict[str, Any]:
 # ============================================================
 
 def main():
-    text_gen = load_qwen_pipeline(MODEL_NAME, DEVICE)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
+    args = parser.parse_args()
+
+    text_gen = load_qwen_pipeline(MODEL_NAME, args.device)
 
     context = zmq.Context()
     socket = context.socket(zmq.PULL)
-    socket.bind(ZMQ_ENDPOINT)  # now both Florence + tracker connect here
+    socket.bind(ZMQ_ENDPOINT)  # both Florence + tracker connect here
     print(f"🔗 Qwen worker bound on {ZMQ_ENDPOINT}")
+
+    # ZMQ output socket to send results to message broker
+    qwen_socket = context.socket(zmq.PUSH)
+    qwen_socket.connect(ZMQ_ENDPOINT)
+    print(f"🔗 Qwen connected to message broker on {ZMQ_ENDPOINT}")
 
     raw_queue: List[Dict[str, Any]] = []
     event_history: List[str] = []
@@ -476,10 +486,17 @@ def main():
             frame_start = current_window[0].get("frame_index")
             frame_end = current_window[-1].get("frame_index")
 
-            print("\n==================== Anomaly decision ====================")
-            print(f"Frames {frame_start}–{frame_end}")
-            print(json.dumps(result, ensure_ascii=False, indent=2))
-            print("=========================================================\n")
+            # Send anomaly result via ZMQ (to message broker)
+            try:
+                result_record = {
+                    "type": "qwen_anomaly",
+                    "frame_range": {"start": frame_start, "end": frame_end},
+                    "result": result
+                }
+                qwen_socket.send(json.dumps(result_record, ensure_ascii=False).encode("utf-8"))
+                print("[QWEN] Sent anomaly result to broker")
+            except Exception as e:
+                print(f"[QWEN] Failed to send result: {e}")
 
             raw_queue = raw_queue[jump_size:]
 
