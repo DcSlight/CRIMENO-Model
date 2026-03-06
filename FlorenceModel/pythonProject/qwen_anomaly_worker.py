@@ -2,6 +2,8 @@ import json
 import re
 import zmq
 import torch
+import asyncio
+import argparse
 from typing import List, Dict, Any, Optional
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 
@@ -362,21 +364,60 @@ def call_qwen_for_anomaly(text_gen, prompt: str) -> Dict[str, Any]:
 
 
 # ============================================================
+# WebSocket connection
+# ============================================================
+
+async def ws_connect_loop(ws_url: str):
+    import websockets
+
+    if ws_url.lower() == "none":
+        print("[WS] Disabled (ws_url=none)")
+        return None
+
+    backoff = 0.25
+    while True:
+        try:
+            ws = await websockets.connect(ws_url, max_size=16 * 1024 * 1024)
+            print(f"[WS] Connected: {ws_url}")
+            return ws
+        except Exception as e:
+            print(f"[WS] Connect failed: {e} (retry in {backoff:.2f}s)")
+            await asyncio.sleep(backoff)
+            backoff = min(5.0, backoff * 1.7)
+
+
+async def ws_send_json(ws, payload: Dict[str, Any]):
+    if ws is not None:
+        await ws.send(json.dumps(payload, ensure_ascii=False))
+
+
+# ============================================================
 # Main worker
 # ============================================================
 
-def main():
-    text_gen = load_qwen_pipeline(MODEL_NAME, DEVICE)
+async def main_async():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--ws-url", "--ws_url", dest="ws_url", default="none",
+                        help="WebSocket URL for forwarding anomaly results to NestJS (or 'none' to disable).")
+    parser.add_argument("--model", default=MODEL_NAME)
+    parser.add_argument("--device", default=DEVICE, choices=["cpu", "cuda"])
+    parser.add_argument("--zmq-endpoint", default=ZMQ_ENDPOINT)
+    args = parser.parse_args()
+
+    text_gen = load_qwen_pipeline(args.model, args.device)
 
     context = zmq.Context()
     socket = context.socket(zmq.PULL)
-    socket.bind(ZMQ_ENDPOINT)  # now both Florence + tracker connect here
-    print(f"🔗 Qwen worker bound on {ZMQ_ENDPOINT}")
+    socket.bind(args.zmq_endpoint)
+    print(f"🔗 Qwen worker bound on {args.zmq_endpoint}")
+
+    # Connect to NestJS WebSocket
+    ws = await ws_connect_loop(args.ws_url)
 
     raw_queue: List[Dict[str, Any]] = []
     event_history: List[str] = []
 
-    # ✨ NEW: buffer for YOLO tracker frames by frame_index
+    # Buffer for YOLO tracker frames by frame_index
     tracker_buffer: Dict[int, Dict[str, Any]] = {}
 
     window_size = BASE_WINDOW_SIZE
@@ -384,17 +425,17 @@ def main():
 
     try:
         while True:
-            msg = socket.recv()
+            msg = await asyncio.to_thread(socket.recv)
             rec = json.loads(msg.decode("utf-8"))
 
-            # ✨ NEW: if this is a tracker frame → store and continue
+            # If this is a tracker frame → store and continue
             if rec.get("type") == "tracker_frame":
                 frame_idx = rec.get("frame_index")
                 if isinstance(frame_idx, int):
                     tracker_buffer[frame_idx] = rec
                 continue
 
-            # From here: assume this is a Florence record (as before)
+            # From here: assume this is a Florence record
             frame_idx = rec.get("frame_index")
 
             # Attach tracker info if available for same frame_index
@@ -459,7 +500,7 @@ def main():
                 f.write(prompt)
                 f.write("\n====================================================\n")
 
-            result = call_qwen_for_anomaly(text_gen, prompt)
+            result = await asyncio.to_thread(call_qwen_for_anomaly, text_gen, prompt)
 
             label = result.get("label", "")
             score = float(result.get("anomaly_score", 0.0))
@@ -481,14 +522,41 @@ def main():
             print(json.dumps(result, ensure_ascii=False, indent=2))
             print("=========================================================\n")
 
+            # ✨ NEW: Send anomaly result to NestJS via WebSocket
+            anomaly_payload = {
+                "type": "qwen_anomaly",
+                "frame_range": {
+                    "start": frame_start,
+                    "end": frame_end,
+                },
+                "result": {
+                    "anomaly_score": result["anomaly_score"],
+                    "label": result.get("label", "unknown"),
+                    "reason": result.get("reason", ""),
+                    "key_moments": result.get("key_moments", []),
+                }
+            }
+
+            try:
+                await ws_send_json(ws, anomaly_payload)
+                print(f"[WS] Sent anomaly result to NestJS")
+            except Exception as e:
+                print(f"[WS] Send failed: {e}. Reconnecting...")
+                ws = await ws_connect_loop(args.ws_url)
+
             raw_queue = raw_queue[jump_size:]
 
     except KeyboardInterrupt:
         print("\n[INFO] Stopped by user (Qwen anomaly worker).")
     finally:
+        if ws is not None:
+            try:
+                await ws.close()
+            except Exception:
+                pass
         socket.close()
         context.term()
 
 
-if __name__ == "__main__":
-    main()
+def main():
+    asyncio.run(main_async())

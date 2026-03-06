@@ -314,12 +314,16 @@ async def main_async():
                 "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
             })
 
+        # Check if any tracks are from motion detector
+        has_motion = any(t.cls_name == "moving_object" for t in tracks)
+
         payload = {
             "type": "tracker_frame",
             "frame_index": frame_idx,
             "video_time_ms": video_time_ms,
             "frame_size": {"w": w, "h": h},
             "tracks": tracks_payload,
+            "motion_detected": has_motion,
         }
 
         if args.send_overlay == 1:

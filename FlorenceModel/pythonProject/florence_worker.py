@@ -184,6 +184,7 @@ async def main_async():
             image = pil_from_jpg(jpg_bytes)
 
             record: Dict[str, Any] = {
+                "type": "florence_frame",
                 "frame_index": frame_idx,
                 "video_time_ms": video_time_ms,
                 "raw": {},
@@ -223,6 +224,38 @@ async def main_async():
             except Exception as e:
                 weapons = f"[ERROR running <OPEN_VOCABULARY_DETECTION>] {e}"
             record["raw"]["open_vocab_weapons"] = weapons
+
+            # Parse objects and weapons for NestJS
+            objects_list = []
+            try:
+                od_str = record["raw"]["object_detection"]
+                if od_str and not od_str.startswith("[ERROR"):
+                    # Try to parse if it's JSON-like
+                    import ast
+                    try:
+                        objects_list = ast.literal_eval(od_str) if isinstance(od_str, str) else []
+                    except:
+                        # If not parseable, just use empty list
+                        pass
+            except:
+                pass
+
+            weapons_list = []
+            try:
+                weapons_str = record["raw"]["open_vocab_weapons"]
+                if weapons_str and not weapons_str.startswith("[ERROR"):
+                    import ast
+                    try:
+                        weapons_list = ast.literal_eval(weapons_str) if isinstance(weapons_str, str) else []
+                    except:
+                        pass
+            except:
+                pass
+
+            # Add NestJS-friendly fields
+            record["caption"] = caption
+            record["objects"] = objects_list
+            record["weapons_detected"] = weapons_list
 
             # Console output
             dt = record["text_overlay"]["datetime_candidates"]
