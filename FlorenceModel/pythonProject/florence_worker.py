@@ -140,12 +140,13 @@ async def main_async():
                         help="ZeroMQ endpoint to receive video frames (PULL).")
     parser.add_argument("--qwen-endpoint", default="tcp://127.0.0.1:5580",
                         help="ZeroMQ endpoint to send text records to Qwen worker (PUSH).")
-    parser.add_argument("--ws-url", default="none",
+    parser.add_argument("--ws-url", "--ws_url", dest="ws_url", default="none",
                         help="WebSocket URL for forwarding records (or 'none' to disable).")
     parser.add_argument("--model", default="florence-community/Florence-2-base")
     parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
     parser.add_argument("--out", default="analysis.jsonl")
-    parser.add_argument("--process_every_n_frames", type=int, default=30)
+    parser.add_argument("--process_every_n_frames", "--every", dest="process_every_n_frames", type=int, default=30,
+                        help="Process one frame every N frames.")
     args = parser.parse_args()
 
     vision_pipe = load_florence_pipeline(args.model, args.device)
