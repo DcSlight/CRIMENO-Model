@@ -56,7 +56,15 @@ class MessageBroker:
         except Exception as e:
             logger.error(f"⚠️  Failed to connect to Tracker gateway: {e}")
         
-        # Connect to Qwen gatewayroute to appropriate NestJS gateway."""
+        # Connect to Qwen gateway
+        try:
+            self.qwen_ws = await websockets.connect(NESTJS_QWEN_WS)
+            logger.info(f"✅ Connected to NestJS Qwen gateway: {NESTJS_QWEN_WS}")
+        except Exception as e:
+            logger.error(f"⚠️  Failed to connect to Qwen gateway: {e}")
+    
+    async def zmq_listener(self):
+        """Listen for ZMQ messages from workers and route to appropriate NestJS gateway."""
         loop = asyncio.get_event_loop()
         
         while True:
@@ -88,7 +96,18 @@ class MessageBroker:
                     frame_start = payload.get("frame_range", {}).get("start", "-")
                     logger.info(f"📨 Received qwen_anomaly | frame_start={frame_start}")
                     await self.send_to_qwen(msg_str)
-              send_to_florence(self, message: str):
+                
+                else:
+                    logger.warn(f"⚠️  Unknown message type: {msg_type}")
+                
+            except zmq.Again:
+                # No message available, wait a bit
+                await asyncio.sleep(0.01)
+            except Exception as e:
+                logger.error(f"❌ ZMQ listener error: {e}")
+                await asyncio.sleep(0.1)
+    
+    async def send_to_florence(self, message: str):
         """Send message to NestJS Florence gateway."""
         if not self.florence_ws or self.florence_ws.closed:
             logger.warn("⚠️  Florence WS not connected")
@@ -127,24 +146,16 @@ class MessageBroker:
     async def run(self):
         """Main broker loop."""
         await self.connect_to_nestjs()
-        await self.zmq_listener(    except Exception as e:
-                logger.error(f"❌ Failed to send to client: {e}")
-                dead_clients.add(client)
-        
-        # Clean up dead connections
-        for client in dead_clients:
-            self.connected_clients.discard(client)
-    
-    async def run_websocket_server(self):
-        """Start WebSocket server."""
-        async with websockets.serve(self.handle_client, "0.0.0.0", WEBSOCKET_PORT):
-            logger.info(f"🌐 WebSocket server listening on ws://0.0.0.0:{WEBSOCKET_PORT}{WEBSOCKET_PATH}")
-            await asyncio.Future()  # Run forever
-    
-    async def start(self):
-        """Start both ZMQ listener and WebSocket server."""
-        await asyncio.gather(
-            self.zmq_listener(),(routes by message type):")
+        await self.zmq_listener()
+
+
+async def main():
+    broker = MessageBroker()
+    logger.info("🚀 Message Broker starting...")
+    logger.info("=" * 60)
+    logger.info("Architecture:")
+    logger.info("  - Florence, Tracker, Qwen → ZMQ PULL 5580")
+    logger.info("  - Message Broker (routes by message type):")
     logger.info("    - florence_frame → /ws/florence")
     logger.info("    - tracker_frame → /ws/tracker")
     logger.info("    - qwen_anomaly → /ws/qwen")
@@ -153,18 +164,7 @@ class MessageBroker:
     try:
         await broker.run()
     except KeyboardInterrupt:
-        logger.info("\n✅
-    logger.info("🚀 Message Broker starting...")
-    logger.info("=" * 60)
-    logger.info("Architecture:")
-    logger.info("  - Florence, Tracker, Qwen → ZMQ PULL 5580")
-    logger.info("  - Message Broker → WebSocket 3000 → NestJS")
-    logger.info("=" * 60)
-    
-    try:
-        await broker.start()
-    except KeyboardInterrupt:
-        logger.info("\n[INFO] Message broker stopped by user.")
+        logger.info("\n✅ Message broker stopped by user.")
     finally:
         broker.zmq_socket.close()
         broker.zmq_context.term()

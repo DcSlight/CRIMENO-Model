@@ -26,33 +26,46 @@ CONTEXT_LOG_FILE = "qwen_context_log.txt"
 # ============================================================
 
 def load_qwen_pipeline(model_name: str, device_str: str):
-    if device_str == "cuda" and torch.cuda.is_available():
-        device_map = "auto"
-        torch_dtype = torch.float16
-        print("Qwen device: cuda")
-    else:
-        device_map = "cpu"
-        torch_dtype = torch.float32
-        print("Qwen device: cpu")
+    print(f"⏳ Loading Qwen model: {model_name}")
+    print(f"   Device: {device_str}")
+    print("   (This may take 1-2 minutes on first run...)")
+    
+    try:
+        if device_str == "cuda" and torch.cuda.is_available():
+            device_map = "auto"
+            torch_dtype = torch.float16
+            print("Qwen device: cuda")
+        else:
+            device_map = "cpu"
+            torch_dtype = torch.float32
+            print("Qwen device: cpu")
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        torch_dtype=torch_dtype,
-        device_map=device_map,
-    )
+        print("   Loading tokenizer...")
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        
+        print("   Loading model...")
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            torch_dtype=torch_dtype,
+            device_map=device_map,
+            trust_remote_code=True,
+        )
 
-    text_gen = pipeline(
-        "text-generation",
-        model=model,
-        tokenizer=tokenizer,
-        max_new_tokens=256,
-        do_sample=False,
-        temperature=0.0,
-    )
+        print("   Creating pipeline...")
+        text_gen = pipeline(
+            "text-generation",
+            model=model,
+            tokenizer=tokenizer,
+            max_new_tokens=256,
+            do_sample=False,
+            temperature=0.0,
+        )
 
-    print(f"✅ Qwen pipeline loaded ({model_name}) on {device_str}")
-    return text_gen
+        print(f"✅ Qwen pipeline loaded ({model_name}) on {device_str}")
+        return text_gen
+    except Exception as e:
+        print(f"❌ Error loading Qwen model: {e}")
+        raise
 
 
 # ============================================================
@@ -371,17 +384,25 @@ def main():
     parser.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
     args = parser.parse_args()
 
+    print("\n" + "="*60)
+    print("🤖 QWEN ANOMALY WORKER")
+    print("="*60)
+    
     text_gen = load_qwen_pipeline(MODEL_NAME, args.device)
+    
+    print("✅ Model loaded successfully!")
+    print("🔗 Connecting to ZMQ...")
 
     context = zmq.Context()
     socket = context.socket(zmq.PULL)
     socket.bind(ZMQ_ENDPOINT)  # both Florence + tracker connect here
-    print(f"🔗 Qwen worker bound on {ZMQ_ENDPOINT}")
+    print(f"✅ Qwen worker bound on {ZMQ_ENDPOINT}")
 
     # ZMQ output socket to send results to message broker
     qwen_socket = context.socket(zmq.PUSH)
     qwen_socket.connect(ZMQ_ENDPOINT)
-    print(f"🔗 Qwen connected to message broker on {ZMQ_ENDPOINT}")
+    print(f"✅ Qwen connected to message broker on {ZMQ_ENDPOINT}")
+    print("="*60 + "\n")
 
     raw_queue: List[Dict[str, Any]] = []
     event_history: List[str] = []
