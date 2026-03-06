@@ -198,14 +198,14 @@ def main():
 
     print(f"[TRACKER] SUB connect: {args.sub_endpoint}")
 
-    # Import config for Qwen endpoint
-    from config import ZMQ_QWEN_INPUT_ENDPOINT
+    # Import config for Message Broker endpoint
+    from config import ZMQ_MESSAGE_BROKER_ENDPOINT
     
-    # ZMQ PUSH to Qwen worker
-    qwen_context = zmq.Context()
-    qwen_socket = qwen_context.socket(zmq.PUSH)
-    qwen_socket.connect(ZMQ_QWEN_INPUT_ENDPOINT)
-    print(f"[TRACKER] Connected to Qwen worker via ZMQ PUSH ({ZMQ_QWEN_INPUT_ENDPOINT})")
+    # ZMQ PUSH to Message Broker
+    output_context = zmq.Context()
+    output_socket = output_context.socket(zmq.PUSH)
+    output_socket.connect(ZMQ_MESSAGE_BROKER_ENDPOINT)
+    print(f"[TRACKER] Connected to Message Broker via ZMQ PUSH ({ZMQ_MESSAGE_BROKER_ENDPOINT})")
 
     next_track_id = 1
     tracks: List[Track] = []
@@ -301,12 +301,12 @@ def main():
                 overlay_jpg = encode_jpg(overlay, args.overlay_jpeg_quality)
                 payload["overlay_jpg_b64"] = base64.b64encode(overlay_jpg).decode("ascii")
 
-            # Send to Qwen worker
+            # Send to Message Broker
             try:
-                qwen_socket.send(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
-                print("[TRACKER] Sending to Qwen:", payload)
+                output_socket.send(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+                print("[TRACKER] Sent to Message Broker:", payload)
             except Exception as e:
-                print(f"[TRACKER] Failed to send to Qwen: {e}")
+                print(f"[TRACKER] Failed to send to Message Broker: {e}")
 
             frames_processed += 1
             now = time.time()

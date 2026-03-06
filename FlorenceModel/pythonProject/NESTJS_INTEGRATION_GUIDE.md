@@ -4,7 +4,9 @@
 
 This guide explains the Python backend architecture and port configuration for integrating with NestJS WebSocket gateways.
 
-## Architecture Summary
+**IMPORTANT**: All workers now send data **IMMEDIATELY** to NestJS through the Message Broker. No waiting for Qwen processing!
+
+## Architecture Summary (IMMEDIATE DELIVERY)
 
 ```
 ┌─────────────────┐
@@ -19,22 +21,24 @@ This guide explains the Python backend architecture and port configuration for i
 │  Worker  │ │  Worker  │
 └────┬─────┘ └────┬─────┘
      │            │
-     └──→ 5581 ←──┘  (Qwen Input)
-            ↓
-     ┌─────────────┐
-     │ Qwen Worker │
-     └──────┬──────┘
-            │
-         5582  (Message Broker Input)
+     └──→ 5580 ←──┘  (Message Broker - Central Hub)
             ↓
      ┌─────────────────┐
      │ Message Broker  │
      │ (Python Server) │
-     └────────┬────────┘
-              │
-         WebSocket
-         Port 3000
-              ↓
+     └────┬────────┬───┘
+          │        │
+    IMMEDIATE    Forward copy
+     to NestJS   to Qwen (5581)
+          │            ↓
+     WebSocket   ┌─────────────┐
+     Port 3000   │ Qwen Worker │
+          │      └──────┬──────┘
+          │             │
+          │      Results back (5580)
+          │             │
+          └─────────────┘
+                  ↓
      ┌────────────────┐
      │ NestJS Backend │
      └────────────────┘
@@ -42,17 +46,31 @@ This guide explains the Python backend architecture and port configuration for i
 
 ## Port Configuration
 
-| Port     | Protocol      | Purpose                | Bound By               | Connected By                          |
-| -------- | ------------- | ---------------------- | ---------------------- | ------------------------------------- |
-| **5560** | ZMQ PUB/SUB   | Video frame broadcast  | video_broadcaster.py   | florence_worker.py, tracker_worker.py |
-| **5561** | ZMQ REQ/REP   | Video control commands | video_broadcaster.py   | -                                     |
-| **5581** | ZMQ PUSH/PULL | Qwen worker input      | qwen_anomaly_worker.py | florence_worker.py, tracker_worker.py |
-| **5582** | ZMQ PUSH/PULL | Message broker input   | message_broker.py      | qwen_anomaly_worker.py                |
-| **3000** | WebSocket     | Frontend communication | NestJS                 | message_broker.py (as client)         |
+| Port     | Protocol      | Purpose                          | Bound By               | Connected By                                          |
+| -------- | ------------- | -------------------------------- | ---------------------- | ----------------------------------------------------- |
+| **5560** | ZMQ PUB/SUB   | Video frame broadcast            | video_broadcaster.py   | florence_worker.py, tracker_worker.py                 |
+| **5561** | ZMQ REQ/REP   | Video control commands           | video_broadcaster.py   | -                                                     |
+| **5580** | ZMQ PUSH/PULL | Message broker (ALL workers hub) | message_broker.py      | florence_worker.py, tracker_worker.py, qwen_worker.py |
+| **5581** | ZMQ PUSH/PULL | Qwen input (analysis copy)       | qwen_anomaly_worker.py | message_broker.py                                     |
+| **3000** | WebSocket     | Frontend communication           | NestJS                 | message_broker.py (as client)                         |
 
 ## Message Flow for NestJS
 
 The **message_broker.py** (Python) connects to your **NestJS WebSocket gateways** as a **client**.
+
+### Critical Architecture Change
+
+**IMMEDIATE DELIVERY**: Florence and Tracker data now reaches NestJS **immediately** without waiting for Qwen processing!
+
+**Flow**:
+
+1. Florence/Tracker process frames → Send to Message Broker (port 5580)
+2. Message Broker **IMMEDIATELY** forwards to NestJS
+3. Message Broker **ALSO** forwards a copy to Qwen (port 5581) for analysis
+4. Qwen processes data → Sends results back to Message Broker (port 5580)
+5. Message Broker forwards Qwen results to NestJS
+
+**Result**: NestJS receives Florence/Tracker data in real-time, and Qwen anomaly alerts separately when ready!
 
 ### Expected Setup
 
@@ -64,9 +82,9 @@ Python message_broker.py → WebSocket Client → NestJS Gateway (Server on port
 
 Three WebSocket gateway endpoints:
 
-- `ws://127.0.0.1:3000/ws/florence` - Receives Florence vision data
-- `ws://127.0.0.1:3000/ws/tracker` - Receives tracking data
-- `ws://127.0.0.1:3000/ws/qwen` - Receives anomaly detection data
+- `ws://127.0.0.1:3000/ws/florence` - Receives Florence vision data **(IMMEDIATE)**
+- `ws://127.0.0.1:3000/ws/tracker` - Receives tracking data **(IMMEDIATE)**
+- `ws://127.0.0.1:3000/ws/qwen` - Receives anomaly detection data **(when ready)**
 
 ## Message Types
 

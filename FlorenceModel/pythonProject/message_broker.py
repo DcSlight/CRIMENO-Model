@@ -2,6 +2,8 @@
 # message_broker.py
 # Central message hub for all worker communication
 # - Listens to ZMQ PULL socket (5580) from Florence, Tracker, Qwen
+# - IMMEDIATELY forwards Florence/Tracker data to NestJS (no waiting!)
+# - Also forwards Florence/Tracker data to Qwen for analysis
 # - Routes messages to separate NestJS gateways based on message type:
 #   - florence_frame → /ws/florence
 #   - tracker_frame → /ws/tracker
@@ -14,12 +16,13 @@ import zmq
 import websockets
 from typing import Optional
 import logging
+from config import ZMQ_MESSAGE_BROKER_ENDPOINT, ZMQ_QWEN_INPUT_ENDPOINT
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(message)s')
 logger = logging.getLogger(__name__)
 
-ZMQ_PULL_ENDPOINT = "tcp://127.0.0.1:5580"
+ZMQ_PULL_ENDPOINT = ZMQ_MESSAGE_BROKER_ENDPOINT
 
 # NestJS WebSocket endpoints (as client, connecting to NestJS gateways)
 NESTJS_FLORENCE_WS = "ws://127.0.0.1:3000/ws/florence"
@@ -33,12 +36,17 @@ class MessageBroker:
         self.zmq_socket = self.zmq_context.socket(zmq.PULL)
         self.zmq_socket.bind(ZMQ_PULL_ENDPOINT)
         
+        # ZMQ socket to forward Florence/Tracker data to Qwen
+        self.qwen_push_socket = self.zmq_context.socket(zmq.PUSH)
+        self.qwen_push_socket.connect(ZMQ_QWEN_INPUT_ENDPOINT)
+        
         # WebSocket client connections to NestJS gateways
         self.florence_ws: Optional[websockets.WebSocketClientProtocol] = None
         self.tracker_ws: Optional[websockets.WebSocketClientProtocol] = None
         self.qwen_ws: Optional[websockets.WebSocketClientProtocol] = None
         
         logger.info(f"✅ ZMQ PULL bound on {ZMQ_PULL_ENDPOINT}")
+        logger.info(f"✅ ZMQ PUSH to Qwen on {ZMQ_QWEN_INPUT_ENDPOINT}")
     
     async def connect_to_nestjs(self):
         """Connect to NestJS WebSocket gateways as a client."""
@@ -85,16 +93,23 @@ class MessageBroker:
                 if msg_type == "florence_frame":
                     frame_idx = payload.get("frame_index", "-")
                     logger.info(f"📨 Received florence_frame | frame={frame_idx}")
+                    # Send IMMEDIATELY to NestJS (no waiting!)
                     await self.send_to_florence(msg_str)
+                    # Also forward to Qwen for analysis
+                    await loop.run_in_executor(None, self.qwen_push_socket.send, msg)
                 
                 elif msg_type == "tracker_frame":
                     frame_idx = payload.get("frame_index", "-")
                     logger.info(f"📨 Received tracker_frame | frame={frame_idx}")
+                    # Send IMMEDIATELY to NestJS (no waiting!)
                     await self.send_to_tracker(msg_str)
+                    # Also forward to Qwen for analysis
+                    await loop.run_in_executor(None, self.qwen_push_socket.send, msg)
                 
                 elif msg_type == "qwen_anomaly":
                     frame_start = payload.get("frame_range", {}).get("start", "-")
                     logger.info(f"📨 Received qwen_anomaly | frame_start={frame_start}")
+                    # Qwen results go directly to NestJS
                     await self.send_to_qwen(msg_str)
                 
                 else:

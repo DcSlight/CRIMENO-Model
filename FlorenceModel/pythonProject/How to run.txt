@@ -1,23 +1,36 @@
 # How to run the CRIMENO surveillance system
 
-# ARCHITECTURE:
+# ARCHITECTURE (IMMEDIATE DELIVERY - NO BOTTLENECKS!):
 # Broadcaster (5560) → Florence + Tracker (parallel)
 #                   ↓
-#            ┌─ Push to ZMQ 5581 (Qwen input) ─┐
-#            ↓                                  ↓
-#         Florence                           Tracker
-#            ↓                                  ↓
-#         Qwen (listens 5581, processes, pushes to 5582)
-#            ↓
-#      Message Broker (listens 5582, forwards WebSocket 3000)
-#            ↓
-#         NestJS (ws://127.0.0.1:3000)
+#     ┌─ Push to Message Broker (5580) ─┐
+#     ↓                                  ↓
+#  Florence                           Tracker
+#     ↓                                  ↓
+#     └─────────────┬────────────────┘
+#                 ↓
+#          Message Broker (listens 5580)
+#          │          │
+#          │          ├─────> Forward to Qwen (5581)
+#          │          │                 ↓
+#          │          │              Qwen Worker
+#          │          │                 ↓
+#          │          ←─────── Results back (5580)
+#          │
+#    IMMEDIATE send to NestJS (3000)
+#          ↓
+#       WebSocket
+#          ↓
+#       NestJS
 
 # IMPORTANT: Each model uses separate ports to avoid "already in use" errors
 # - Port 5560: Video broadcaster (PUB)
 # - Port 5561: Video commands (REP)
-# - Port 5581: Qwen input from Florence + Tracker (PULL)
-# - Port 5582: Message broker input from workers (PULL)
+# - Port 5580: Message Broker input - ALL workers send here (PULL)
+# - Port 5581: Qwen input - Message Broker forwards Florence/Tracker (PUSH)
+
+# KEY FEATURE: Florence and Tracker data is sent to NestJS IMMEDIATELY!
+# No waiting for Qwen processing. Qwen receives a copy and sends results separately.
 
 # Process 1: Video Broadcaster
 python video_broadcaster.py videos/shop.mp4

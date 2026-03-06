@@ -112,7 +112,7 @@ def extract_datetime_candidates(text: str) -> List[str]:
 def main():
     from config import (
         ZMQ_VIDEO_BROADCASTER_ENDPOINT,
-        ZMQ_QWEN_INPUT_ENDPOINT,
+        ZMQ_MESSAGE_BROKER_ENDPOINT,
         FLORENCE_MODEL,
         FLORENCE_PROCESS_EVERY_N_FRAMES,
         FLORENCE_OUTPUT_FILE
@@ -121,8 +121,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--video-endpoint", default=ZMQ_VIDEO_BROADCASTER_ENDPOINT,
                         help="ZeroMQ endpoint to receive video frames (PULL).")
-    parser.add_argument("--qwen-endpoint", default=ZMQ_QWEN_INPUT_ENDPOINT,
-                        help="ZeroMQ endpoint to send text records to Qwen worker (PUSH).")
+    parser.add_argument("--output-endpoint", default=ZMQ_MESSAGE_BROKER_ENDPOINT,
+                        help="ZeroMQ endpoint to send results to Message Broker (PUSH).")
     parser.add_argument("--model", default=FLORENCE_MODEL)
     parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
     parser.add_argument("--out", default="analysis.jsonl")
@@ -139,10 +139,10 @@ def main():
     video_socket.setsockopt(zmq.SUBSCRIBE, b"frame")
     print(f"🔗 Connected to video broadcaster on {args.video_endpoint}")
 
-    # ZeroMQ – output (text to Qwen)
-    qwen_socket = context.socket(zmq.PUSH)
-    qwen_socket.connect(args.qwen_endpoint)
-    print(f"🔗 Connected Qwen text output PUSH on {args.qwen_endpoint}")
+    # ZeroMQ – output (send to Message Broker)
+    output_socket = context.socket(zmq.PUSH)
+    output_socket.connect(args.output_endpoint)
+    print(f"🔗 Connected to Message Broker PUSH on {args.output_endpoint}")
 
     # Tasks
     TASK_CAPTION = "<MORE_DETAILED_CAPTION>"
@@ -216,9 +216,9 @@ def main():
                   + f" | dt={dt_str}"
                   + f" | caption={caption_short}")
 
-            # Send to Qwen worker via ZeroMQ (as JSON-line string)
+            # Send to Message Broker via ZeroMQ (as JSON-line string)
             msg = json.dumps(record, ensure_ascii=False).encode("utf-8")
-            qwen_socket.send(msg)
+            output_socket.send(msg)
 
             # --- Write JSONL ---
             with open(out_path, "a", encoding="utf-8") as f:

@@ -23,8 +23,8 @@ from config import (
 
 MODEL_NAME = QWEN_MODEL
 DEVICE = "cuda"  # or "cpu"
-ZMQ_INPUT_ENDPOINT = ZMQ_QWEN_INPUT_ENDPOINT  # Receive from Florence + Tracker (PULL)
-ZMQ_OUTPUT_ENDPOINT = ZMQ_MESSAGE_BROKER_ENDPOINT  # Send to Message Broker (PUSH)
+ZMQ_INPUT_ENDPOINT = ZMQ_QWEN_INPUT_ENDPOINT  # Receive from Message Broker (PULL)
+ZMQ_OUTPUT_ENDPOINT = ZMQ_MESSAGE_BROKER_ENDPOINT  # Send back to Message Broker (PUSH)
 
 BASE_WINDOW_SIZE = QWEN_BASE_WINDOW_SIZE
 MAX_QUEUE_SIZE = QWEN_MAX_QUEUE_SIZE
@@ -406,15 +406,15 @@ def main():
     print("🔗 Connecting to ZMQ...")
 
     context = zmq.Context()
-    # Input socket: receive from Florence + Tracker
+    # Input socket: receive from Message Broker
     input_socket = context.socket(zmq.PULL)
     input_socket.bind(ZMQ_INPUT_ENDPOINT)
-    print(f"✅ Qwen worker bound (PULL) on {ZMQ_INPUT_ENDPOINT} (receiving from Florence + Tracker)")
+    print(f"✅ Qwen worker bound (PULL) on {ZMQ_INPUT_ENDPOINT} (receiving from Message Broker)")
 
-    # Output socket: send results to message broker
+    # Output socket: send results back to Message Broker
     output_socket = context.socket(zmq.PUSH)
     output_socket.connect(ZMQ_OUTPUT_ENDPOINT)
-    print(f"✅ Qwen connected (PUSH) to message broker on {ZMQ_OUTPUT_ENDPOINT}")
+    print(f"✅ Qwen connected (PUSH) back to Message Broker on {ZMQ_OUTPUT_ENDPOINT}")
     print("="*60 + "\n")
 
     raw_queue: List[Dict[str, Any]] = []

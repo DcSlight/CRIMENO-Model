@@ -111,9 +111,20 @@ python message_broker.py
 1. **Only ONE process can BIND** to a port (the server/listener)
 2. **Multiple processes can CONNECT** to a bound port (the clients)
 3. **Start order matters**:
-   - Start servers FIRST (those that BIND): video_broadcaster, qwen_worker, message_broker
+   - Start servers FIRST (those that BIND): video_broadcaster, message_broker, qwen_worker
    - Start clients AFTER (those that CONNECT): florence_worker, tracker_worker
 4. All port configurations are centralized in `config.py` for easy management
+5. **CRITICAL**: Message Broker acts as a central hub - receives from ALL workers and:
+   - Immediately sends Florence/Tracker data to NestJS (no waiting!)
+   - Forwards copies of Florence/Tracker to Qwen for analysis
+   - Sends Qwen results to NestJS when ready
+
+## Performance Benefits
+
+✅ **Zero latency for Florence/Tracker data** - NestJS receives data immediately
+✅ **Non-blocking architecture** - Qwen processing doesn't delay other workers
+✅ **Parallel processing** - All workers can send data simultaneously
+✅ **Real-time updates** - Frontend gets data as fast as workers produce it
 
 ## Troubleshooting
 
