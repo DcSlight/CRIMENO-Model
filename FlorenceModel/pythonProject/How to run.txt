@@ -14,3 +14,6 @@ python qwen_anomaly_worker.py --device cuda
 
 
 python video_broadcaster.py videos/shop.mp4
+
+
+pip install yt-dlp

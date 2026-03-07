@@ -3,6 +3,24 @@ import cv2
 import zmq
 import time
 import argparse
+import yt_dlp
+
+
+def resolve_video_source(video_path: str, video_type: str) -> str:
+    """Returns a source URL/path that cv2.VideoCapture can open."""
+    if video_type == "online":
+        print(f"[YT-DLP] Extracting stream URL from: {video_path}")
+        ydl_opts = {
+            "format": "best[ext=mp4]/best",
+            "quiet": True,
+            "no_warnings": True,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_path, download=False)
+            stream_url = info["url"]
+        print(f"[YT-DLP] Stream URL resolved successfully")
+        return stream_url
+    return video_path
 
 
 def encode_jpg(frame_bgr, jpeg_quality: int) -> bytes:
@@ -47,10 +65,11 @@ def main():
     print(f"[INFO] Broadcaster initialized. PUB: {args.endpoint}, CMD: {args.cmd_endpoint}")
     print(f"[STATUS] Waiting for 'play' command...")
 
-    # AUTO-PLAY MODE: if video_path was provided directly, start streaming immediately
+    # AUTO-PLAY MODE: if video_path was provided directly, start streaming immediately (always local)
     if args.video_path is not None:
         print(f"[AUTO-PLAY] Starting video immediately: {args.video_path}")
-        cap = cv2.VideoCapture(args.video_path)
+        source = resolve_video_source(args.video_path, "local")
+        cap = cv2.VideoCapture(source)
         current_video = args.video_path
         frame_index = 0
         stream_start_time = time.time()
@@ -68,12 +87,20 @@ def main():
             msg = cmd_socket.recv_json()
             if msg.get("cmd") == "play":
                 new_path = msg.get("video")
-                print(f"[CONTROL] Received play command: {new_path}")
+                video_type = msg.get("videoType", "local")
+                print(f"[CONTROL] Received play command: {new_path} (type={video_type})")
 
                 if cap is not None:
                     cap.release()
 
-                cap = cv2.VideoCapture(new_path)
+                try:
+                    source = resolve_video_source(new_path, video_type)
+                except Exception as e:
+                    print(f"[ERROR] Failed to resolve video source: {e}")
+                    cmd_socket.send_json({"status": "error", "msg": str(e)})
+                    continue
+
+                cap = cv2.VideoCapture(source)
                 current_video = new_path
                 frame_index = 0
                 stream_start_time = time.time()
