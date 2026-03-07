@@ -3,9 +3,8 @@
 # - Subscribes to ZeroMQ PUB stream (topic: "frame")
 # - Runs YOLOv8 (COCO) + simple IOU tracker
 # - Optional motion fallback (MOG2)
-# - Sends results to NestJS via WebSocket (NO per-frame JSONL I/O)
-#
-# Optimized for low latency startup and real-time streaming
+# - Sends results to NestJS via WebSocket
+# - ✨ Also sends tracking data to Qwen worker via ZeroMQ PUSH (port 5580)
 
 import argparse
 import asyncio
@@ -21,7 +20,7 @@ import zmq
 
 try:
     from ultralytics import YOLO
-except Exception as e:
+except Exception:
     YOLO = None
 
 
@@ -129,13 +128,9 @@ class MotionDetector:
 
 
 # -------------------------
-# YOLO detection with better filtering
+# YOLO detection
 # -------------------------
 def run_yolo(model, frame_bgr: np.ndarray, conf_th: float) -> List[Dict[str, Any]]:
-    """
-    Returns list of detections: {bbox(x1,y1,x2,y2), cls_name, conf}
-    Enhanced to detect more security-relevant objects with better filtering
-    """
     results = model.predict(frame_bgr, conf=conf_th, verbose=False)
     dets: List[Dict[str, Any]] = []
 
@@ -147,29 +142,16 @@ def run_yolo(model, frame_bgr: np.ndarray, conf_th: float) -> List[Dict[str, Any
         return dets
 
     names = model.names if hasattr(model, "names") else {}
-    
-    # Security-relevant objects to prioritize (COCO dataset)
-    security_objects = {
-        'person', 'backpack', 'handbag', 'suitcase', 'bottle', 'cup',
-        'knife', 'cell phone', 'laptop', 'mouse', 'keyboard', 'book',
-        'scissors', 'car', 'motorcycle', 'bicycle', 'truck', 'bus'
-    }
-    
+
     for b in r.boxes:
-        xyxy = b.xyxy[0].tolist()  # [x1,y1,x2,y2]
+        xyxy = b.xyxy[0].tolist()
         cls_id = int(b.cls[0].item()) if b.cls is not None else -1
         conf = float(b.conf[0].item()) if b.conf is not None else 0.0
 
         x1, y1, x2, y2 = [int(v) for v in xyxy]
         cls_name = names.get(cls_id, str(cls_id))
-        
-        # Apply different confidence thresholds based on object type
-        min_conf = conf_th
-        if cls_name.lower() in security_objects:
-            # Lower threshold for security-relevant objects
-            min_conf = conf_th * 0.7
-        
-        if conf >= min_conf:
+
+        if conf >= conf_th:
             dets.append({
                 "bbox": (x1, y1, x2, y2),
                 "cls_name": cls_name,
@@ -183,10 +165,11 @@ def run_yolo(model, frame_bgr: np.ndarray, conf_th: float) -> List[Dict[str, Any
 # WebSocket sender
 # -------------------------
 async def ws_connect_loop(ws_url: str):
-    """
-    Keeps trying to connect, returns an open websocket.
-    """
-    import websockets  # lazy import
+    import websockets
+
+    if ws_url.lower() == "none":
+        print("[WS] Disabled (ws_url=none)")
+        return None
 
     backoff = 0.25
     while True:
@@ -201,7 +184,8 @@ async def ws_connect_loop(ws_url: str):
 
 
 async def ws_send_json(ws, payload: Dict[str, Any]):
-    await ws.send(json.dumps(payload, ensure_ascii=False))
+    if ws is not None:
+        await ws.send(json.dumps(payload, ensure_ascii=False))
 
 
 # -------------------------
@@ -210,11 +194,11 @@ async def ws_send_json(ws, payload: Dict[str, Any]):
 async def main_async():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sub_endpoint", default="tcp://127.0.0.1:5560")
-    parser.add_argument("--ws_url", default="ws://127.0.0.1:3000/ws/tracker", help="NestJS WS endpoint")
+    parser.add_argument("--ws_url", default="none")
     parser.add_argument("--yolo_model", default="yolov8n.pt")
     parser.add_argument("--conf_th", type=float, default=0.35)
     parser.add_argument("--send_every_n_frames", type=int, default=1)
-    parser.add_argument("--send_overlay", type=int, default=1, help="1=send JPG overlay, 0=send raw bbox only")
+    parser.add_argument("--send_overlay", type=int, default=0)
     parser.add_argument("--overlay_jpeg_quality", type=int, default=80)
     parser.add_argument("--use_motion_fallback", type=int, default=1)
     parser.add_argument("--max_track_age", type=int, default=30)
@@ -222,21 +206,16 @@ async def main_async():
     args = parser.parse_args()
 
     if YOLO is None:
-        raise RuntimeError("ultralytics is not installed. Install it: pip install ultralytics")
+        raise RuntimeError("ultralytics not installed")
 
-    # Pre-load model BEFORE connecting to ZMQ/WS to avoid startup delay
     print(f"[TRACKER] Loading YOLO model: {args.yolo_model}...")
-    load_start = time.time()
     model = YOLO(args.yolo_model)
-    
-    # Warm up the model with a dummy frame to ensure everything is loaded
+
     print("[TRACKER] Warming up model...")
-    dummy_frame = np.zeros((640, 640, 3), dtype=np.uint8)
-    _ = model.predict(dummy_frame, conf=0.5, verbose=False)
-    
-    load_time = time.time() - load_start
-    print(f"[TRACKER] ✓ Model loaded and ready ({load_time:.2f}s)")
-    
+    dummy = np.zeros((640, 640, 3), dtype=np.uint8)
+    _ = model.predict(dummy, conf=0.5, verbose=False)
+    print("[TRACKER] ✓ Model ready")
+
     motion = MotionDetector() if args.use_motion_fallback else None
 
     # ZMQ SUB
@@ -245,34 +224,34 @@ async def main_async():
     sub.connect(args.sub_endpoint)
     sub.setsockopt(zmq.SUBSCRIBE, b"frame")
     sub.setsockopt(zmq.RCVHWM, 5)
-    # Set receive timeout to avoid blocking forever
-    sub.setsockopt(zmq.RCVTIMEO, 1000)  # 1 second timeout
+    sub.setsockopt(zmq.RCVTIMEO, 1000)
 
-    print(f"[TRACKER] SUB connect: {args.sub_endpoint} topic=frame")
-    print(f"[TRACKER] WS target: {args.ws_url}")
-    print(f"[TRACKER] send_overlay={args.send_overlay}, send_every_n_frames={args.send_every_n_frames}")
+    print(f"[TRACKER] SUB connect: {args.sub_endpoint}")
 
-    # Connect to WebSocket
+    # ✨ NEW: ZMQ PUSH to Qwen worker (port 5580)
+    qwen_context = zmq.Context()
+    qwen_socket = qwen_context.socket(zmq.PUSH)
+    qwen_socket.connect("tcp://127.0.0.1:5580")
+    print("[TRACKER] Connected to Qwen worker via ZMQ PUSH (tcp://127.0.0.1:5580)")
+
     ws = await ws_connect_loop(args.ws_url)
 
     next_track_id = 1
     tracks: List[Track] = []
 
+    first_frame = True
     last_log_ts = time.time()
     frames_processed = 0
-    first_frame = True
 
     while True:
         try:
-            # ZMQ recv is blocking; run it in a thread to not block asyncio loop
             frame_idx, video_time_ms, jpg_bytes = await asyncio.to_thread(recv_frame_sub, sub)
-        except Exception as e:
-            # Timeout or other error - continue waiting
+        except Exception:
             await asyncio.sleep(0.01)
             continue
 
         if first_frame:
-            print(f"[TRACKER] ✓ First frame received (idx={frame_idx}) - processing started!")
+            print(f"[TRACKER] First frame received (idx={frame_idx})")
             first_frame = False
 
         if args.send_every_n_frames > 1 and (frame_idx % args.send_every_n_frames) != 0:
@@ -283,20 +262,18 @@ async def main_async():
 
         dets = run_yolo(model, frame, args.conf_th)
 
-        # Optional motion fallback: add unlabeled moving blobs if YOLO has few detections
         if motion is not None and len(dets) == 0:
             blobs = motion.detect(frame)
             for bb in blobs:
                 dets.append({"bbox": bb, "cls_name": "moving_object", "conf": 1.0})
 
-        # Match detections to existing tracks by IOU
         used_tracks = set()
         new_tracks: List[Track] = []
 
         for d in dets:
             bb = d["bbox"]
             best_iou = 0.0
-            best_track: Optional[Track] = None
+            best_track = None
 
             for t in tracks:
                 if t.track_id in used_tracks:
@@ -325,10 +302,8 @@ async def main_async():
                 used_tracks.add(t.track_id)
                 new_tracks.append(t)
 
-        # Keep recent tracks (age-based)
         tracks = [t for t in new_tracks if (frame_idx - t.last_seen_frame) <= args.max_track_age]
 
-        # Prepare payload - EXACT SAME FORMAT AS ORIGINAL
         tracks_payload = []
         for t in tracks:
             x1, y1, x2, y2 = t.bbox
@@ -339,12 +314,16 @@ async def main_async():
                 "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
             })
 
-        payload: Dict[str, Any] = {
+        # Check if any tracks are from motion detector
+        has_motion = any(t.cls_name == "moving_object" for t in tracks)
+
+        payload = {
             "type": "tracker_frame",
             "frame_index": frame_idx,
             "video_time_ms": video_time_ms,
             "frame_size": {"w": w, "h": h},
             "tracks": tracks_payload,
+            "motion_detected": has_motion,
         }
 
         if args.send_overlay == 1:
@@ -352,16 +331,18 @@ async def main_async():
             overlay_jpg = encode_jpg(overlay, args.overlay_jpeg_quality)
             payload["overlay_jpg_b64"] = base64.b64encode(overlay_jpg).decode("ascii")
 
-        # Send to WS immediately - broadcaster controls timing
+        # ✨ Send to Qwen worker
+        try:
+            qwen_socket.send(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+            print("[TRACKER] Sending to Qwen:", payload)
+        except Exception as e:
+            print(f"[TRACKER] Failed to send to Qwen: {e}")
+
+        # Send to WS (if enabled)
         try:
             await ws_send_json(ws, payload)
-        except Exception as e:
-            print(f"[WS] Send failed: {e} -> reconnect")
-            try:
-                await ws.close()
-            except Exception:
-                pass
-            ws = await ws_connect_loop(args.ws_url)
+        except Exception:
+            pass
 
         frames_processed += 1
         now = time.time()
