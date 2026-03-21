@@ -11,12 +11,132 @@ import torch
 from PIL import Image
 from transformers import pipeline
 
+import cv2
+import numpy as np
+
+bg_subtractor = cv2.createBackgroundSubtractorMOG2(
+    history=500,
+    varThreshold=16,
+    detectShadows=False
+)
+
+
 # --- Regex extraction ---
 DATE_PATTERNS = [
     re.compile(r"\b(20\d{2})[-/\.](0[1-9]|1[0-2])[-/\.]([0-2]\d|3[01])\b"),  # YYYY-MM-DD
     re.compile(r"\b([0-2]\d|3[01])[-/\.](0[1-9]|1[0-2])[-/\.](20\d{2})\b"),  # DD-MM-YYYY
 ]
 TIME_PATTERN = re.compile(r"\b([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\b")    # HH:MM(:SS)
+
+
+def apply_background_subtraction(pil_image):
+    frame = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+
+    fg_mask = bg_subtractor.apply(frame)
+    fg_mask = cv2.medianBlur(fg_mask, 5)
+    _, fg_mask = cv2.threshold(fg_mask, 127, 255, cv2.THRESH_BINARY)
+
+    fg = cv2.bitwise_and(frame, frame, mask=fg_mask)
+    fg_rgb = cv2.cvtColor(fg, cv2.COLOR_BGR2RGB)
+    return Image.fromarray(fg_rgb), fg_mask
+
+
+def apply_soft_background_blur(pil_image, blur_strength=15):
+    # Convert PIL → OpenCV (RGB → BGR)
+    frame = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+
+    # Use background subtractor to get foreground mask
+    fg_mask = bg_subtractor.apply(frame)
+
+    # Clean mask (reduce noise)
+    fg_mask = cv2.medianBlur(fg_mask, 5)
+    _, fg_mask = cv2.threshold(fg_mask, 127, 255, cv2.THRESH_BINARY)
+
+    # Create inverse mask for background
+    bg_mask = cv2.bitwise_not(fg_mask)
+
+    # Blur the background
+    blurred_frame = cv2.GaussianBlur(frame, (blur_strength, blur_strength), 0)
+
+    # Combine sharp foreground with blurred background
+    fg_part = cv2.bitwise_and(frame, frame, mask=fg_mask)
+    bg_part = cv2.bitwise_and(blurred_frame, blurred_frame, mask=bg_mask)
+    combined = cv2.add(fg_part, bg_part)
+
+    # Convert back to PIL (BGR → RGB)
+    combined_rgb = cv2.cvtColor(combined, cv2.COLOR_BGR2RGB)
+    return Image.fromarray(combined_rgb), fg_mask
+
+
+def apply_focus(pil_image, expand_ratio=0.3, blur_strength=25, use_vignette=True):
+    """
+    The function receives a PIL image and returns an image with dynamic focus:
+    - Cropping around the motion area
+    - Soft edge blur (optional)
+    """
+
+    # Convert PIL → OpenCV
+    frame = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+
+    # 1. Background subtraction to detect motion
+    fg_mask = bg_subtractor.apply(frame)
+    fg_mask = cv2.medianBlur(fg_mask, 7)
+    _, fg_mask = cv2.threshold(fg_mask, 127, 255, cv2.THRESH_BINARY)
+
+    # 2. Find contours of motion
+    contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    if len(contours) == 0:
+        # No motion detected → return original image
+        return pil_image
+
+    # 3. Compute bounding box around all motion
+    x_min, y_min, x_max, y_max = frame.shape[1], frame.shape[0], 0, 0
+
+    for cnt in contours:
+        x, y, w, h = cv2.boundingRect(cnt)
+        x_min = min(x_min, x)
+        y_min = min(y_min, y)
+        x_max = max(x_max, x + w)
+        y_max = max(y_max, y + h)
+
+    # 4. Expand bounding box to keep context
+    w = x_max - x_min
+    h = y_max - y_min
+
+    expand_w = int(w * expand_ratio)
+    expand_h = int(h * expand_ratio)
+
+    x1 = max(0, x_min - expand_w)
+    y1 = max(0, y_min - expand_h)
+    x2 = min(frame.shape[1], x_max + expand_w)
+    y2 = min(frame.shape[0], y_max + expand_h)
+
+    # 5. Crop the frame
+    cropped = frame[y1:y2, x1:x2]
+
+    # 6. Optional: Vignette blur around edges
+    if use_vignette:
+        mask = np.zeros((cropped.shape[0], cropped.shape[1]), dtype=np.float32)
+        cv2.circle(mask, 
+                   (cropped.shape[1] // 2, cropped.shape[0] // 2),
+                   int(min(cropped.shape[:2]) * 0.6),
+                   1, -1)
+        mask = cv2.GaussianBlur(mask, (blur_strength, blur_strength), 0)
+
+        blurred = cv2.GaussianBlur(cropped, (blur_strength, blur_strength), 0)
+        vignette = (cropped * mask[..., None] + blurred * (1 - mask[..., None])).astype(np.uint8)
+        cropped = vignette
+
+    # Convert back to PIL
+    cropped_rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
+    return Image.fromarray(cropped_rgb)
+
+
+def show_cv_image(pil_image, window_name="Preview"):
+    img = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+    cv2.imshow(window_name, img)
+    cv2.waitKey(1)
 
 
 def now_unix_ms() -> int:
@@ -147,6 +267,8 @@ async def main_async():
     parser.add_argument("--out", default="analysis.jsonl")
     parser.add_argument("--process_every_n_frames", "--every", dest="process_every_n_frames", type=int, default=30,
                         help="Process one frame every N frames.")
+    parser.add_argument("--bg", default="none")
+    parser.add_argument("--test", default="none")
     args = parser.parse_args()
 
     vision_pipe = load_florence_pipeline(args.model, args.device)
@@ -182,6 +304,18 @@ async def main_async():
             if frame_idx % args.process_every_n_frames != 0:
                 continue
             image = pil_from_jpg(jpg_bytes)
+
+            if args.bg == "blur":
+                image, _ = apply_soft_background_blur(image)
+            elif args.bg == "black":
+                image, _ = apply_background_subtraction(image)
+            elif args.bg == "focus":
+                image = apply_focus(image)
+            else:
+                pass
+
+            if args.test == "show_image":
+                show_cv_image(image)
 
             record: Dict[str, Any] = {
                 "type": "florence_frame",
