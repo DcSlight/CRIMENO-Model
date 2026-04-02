@@ -11,7 +11,7 @@ for bg options:
 - focus
 
 # 3) YOLO+Tracking 
-python tracker_worker.py --ws_url ws://127.0.0.1:3000/ws/tracker --send_overlay 0 --send_every_n_frames 2
+python tracker_worker.py --ws_url ws://127.0.0.1:3000/ws/tracker --send_overlay 0 --send_every_n_frames 2 --test show_image
 
 
 4)qwen

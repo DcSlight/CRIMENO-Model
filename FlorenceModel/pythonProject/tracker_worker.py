@@ -24,6 +24,44 @@ except Exception:
     YOLO = None
 
 
+def show_debug_frame(frame, tracks, window_name="DEBUG"):
+    debug = frame.copy()
+
+    for t in tracks:
+        # Extract fields from Track object
+        cls = t.cls_name
+        conf = t.conf
+        x1, y1, x2, y2 = t.bbox
+
+        # Color by source (not by class name)
+        if hasattr(t, "source") and t.source == "suspicious":
+            color = (0, 0, 255)   # RED for suspicious model
+        else:
+            color = (0, 255, 0)   # GREEN for regular YOLO objects
+
+        # Draw bounding box
+        cv2.rectangle(debug, (x1, y1), (x2, y2), color, 2)
+
+        # Draw label
+        label = f"{cls} {conf:.2f}"
+        cv2.putText(debug, label, (x1, max(0, y1 - 5)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+
+    cv2.imshow(window_name, debug)
+    cv2.waitKey(1)
+
+
+def shrink_bbox_tuple(bbox, factor=0.2):
+    # Shrinks a bounding box by a given factor (default 20%) while keeping it centered.
+    # Used to reduce oversized detections (e.g., suspicious model outputs) before visualization or sending downstream.
+    x1, y1, x2, y2 = bbox
+    w = x2 - x1
+    h = y2 - y1
+    dx = int(w * factor / 2)
+    dy = int(h * factor / 2)
+    return (x1 + dx, y1 + dy, x2 - dx, y2 - dy)
+
+
 # -------------------------
 # ZMQ receive
 # -------------------------
@@ -203,18 +241,28 @@ async def main_async():
     parser.add_argument("--use_motion_fallback", type=int, default=1)
     parser.add_argument("--max_track_age", type=int, default=30)
     parser.add_argument("--iou_match_th", type=float, default=0.30)
+    parser.add_argument("--test", default="none")
     args = parser.parse_args()
 
     if YOLO is None:
         raise RuntimeError("ultralytics not installed")
 
     print(f"[TRACKER] Loading YOLO model: {args.yolo_model}...")
-    model = YOLO(args.yolo_model)
+    model_objects = YOLO("yolov8s.pt")
+    model_suspicious = YOLO("Suspicious_Activities_nano.pt")
 
+    # Warmup
     print("[TRACKER] Warming up model...")
     dummy = np.zeros((640, 640, 3), dtype=np.uint8)
-    _ = model.predict(dummy, conf=0.5, verbose=False)
-    print("[TRACKER] ✓ Model ready")
+
+    print("[TRACKER] Warming up object model...")
+    _ = model_objects.predict(dummy, conf=0.5, verbose=False)
+
+    print("[TRACKER] Warming up suspicious model...")
+    _ = model_suspicious.predict(dummy, conf=0.5, verbose=False)
+
+    print("[TRACKER] ✓ Both models ready")
+
 
     motion = MotionDetector() if args.use_motion_fallback else None
 
@@ -260,7 +308,19 @@ async def main_async():
         frame = decode_jpg(jpg_bytes)
         h, w = frame.shape[:2]
 
-        dets = run_yolo(model, frame, args.conf_th)
+        # Run both YOLO models
+        dets_objects = run_yolo(model_objects, frame, args.conf_th)
+        for d in dets_objects:
+            d["source"] = "objects"
+
+        dets_suspicious = run_yolo(model_suspicious, frame, args.conf_th)
+        for d in dets_suspicious:
+            d["source"] = "suspicious"
+
+        # Merge
+        dets_objects = [d for d in dets_objects if d["conf"] >= 0.6]
+        dets_suspicious = [d for d in dets_suspicious if d["conf"] >= 0.35]
+        dets = dets_objects + dets_suspicious
 
         if motion is not None and len(dets) == 0:
             blobs = motion.detect(frame)
@@ -289,6 +349,7 @@ async def main_async():
                 best_track.cls_name = d["cls_name"]
                 best_track.conf = float(d["conf"])
                 best_track.last_seen_frame = frame_idx
+                best_track.source = d["source"]
                 new_tracks.append(best_track)
             else:
                 t = Track(
@@ -298,21 +359,32 @@ async def main_async():
                     conf=float(d["conf"]),
                     last_seen_frame=frame_idx,
                 )
+                t.source = d["source"]
                 next_track_id += 1
                 used_tracks.add(t.track_id)
                 new_tracks.append(t)
 
         tracks = [t for t in new_tracks if (frame_idx - t.last_seen_frame) <= args.max_track_age]
 
+        # shrink AFTER tracking
+        for t in tracks:
+            if hasattr(t, "source") and t.source == "suspicious":
+                t.bbox = shrink_bbox_tuple(t.bbox, factor=0.2)
+
+        # DEBUG VISUALIZATION
+        if args.test == "show_image":
+            show_debug_frame(frame, tracks)
+
         tracks_payload = []
         for t in tracks:
             x1, y1, x2, y2 = t.bbox
             tracks_payload.append({
-                "track_id": t.track_id,
-                "cls": t.cls_name,
-                "conf": t.conf,
-                "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
-            })
+            "track_id": t.track_id,
+            "cls": t.cls_name,
+            "conf": t.conf,
+            "source": t.source,
+            "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
+        })
 
         # Check if any tracks are from motion detector
         has_motion = any(t.cls_name == "moving_object" for t in tracks)
