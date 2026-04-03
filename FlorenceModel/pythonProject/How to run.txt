@@ -12,7 +12,10 @@ for bg options:
 
 # 3) YOLO+Tracking 
 python tracker_worker.py --ws_url ws://127.0.0.1:3000/ws/tracker --send_overlay 0 --send_every_n_frames 2 --test show_image
-python tracker_worker.py --device cpu --ws_url ws://127.0.0.1:3000/ws/tracker --send_overlay 0 --send_every_n_frames 2 --test show_image
+python tracker_worker.py --device cpu --ws_url ws://127.0.0.1:3000/ws/tracker --send_overlay 0 --send_every_n_frames 10 --test show_image
+
+yolo-nobackend
+python tracker_worker.py --device cpu --send_overlay 0 --send_every_n_frames 2 --test show_image
 
 4)qwen
 
