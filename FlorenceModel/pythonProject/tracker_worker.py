@@ -168,8 +168,11 @@ class MotionDetector:
 # -------------------------
 # YOLO detection
 # -------------------------
-def run_yolo(model, frame_bgr: np.ndarray, conf_th: float) -> List[Dict[str, Any]]:
-    results = model.predict(frame_bgr, conf=conf_th, verbose=False)
+def run_yolo(model, frame_bgr: np.ndarray, conf_th: float, device: Optional[Any] = None) -> List[Dict[str, Any]]:
+    if device is None:
+        results = model.predict(frame_bgr, conf=conf_th, verbose=False)
+    else:
+        results = model.predict(frame_bgr, conf=conf_th, verbose=False, device=device)
     dets: List[Dict[str, Any]] = []
 
     if not results:
@@ -241,6 +244,8 @@ async def main_async():
     parser.add_argument("--use_motion_fallback", type=int, default=1)
     parser.add_argument("--max_track_age", type=int, default=30)
     parser.add_argument("--iou_match_th", type=float, default=0.30)
+    parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto",
+                        help="Device for YOLO inference. Use 'cpu' to free GPU memory for Qwen.")
     parser.add_argument("--test", default="none")
     args = parser.parse_args()
 
@@ -251,15 +256,27 @@ async def main_async():
     model_objects = YOLO("yolov8s.pt")
     model_suspicious = YOLO("Suspicious_Activities_nano.pt")
 
+    yolo_predict_device: Optional[Any] = None
+    if args.device == "cpu":
+        yolo_predict_device = "cpu"
+    elif args.device == "cuda":
+        yolo_predict_device = 0
+
     # Warmup
     print("[TRACKER] Warming up model...")
     dummy = np.zeros((640, 640, 3), dtype=np.uint8)
 
     print("[TRACKER] Warming up object model...")
-    _ = model_objects.predict(dummy, conf=0.5, verbose=False)
+    if yolo_predict_device is None:
+        _ = model_objects.predict(dummy, conf=0.5, verbose=False)
+    else:
+        _ = model_objects.predict(dummy, conf=0.5, verbose=False, device=yolo_predict_device)
 
     print("[TRACKER] Warming up suspicious model...")
-    _ = model_suspicious.predict(dummy, conf=0.5, verbose=False)
+    if yolo_predict_device is None:
+        _ = model_suspicious.predict(dummy, conf=0.5, verbose=False)
+    else:
+        _ = model_suspicious.predict(dummy, conf=0.5, verbose=False, device=yolo_predict_device)
 
     print("[TRACKER] ✓ Both models ready")
 
@@ -309,11 +326,11 @@ async def main_async():
         h, w = frame.shape[:2]
 
         # Run both YOLO models
-        dets_objects = run_yolo(model_objects, frame, args.conf_th)
+        dets_objects = run_yolo(model_objects, frame, args.conf_th, yolo_predict_device)
         for d in dets_objects:
             d["source"] = "objects"
 
-        dets_suspicious = run_yolo(model_suspicious, frame, args.conf_th)
+        dets_suspicious = run_yolo(model_suspicious, frame, args.conf_th, yolo_predict_device)
         for d in dets_suspicious:
             d["source"] = "suspicious"
 
