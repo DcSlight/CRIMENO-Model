@@ -425,12 +425,13 @@ async def main_async():
     parser.add_argument("--zmq-endpoint", default=ZMQ_ENDPOINT)
     args = parser.parse_args()
 
-    text_gen = load_qwen_pipeline(args.model, args.device)
-
     context = zmq.Context()
     socket = context.socket(zmq.PULL)
     socket.bind(args.zmq_endpoint)
     print(f"🔗 Qwen worker bound on {args.zmq_endpoint}")
+
+    print("[INFO] Loading Qwen model. ZMQ receiver is already bound.")
+    text_gen = load_qwen_pipeline(args.model, args.device)
 
     # Connect to NestJS WebSocket
     ws = await ws_connect_loop(args.ws_url)
