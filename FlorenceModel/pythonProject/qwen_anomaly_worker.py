@@ -428,6 +428,11 @@ async def main_async():
             msg = await asyncio.to_thread(socket.recv)
             rec = json.loads(msg.decode("utf-8"))
 
+            if rec.get("type") == "business_context":
+                context_body = rec.get("context")
+                print("context recieve " + json.dumps(context_body, ensure_ascii=False))
+                continue
+
             # If this is a tracker frame → store and continue
             if rec.get("type") == "tracker_frame":
                 frame_idx = rec.get("frame_index")
