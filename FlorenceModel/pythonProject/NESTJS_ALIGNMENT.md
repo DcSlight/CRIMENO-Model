@@ -1,16 +1,28 @@
 # NestJS Gateway Alignment
 
-## ✅ All Python Workers Now Match NestJS Expectations!
+qwen json example:
 
-### Summary of Changes
-
-The Python workers have been updated to send data in the exact format expected by the NestJS gateways.
-
+----- prompt output:
+```
+==================== Anomaly decision ====================
+Frames 0–60
+{
+  "anomaly_score": 0.5,
+  "label": "suspicious",
+  "reason": "Individuals acting suspiciously near cash register.",
+  "key_moments": [
+    "Man holding credit card near cash register",
+    "Woman looking intensely at cash register"
+  ]
+}
+=========================================================
+```
 ---
 
 ## 1. Florence Worker → Florence Gateway
 
 ### NestJS Expects (florence.gateway.ts)
+
 
 ```typescript
 path: '/ws/florence'
