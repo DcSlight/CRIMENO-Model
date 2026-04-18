@@ -273,6 +273,13 @@ async def main_async():
 
     vision_pipe = load_florence_pipeline(args.model, args.device)
 
+    print("[Florence] Warming up model...")
+    _dummy = Image.new("RGB", (224, 224), color=(128, 128, 128))
+    for _task in ("<MORE_DETAILED_CAPTION>", "<OD>", "<OCR>"):
+        run_task(vision_pipe, _dummy, _task)
+    del _dummy
+    print("[Florence] ✓ Warmup complete")
+
     # ZeroMQ – input (video frames)
     context = zmq.Context()
     video_socket = context.socket(zmq.SUB)
