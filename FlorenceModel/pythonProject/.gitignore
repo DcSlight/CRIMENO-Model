@@ -1,7 +1,7 @@
 analysis.jsonl
 *jsonl
 yolov8n.pt
-
+.env
 
 #AI
 .claude
