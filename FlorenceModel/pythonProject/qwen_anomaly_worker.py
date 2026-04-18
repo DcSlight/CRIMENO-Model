@@ -29,17 +29,13 @@ CONTEXT_LOG_FILE = "qwen_context_log.txt"
 def load_qwen_pipeline(model_name: str, device_str: str, optimize: bool = False):
     if device_str == "cuda" and torch.cuda.is_available():
         if optimize:
-            quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_use_double_quant=True,
-            )
+            quantization_config = BitsAndBytesConfig(load_in_8bit=True)
             model = AutoModelForCausalLM.from_pretrained(
                 model_name,
                 quantization_config=quantization_config,
                 device_map="auto",
             )
-            print("Qwen device: cuda (4-bit quantized)")
+            print("Qwen device: cuda (8-bit quantized)")
         else:
             model = AutoModelForCausalLM.from_pretrained(
                 model_name,
@@ -60,7 +56,7 @@ def load_qwen_pipeline(model_name: str, device_str: str, optimize: bool = False)
         "text-generation",
         model=model,
         tokenizer=tokenizer,
-        max_new_tokens=256,
+        max_new_tokens=128,
         do_sample=False,
         temperature=0.0,
     )
@@ -385,7 +381,7 @@ def parse_qwen_output(text: str) -> Dict[str, Any]:
 
 
 def call_qwen_for_anomaly(text_gen, prompt: str) -> Dict[str, Any]:
-    out = text_gen(prompt, max_new_tokens=256, do_sample=False, temperature=0.0)
+    out = text_gen(prompt, max_new_tokens=128, do_sample=False, temperature=0.0)
     if isinstance(out, list) and out:
         generated = out[0].get("generated_text", "")
     else:
