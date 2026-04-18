@@ -372,7 +372,7 @@ def parse_qwen_output(text: str) -> Dict[str, Any]:
 
 
 def call_qwen_for_anomaly(text_gen, prompt: str) -> Dict[str, Any]:
-    out = text_gen(prompt, max_new_tokens=128, do_sample=False, temperature=0.0)
+    out = text_gen(prompt, max_new_tokens=256, do_sample=False, temperature=0.0)
     if isinstance(out, list) and out:
         generated = out[0].get("generated_text", "")
     else:

@@ -19,14 +19,7 @@ python tracker_worker.py --device cpu --send_overlay 0 --send_every_n_frames 2 -
 
 4)qwen
 
-python qwen_anomaly_worker.py --device cuda --ws_url ws://127.0.0.1:3000/ws/qwen --optimize
-
---smaller model:
-python qwen_anomaly_worker.py --device cuda --model Qwen/Qwen2.5-1.5B-Instruct --ws_url ws://127.0.0.1:3000/ws/qwen
+python qwen_anomaly_worker.py --device cuda --ws_url ws://127.0.0.1:3000/ws/qwen
 
 
 python video_broadcaster.py videos/shop.mp4
-
-
-pip install yt-dlp
-pip install bitsandbytes
