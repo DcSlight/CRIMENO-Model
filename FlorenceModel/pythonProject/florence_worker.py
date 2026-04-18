@@ -258,8 +258,9 @@ async def main_async():
     parser = argparse.ArgumentParser()
     parser.add_argument("--video-endpoint", default="tcp://127.0.0.1:5560",
                         help="ZeroMQ endpoint to receive video frames (PULL).")
-    parser.add_argument("--qwen-endpoint", default="tcp://127.0.0.1:5580",
-                        help="ZeroMQ endpoint to send text records to Qwen worker (PUSH).")
+    parser.add_argument("--qwen-endpoint", "--anomaly-endpoint", dest="qwen_endpoint",
+                        default="tcp://127.0.0.1:5580",
+                        help="ZeroMQ endpoint to send text records to anomaly worker (Qwen or Groq) (PUSH).")
     parser.add_argument("--ws-url", "--ws_url", dest="ws_url", default="none",
                         help="WebSocket URL for forwarding records (or 'none' to disable).")
     parser.add_argument("--model", default="florence-community/Florence-2-base")
