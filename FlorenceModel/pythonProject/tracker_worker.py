@@ -235,6 +235,9 @@ async def ws_send_json(ws, payload: Dict[str, Any]):
 async def main_async():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sub_endpoint", default="tcp://127.0.0.1:5560")
+    parser.add_argument("--anomaly-endpoint", "--anomaly_endpoint", dest="anomaly_endpoint",
+                        default="tcp://127.0.0.1:5580",
+                        help="ZMQ PUSH endpoint for anomaly worker (Qwen on 5580 or Groq on 5581).")
     parser.add_argument("--ws_url", default="none")
     parser.add_argument("--yolo_model", default="yolov8n.pt")
     parser.add_argument("--conf_th", type=float, default=0.35)
@@ -296,7 +299,7 @@ async def main_async():
     # ✨ NEW: ZMQ PUSH to Qwen worker (port 5580)
     qwen_context = zmq.Context()
     qwen_socket = qwen_context.socket(zmq.PUSH)
-    qwen_socket.connect("tcp://127.0.0.1:5580")
+    qwen_socket.connect(args.anomaly_endpoint)
     print("[TRACKER] Connected to Qwen worker via ZMQ PUSH (tcp://127.0.0.1:5580)")
 
     ws = await ws_connect_loop(args.ws_url)
