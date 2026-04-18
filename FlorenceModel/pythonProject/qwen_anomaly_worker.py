@@ -5,7 +5,7 @@ import torch
 import asyncio
 import argparse
 from typing import List, Dict, Any, Optional
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline, BitsAndBytesConfig
 
 # ============================================================
 # Configuration
@@ -26,23 +26,36 @@ CONTEXT_LOG_FILE = "qwen_context_log.txt"
 # Load Qwen model
 # ============================================================
 
-def load_qwen_pipeline(model_name: str, device_str: str):
+def load_qwen_pipeline(model_name: str, device_str: str, optimize: bool = False):
     if device_str == "cuda" and torch.cuda.is_available():
-        device_map = "auto"
-        torch_dtype = torch.float16
-        print("Qwen device: cuda")
+        if optimize:
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+            )
+            model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                quantization_config=quantization_config,
+                device_map="auto",
+            )
+            print("Qwen device: cuda (4-bit quantized)")
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                torch_dtype=torch.float16,
+                device_map="auto",
+            )
+            print("Qwen device: cuda (fp16)")
     else:
-        device_map = "cpu"
-        torch_dtype = torch.float32
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            torch_dtype=torch.float32,
+            device_map="cpu",
+        )
         print("Qwen device: cpu")
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        torch_dtype=torch_dtype,
-        device_map=device_map,
-    )
-
     text_gen = pipeline(
         "text-generation",
         model=model,
@@ -52,7 +65,7 @@ def load_qwen_pipeline(model_name: str, device_str: str):
         temperature=0.0,
     )
 
-    print(f"✅ Qwen pipeline loaded ({model_name}) on {device_str}")
+    print(f"✅ Qwen pipeline loaded ({model_name})")
     return text_gen
 
 
@@ -423,6 +436,8 @@ async def main_async():
     parser.add_argument("--model", default=MODEL_NAME)
     parser.add_argument("--device", default=DEVICE, choices=["cpu", "cuda"])
     parser.add_argument("--zmq-endpoint", default=ZMQ_ENDPOINT)
+    parser.add_argument("--optimize", action="store_true", default=False,
+                        help="Enable 4-bit quantization to reduce VRAM usage (~1.5GB instead of ~6GB). Requires bitsandbytes.")
     args = parser.parse_args()
 
     context = zmq.Context()
@@ -431,7 +446,7 @@ async def main_async():
     print(f"🔗 Qwen worker bound on {args.zmq_endpoint}")
 
     print("[INFO] Loading Qwen model. ZMQ receiver is already bound.")
-    text_gen = load_qwen_pipeline(args.model, args.device)
+    text_gen = load_qwen_pipeline(args.model, args.device, optimize=args.optimize)
 
     # Connect to NestJS WebSocket
     ws = await ws_connect_loop(args.ws_url)
