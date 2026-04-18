@@ -23,6 +23,3 @@ python qwen_anomaly_worker.py --device cuda --ws_url ws://127.0.0.1:3000/ws/qwen
 
 
 python video_broadcaster.py videos/shop.mp4
-
-
-pip install yt-dlp
