@@ -525,7 +525,7 @@ async def main_async():
             print("=========================================================\n")
 
             anomaly_payload = {
-                "type": "qwen_anomaly",
+                "type": "groq_anomaly",
                 "frame_range": {
                     "start": frame_start,
                     "end": frame_end,
