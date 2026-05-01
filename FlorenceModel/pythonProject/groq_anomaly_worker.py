@@ -485,6 +485,11 @@ async def main_async():
             if len(event_history) > MAX_EVENT_HISTORY:
                 event_history = event_history[-MAX_EVENT_HISTORY:]
 
+            if latest_business_context:
+                print(f"[CTX] Injecting business context into prompt:\n{latest_business_context}")
+            else:
+                print("[CTX] No business context — sending prompt without it.")
+
             scene_description = build_scene_description(
                 event_history,
                 current_window_events,
