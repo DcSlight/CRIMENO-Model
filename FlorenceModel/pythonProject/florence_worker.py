@@ -163,11 +163,8 @@ def load_florence_pipeline(model_name: str, device_str: str):
     return vision_pipe
 
 
-def recv_frame(socket) -> Tuple[Any, Optional[int], Optional[bytes]]:
+def recv_frame(socket) -> Tuple[int, Optional[int], bytes]:
     parts = socket.recv_multipart()
-
-    if parts and parts[0] == b"reset":
-        return "reset", None, None
 
     # Supports both formats:
     # 1) [topic, frame_idx, video_time_ms, jpg]
@@ -289,7 +286,6 @@ async def main_async():
     video_socket = context.socket(zmq.SUB)
     video_socket.connect(args.video_endpoint)
     video_socket.setsockopt(zmq.SUBSCRIBE, b"frame")
-    video_socket.setsockopt(zmq.SUBSCRIBE, b"reset")
     print(f"🔗 Connected to video broadcaster on {args.video_endpoint}")
 
     # ZeroMQ – output (text to Qwen)
@@ -312,14 +308,7 @@ async def main_async():
 
     try:
         while True:
-            recv_result = await asyncio.to_thread(recv_frame, video_socket)
-            if recv_result[0] == "reset":
-                global bg_subtractor
-                bg_subtractor = cv2.createBackgroundSubtractorMOG2(history=500, varThreshold=16, detectShadows=False)
-                qwen_socket.send(json.dumps({"type": "reset"}).encode("utf-8"))
-                print("[RESET] Florence state cleared for new video.")
-                continue
-            frame_idx, video_time_ms, jpg_bytes = recv_result
+            frame_idx, video_time_ms, jpg_bytes = await asyncio.to_thread(recv_frame, video_socket)
             if frame_idx % args.process_every_n_frames != 0:
                 continue
             image = pil_from_jpg(jpg_bytes)

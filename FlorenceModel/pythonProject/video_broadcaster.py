@@ -114,10 +114,6 @@ def main():
 
                 cmd_socket.send_json({"status": "ok", "video": new_path})
 
-                # Signal all workers to flush buffers before new video frames arrive
-                pub_socket.send_multipart([b"reset", b""])
-                print("[CONTROL] Sent reset signal to all workers")
-
                 # Meta-data broadcast for the new stream
                 ret, frame0 = cap.read()
                 if ret:
