@@ -65,11 +65,15 @@ def shrink_bbox_tuple(bbox, factor=0.2):
 # -------------------------
 # ZMQ receive
 # -------------------------
-def recv_frame_sub(socket) -> Tuple[int, int, bytes]:
+def recv_frame_sub(socket) -> Tuple[Any, int, bytes]:
     """
     Expects multipart: [topic, frame_idx, video_time_ms, jpg]
     """
     parts = socket.recv_multipart()
+
+    if parts and parts[0] == b"reset":
+        return "reset", -1, b""
+
     if len(parts) < 4:
         raise ValueError(f"Expected 4 parts, got {len(parts)}")
 
@@ -291,6 +295,7 @@ async def main_async():
     sub = context.socket(zmq.SUB)
     sub.connect(args.sub_endpoint)
     sub.setsockopt(zmq.SUBSCRIBE, b"frame")
+    sub.setsockopt(zmq.SUBSCRIBE, b"reset")
     sub.setsockopt(zmq.RCVHWM, 5)
     sub.setsockopt(zmq.RCVTIMEO, 1000)
 
@@ -313,10 +318,21 @@ async def main_async():
 
     while True:
         try:
-            frame_idx, video_time_ms, jpg_bytes = await asyncio.to_thread(recv_frame_sub, sub)
+            recv_result = await asyncio.to_thread(recv_frame_sub, sub)
         except Exception:
             await asyncio.sleep(0.01)
             continue
+
+        if recv_result[0] == "reset":
+            tracks = []
+            next_track_id = 1
+            if motion is not None:
+                motion = MotionDetector()
+            qwen_socket.send(json.dumps({"type": "reset"}).encode("utf-8"))
+            print("[RESET] Tracker state cleared for new video.")
+            continue
+
+        frame_idx, video_time_ms, jpg_bytes = recv_result
 
         if first_frame:
             print(f"[TRACKER] First frame received (idx={frame_idx})")
