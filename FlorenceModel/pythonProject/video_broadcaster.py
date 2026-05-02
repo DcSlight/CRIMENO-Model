@@ -124,15 +124,6 @@ def main():
                     h0, w0 = frame0.shape[:2]
                     pub_socket.send_multipart([b"meta", str(w0).encode(), str(h0).encode(), str(video_fps).encode()])
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            elif msg.get("cmd") == "stop":
-                if cap is not None:
-                    cap.release()
-                    cap = None
-                current_video = None
-                frame_index = 0
-                pub_socket.send_multipart([b"reset", b""])
-                print("[CONTROL] Stop command — stream halted, reset broadcast to all workers")
-                cmd_socket.send_json({"status": "ok"})
             else:
                 cmd_socket.send_json({"status": "error", "msg": "unknown command"})
 
