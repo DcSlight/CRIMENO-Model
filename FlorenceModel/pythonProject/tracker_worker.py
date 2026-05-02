@@ -65,24 +65,28 @@ def shrink_bbox_tuple(bbox, factor=0.2):
 # -------------------------
 # ZMQ receive
 # -------------------------
-def recv_frame_sub(socket) -> Tuple[Any, int, bytes]:
-    """
-    Expects multipart: [topic, frame_idx, video_time_ms, jpg]
-    """
-    parts = socket.recv_multipart()
+def drain_frame_socket(socket, nonblock_only: bool) -> List[list]:
+    """Block for first message (unless nonblock_only), then drain all pending non-blocking."""
+    msgs: List[list] = []
+    if not nonblock_only:
+        msgs.append(socket.recv_multipart())
+    while True:
+        try:
+            msgs.append(socket.recv_multipart(flags=zmq.NOBLOCK))
+        except zmq.Again:
+            break
+    return msgs
 
-    if parts and parts[0] == b"reset":
-        return "reset", -1, b""
 
+def parse_frame_sub_parts(parts: list) -> Tuple[int, int, bytes]:
+    """Parse raw ZMQ multipart into (frame_idx, video_time_ms, jpg_bytes)."""
     if len(parts) < 4:
         raise ValueError(f"Expected 4 parts, got {len(parts)}")
-
     frame_idx = int(parts[1].decode("utf-8"))
     try:
         video_time_ms = int(parts[2].decode("utf-8"))
     except Exception:
         video_time_ms = -1
-
     jpg_bytes = parts[3]
     return frame_idx, video_time_ms, jpg_bytes
 
@@ -316,14 +320,22 @@ async def main_async():
     last_log_ts = time.time()
     frames_processed = 0
 
+    local_queue: List[list] = []
     while True:
         try:
-            recv_result = await asyncio.to_thread(recv_frame_sub, sub)
+            new_msgs = await asyncio.to_thread(drain_frame_socket, sub, bool(local_queue))
         except Exception:
             await asyncio.sleep(0.01)
             continue
 
-        if recv_result[0] == "reset":
+        local_queue.extend(new_msgs)
+
+        last_reset = max(
+            (i for i, m in enumerate(local_queue) if m and m[0] == b"reset"),
+            default=-1,
+        )
+        if last_reset >= 0:
+            local_queue = local_queue[last_reset + 1:]
             tracks = []
             next_track_id = 1
             if motion is not None:
@@ -332,7 +344,11 @@ async def main_async():
             print("[RESET] Tracker state cleared for new video.")
             continue
 
-        frame_idx, video_time_ms, jpg_bytes = recv_result
+        parts = local_queue.pop(0)
+        try:
+            frame_idx, video_time_ms, jpg_bytes = parse_frame_sub_parts(parts)
+        except Exception:
+            continue
 
         if first_frame:
             print(f"[TRACKER] First frame received (idx={frame_idx})")

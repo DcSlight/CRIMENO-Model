@@ -163,35 +163,37 @@ def load_florence_pipeline(model_name: str, device_str: str):
     return vision_pipe
 
 
-def recv_frame(socket) -> Tuple[Any, Optional[int], Optional[bytes]]:
-    parts = socket.recv_multipart()
+def drain_video_socket(socket, nonblock_only: bool) -> List[list]:
+    """Block for first message (unless nonblock_only), then drain all pending non-blocking."""
+    msgs: List[list] = []
+    if not nonblock_only:
+        msgs.append(socket.recv_multipart())
+    while True:
+        try:
+            msgs.append(socket.recv_multipart(flags=zmq.NOBLOCK))
+        except zmq.Again:
+            break
+    return msgs
 
-    if parts and parts[0] == b"reset":
-        return "reset", None, None
 
-    # Supports both formats:
-    # 1) [topic, frame_idx, video_time_ms, jpg]
-    # 2) [frame_idx, video_time_ms, jpg]
+def parse_frame_parts(parts: list) -> Tuple[int, Optional[int], bytes]:
+    """Parse raw ZMQ multipart into (frame_idx, video_time_ms, jpg_bytes)."""
     if len(parts) == 4:
-        # New broadcaster format with topic
         _, frame_idx_b, video_time_b, jpg_bytes = parts
         frame_idx = int(frame_idx_b.decode("utf-8"))
         try:
             video_time_ms = int(video_time_b.decode("utf-8"))
-        except:
+        except Exception:
             video_time_ms = None
         return frame_idx, video_time_ms, jpg_bytes
-
     elif len(parts) == 3:
-        # Old broadcaster format
         frame_idx = int(parts[0].decode("utf-8"))
         try:
             video_time_ms = int(parts[1].decode("utf-8"))
-        except:
+        except Exception:
             video_time_ms = None
         jpg_bytes = parts[2]
         return frame_idx, video_time_ms, jpg_bytes
-
     else:
         raise ValueError(f"Unexpected multipart format: {len(parts)} parts")
 
@@ -311,15 +313,28 @@ async def main_async():
     print(f"📝 Writing JSONL to: {out_path}")
 
     try:
+        local_queue: List[list] = []
         while True:
-            recv_result = await asyncio.to_thread(recv_frame, video_socket)
-            if recv_result[0] == "reset":
+            new_msgs = await asyncio.to_thread(drain_video_socket, video_socket, bool(local_queue))
+            local_queue.extend(new_msgs)
+
+            last_reset = max(
+                (i for i, m in enumerate(local_queue) if m and m[0] == b"reset"),
+                default=-1,
+            )
+            if last_reset >= 0:
+                local_queue = local_queue[last_reset + 1:]
                 global bg_subtractor
                 bg_subtractor = cv2.createBackgroundSubtractorMOG2(history=500, varThreshold=16, detectShadows=False)
                 qwen_socket.send(json.dumps({"type": "reset"}).encode("utf-8"))
                 print("[RESET] Florence state cleared for new video.")
                 continue
-            frame_idx, video_time_ms, jpg_bytes = recv_result
+
+            parts = local_queue.pop(0)
+            try:
+                frame_idx, video_time_ms, jpg_bytes = parse_frame_parts(parts)
+            except Exception:
+                continue
             if frame_idx % args.process_every_n_frames != 0:
                 continue
             image = pil_from_jpg(jpg_bytes)
