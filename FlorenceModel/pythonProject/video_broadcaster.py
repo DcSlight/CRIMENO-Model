@@ -118,8 +118,6 @@ def main():
 
                 print(f"[INFO] Video FPS: {video_fps}")
 
-                cmd_socket.send_json({"status": "ok", "video": new_path})
-
                 # Signal all workers to flush their buffers
                 pub_socket.send_multipart([b"reset"])
                 print("[CONTROL] Sent reset — waiting for worker acks...")
@@ -137,11 +135,19 @@ def main():
                     except zmq.error.Again:
                         continue
 
-                if received_acks < expected_acks:
-                    missing = expected_acks - received_acks
+                missing = expected_acks - received_acks
+                if missing:
                     print(f"[CONTROL] Timeout — missing acks from: {missing}. Starting anyway.")
                 else:
                     print("[CONTROL] All workers ready — starting stream")
+
+                # Reply to NestJS only now — after workers have confirmed they are clean
+                cmd_socket.send_json({
+                    "status": "ok",
+                    "video": new_path,
+                    "workers_ready": sorted(received_acks),
+                    "workers_timeout": sorted(missing),
+                })
 
                 # Meta-data broadcast for the new stream
                 ret, frame0 = cap.read()
