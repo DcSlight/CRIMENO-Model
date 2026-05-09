@@ -21,14 +21,20 @@ bg_subtractor = cv2.createBackgroundSubtractorMOG2(
     detectShadows=False
 )
 
-# Set by the reset-watcher thread the moment a reset signal arrives.
-# Checked by the main inference loop after each inference cycle.
+# _reset_event: set by watcher thread when reset arrives, cleared by main loop after applying it.
+# _reset_done_event: set by main loop after applying reset, cleared by watcher before each wait.
+# This lets the watcher delay the broadcaster ack until the pipeline is actually clean,
+# restoring the React loading state while still forwarding the Groq reset immediately.
 _reset_event = threading.Event()
+_reset_done_event = threading.Event()
+
+ACK_TIMEOUT_S = 25  # wait up to 25s for main loop to finish; broadcaster timeout is 30s
 
 
 def _reset_watcher(video_endpoint: str, groq_endpoint: str, ack_endpoint: str) -> None:
-    """Background thread: immediately acks broadcaster and resets Groq on reset signal,
-    independent of how long the main thread is blocked in model inference."""
+    """Background thread: immediately resets Groq, then waits for the main inference
+    loop to finish its current cycle before acking the broadcaster. This keeps the
+    React loading state visible until the pipeline is truly clean."""
     ctx = zmq.Context.instance()
 
     sub = ctx.socket(zmq.SUB)
@@ -43,10 +49,15 @@ def _reset_watcher(video_endpoint: str, groq_endpoint: str, ack_endpoint: str) -
 
     while True:
         sub.recv_multipart()  # block until reset
-        print("[Florence/reset-watcher] Reset received — acking broadcaster immediately")
+        print("[Florence/reset-watcher] Reset received — forwarding to Groq, waiting for pipeline to clear")
         groq_sock.send(json.dumps({"type": "reset"}).encode("utf-8"))
-        ack_sock.send_json({"worker": "florence", "type": "reset_ack"})
+        _reset_done_event.clear()
         _reset_event.set()
+        # Wait for main loop to finish current inference and drain the buffer
+        if not _reset_done_event.wait(timeout=ACK_TIMEOUT_S):
+            print("[Florence/reset-watcher] Timeout waiting for pipeline — acking anyway")
+        ack_sock.send_json({"worker": "florence", "type": "reset_ack"})
+        print("[Florence/reset-watcher] Ack sent to broadcaster")
 
 
 # --- Regex extraction ---
@@ -370,12 +381,13 @@ async def main_async():
         while True:
             parts = await asyncio.to_thread(video_socket.recv_multipart)
 
-            # The watcher thread handles ack/groq-reset immediately when reset arrives.
-            # Here we just drain any stale frames that piled up while we were mid-inference.
+            # Watcher already forwarded Groq reset and is waiting for our signal before
+            # acking the broadcaster — drain stale frames then unblock it.
             if _reset_event.is_set():
                 _reset_event.clear()
                 print("[Florence] Applying pending reset — draining stale frames")
                 _drain_and_reset_bg()
+                _reset_done_event.set()
                 continue
 
             topic = parts[0]
@@ -447,12 +459,12 @@ async def main_async():
                 weapons = f"[ERROR running <OPEN_VOCABULARY_DETECTION>] {e}"
             record["raw"]["open_vocab_weapons"] = weapons
 
-            # If reset arrived while we were mid-inference, discard these stale results.
-            # The watcher thread already acked broadcaster + reset Groq.
+            # Reset arrived mid-inference — discard stale results, drain, then unblock watcher.
             if _reset_event.is_set():
                 _reset_event.clear()
                 print("[Florence] Reset happened mid-inference — discarding stale results, draining buffer")
                 _drain_and_reset_bg()
+                _reset_done_event.set()
                 continue
 
             # Parse objects and weapons for NestJS
