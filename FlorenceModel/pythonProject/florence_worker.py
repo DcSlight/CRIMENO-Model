@@ -4,6 +4,7 @@ import re
 import time
 import argparse
 import asyncio
+import threading
 from typing import Any, Dict, List, Optional, Tuple
 
 import zmq
@@ -19,6 +20,33 @@ bg_subtractor = cv2.createBackgroundSubtractorMOG2(
     varThreshold=16,
     detectShadows=False
 )
+
+# Set by the reset-watcher thread the moment a reset signal arrives.
+# Checked by the main inference loop after each inference cycle.
+_reset_event = threading.Event()
+
+
+def _reset_watcher(video_endpoint: str, groq_endpoint: str, ack_endpoint: str) -> None:
+    """Background thread: immediately acks broadcaster and resets Groq on reset signal,
+    independent of how long the main thread is blocked in model inference."""
+    ctx = zmq.Context.instance()
+
+    sub = ctx.socket(zmq.SUB)
+    sub.connect(video_endpoint)
+    sub.setsockopt(zmq.SUBSCRIBE, b"reset")
+
+    groq_sock = ctx.socket(zmq.PUSH)
+    groq_sock.connect(groq_endpoint)
+
+    ack_sock = ctx.socket(zmq.PUSH)
+    ack_sock.connect(ack_endpoint)
+
+    while True:
+        sub.recv_multipart()  # block until reset
+        print("[Florence/reset-watcher] Reset received — acking broadcaster immediately")
+        groq_sock.send(json.dumps({"type": "reset"}).encode("utf-8"))
+        ack_sock.send_json({"worker": "florence", "type": "reset_ack"})
+        _reset_event.set()
 
 
 # --- Regex extraction ---
@@ -288,7 +316,9 @@ async def main_async():
     video_socket = context.socket(zmq.SUB)
     video_socket.connect(args.video_endpoint)
     video_socket.setsockopt(zmq.SUBSCRIBE, b"frame")
-    video_socket.setsockopt(zmq.SUBSCRIBE, b"reset")
+    # NOTE: "reset" is intentionally NOT subscribed here.
+    # The _reset_watcher thread has its own SUB socket for reset signals so it
+    # can ack the broadcaster immediately, even while this thread is mid-inference.
     print(f"🔗 Connected to video broadcaster on {args.video_endpoint}")
 
     groq_socket = context.socket(zmq.PUSH)
@@ -298,6 +328,14 @@ async def main_async():
     ack_socket = context.socket(zmq.PUSH)
     ack_socket.connect(args.ack_endpoint)
     print(f"🔗 Connected to broadcaster ack socket on {args.ack_endpoint}")
+
+    threading.Thread(
+        target=_reset_watcher,
+        args=(args.video_endpoint, args.groq_endpoint, args.ack_endpoint),
+        daemon=True,
+        name="florence-reset-watcher",
+    ).start()
+    print("[Florence] Reset-watcher thread started")
 
     ws = await ws_connect_loop(args.ws_url)
 
@@ -312,34 +350,35 @@ async def main_async():
     out_path = args.out
     print(f"📝 Writing JSONL to: {out_path}")
 
+    def _drain_and_reset_bg():
+        """Drain stale frames from the frame-only socket and recreate bg_subtractor."""
+        global bg_subtractor
+        bg_subtractor = cv2.createBackgroundSubtractorMOG2(
+            history=500, varThreshold=16, detectShadows=False
+        )
+        drained = 0
+        while True:
+            try:
+                video_socket.recv_multipart(zmq.NOBLOCK)
+                drained += 1
+            except zmq.error.Again:
+                break
+        if drained:
+            print(f"[Florence] Drained {drained} stale frames from buffer")
+
     try:
         while True:
             parts = await asyncio.to_thread(video_socket.recv_multipart)
-            topic = parts[0]
 
-            if topic == b"reset":
-                # Drain any frames that piled up in the socket buffer while we were
-                # blocked processing the previous frame — they belong to the old video
-                drained = 0
-                while True:
-                    try:
-                        video_socket.recv_multipart(zmq.NOBLOCK)
-                        drained += 1
-                    except zmq.error.Again:
-                        break
-                if drained:
-                    print(f"[Florence] Drained {drained} stale frames from buffer")
-
-                print("[Florence] Reset received — clearing background subtractor state")
-                global bg_subtractor
-                bg_subtractor = cv2.createBackgroundSubtractorMOG2(
-                    history=500, varThreshold=16, detectShadows=False
-                )
-                groq_socket.send(json.dumps({"type": "reset"}).encode("utf-8"))
-                ack_socket.send_json({"worker": "florence", "type": "reset_ack"})
-                print("[Florence] Sent reset ack to broadcaster")
+            # The watcher thread handles ack/groq-reset immediately when reset arrives.
+            # Here we just drain any stale frames that piled up while we were mid-inference.
+            if _reset_event.is_set():
+                _reset_event.clear()
+                print("[Florence] Applying pending reset — draining stale frames")
+                _drain_and_reset_bg()
                 continue
 
+            topic = parts[0]
             if topic != b"frame" or len(parts) < 4:
                 continue
 
@@ -407,6 +446,14 @@ async def main_async():
             except Exception as e:
                 weapons = f"[ERROR running <OPEN_VOCABULARY_DETECTION>] {e}"
             record["raw"]["open_vocab_weapons"] = weapons
+
+            # If reset arrived while we were mid-inference, discard these stale results.
+            # The watcher thread already acked broadcaster + reset Groq.
+            if _reset_event.is_set():
+                _reset_event.clear()
+                print("[Florence] Reset happened mid-inference — discarding stale results, draining buffer")
+                _drain_and_reset_bg()
+                continue
 
             # Parse objects and weapons for NestJS
             objects_list = []
