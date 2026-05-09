@@ -124,7 +124,7 @@ def main():
 
                 expected_acks = {"florence", "tracker"}
                 received_acks = set()
-                deadline = time.time() + 5.0
+                deadline = time.time() + 30.0
                 while received_acks < expected_acks and time.time() < deadline:
                     try:
                         ack = ack_socket.recv_json()

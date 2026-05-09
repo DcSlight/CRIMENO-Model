@@ -318,6 +318,18 @@ async def main_async():
             topic = parts[0]
 
             if topic == b"reset":
+                # Drain any frames that piled up in the socket buffer while we were
+                # blocked processing the previous frame — they belong to the old video
+                drained = 0
+                while True:
+                    try:
+                        video_socket.recv_multipart(zmq.NOBLOCK)
+                        drained += 1
+                    except zmq.error.Again:
+                        break
+                if drained:
+                    print(f"[Florence] Drained {drained} stale frames from buffer")
+
                 print("[Florence] Reset received — clearing background subtractor state")
                 global bg_subtractor
                 bg_subtractor = cv2.createBackgroundSubtractorMOG2(
