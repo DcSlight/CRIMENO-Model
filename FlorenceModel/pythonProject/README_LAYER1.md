@@ -21,16 +21,28 @@ Video File
    │
    ▼
 video_broadcaster.py
-(ZeroMQ PUB)
+(ZeroMQ PUB on tcp://127.0.0.1:5570)
    │
-   ├──▶ florence_worker.py   (every 60 frames)
+   ├──▶ florence_worker.py      (every 60 frames)  ──▶ ZMQ PUSH → groq_anomaly_worker
    │        └── florence.jsonl
    │
-   └──▶ tracker_worker.py    (every 5 frames)
+   └──▶ tracker_worker.py       (every 5 frames)   ──▶ ZMQ PUSH → groq_anomaly_worker
             └── tracker.jsonl
+                     │
+                     ▼
+           groq_anomaly_worker.py  (Layer 2 — Inference)
+           (ZMQ PULL on tcp://127.0.0.1:5581)
+           Llama 3.3 70B via Groq API
+                     │
+                     ▼
+           WebSocket → NestJS (ws://localhost:3000/ws/groq)
+                     │
+                     ▼
+           React Dashboard (GroqWidget)
 ```
 
-Each worker is independent and subscribes to the same video stream.
+Layer 1 workers are independent and subscribe to the same video stream.
+Layer 2 (`groq_anomaly_worker.py`) receives merged Florence + tracker data and reasons about anomalies.
 
 ---
 
@@ -218,17 +230,51 @@ Chronological order can still be inferred using:
 
 ---
 
+## Layer 2 — Groq Anomaly Worker
+
+`groq_anomaly_worker.py` consumes the merged Florence + tracker stream and classifies each scene window.
+
+**Model:** Llama 3.3 70B via Groq API (`GROQ_API_KEY` env var required)
+
+**ZMQ endpoint:** `tcp://127.0.0.1:5581` (PULL socket)
+
+**Business context injection:** When the user checks *Include business context* in the dashboard, NestJS sends a `business_context` ZMQ message before any frames arrive. The worker stores it in `latest_business_context` and prepends it to every subsequent Groq prompt:
+
+```
+Business context (from NestJS):
+- Store: Downtown Market (grocery)
+  Description: ...
+  Location: ...
+  Sensitivity: high; scoring: aggressive
+  Forbidden behaviors: restricted area access
+```
+
+**Output payload** (sent to NestJS via WebSocket `ws://localhost:3000/ws/groq`):
+
+```json
+{
+  "type": "groq_anomaly",
+  "frame_range": { "start": 0, "end": 3 },
+  "result": {
+    "anomaly_score": 0.85,
+    "label": "criminal",
+    "reason": "Person concealing item under jacket near exit",
+    "key_moments": ["item hidden in jacket", "rapid movement to door"]
+  }
+}
+```
+
+**Start command:**
+
+```bash
+python groq_anomaly_worker.py \
+  --groq-api-key <key> \
+  --ws-url ws://localhost:3000/ws/groq
+```
+
 ## Current Status
 
-✔ Layer 1 is stable  
-✔ JSON schemas are consistent  
-✔ Evidence is meaningful and reusable  
-✔ Ready for Layer 2 (Inference & Reasoning)
-
----
-
-## Next Possible Steps
-- Define Layer 2 reasoning logic
-- Add appearance embeddings (ReID)
-- Add interaction / event extraction
-- Formalize schemas using Pydantic or dataclasses
+✔ Layer 1 stable — Florence + tracker evidence collection  
+✔ Layer 2 stable — Groq (Llama 3.3 70B) anomaly reasoning  
+✔ Business context injection wired end-to-end  
+✔ Live results streamed to React dashboard
