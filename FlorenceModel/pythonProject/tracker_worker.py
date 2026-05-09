@@ -532,8 +532,9 @@ async def main_async():
         # Send to WS (if enabled)
         try:
             await ws_send_json(ws, payload)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[TRACKER] WS send failed: {e}. Reconnecting...")
+            ws = await ws_connect_loop(args.ws_url)
 
         frames_processed += 1
         now = time.time()
