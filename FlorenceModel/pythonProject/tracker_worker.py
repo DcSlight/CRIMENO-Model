@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import base64
 import json
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
@@ -22,6 +23,35 @@ try:
     from ultralytics import YOLO
 except Exception:
     YOLO = None
+
+# Set by the reset-watcher thread the moment a reset signal arrives.
+_reset_event = threading.Event()
+
+
+def _reset_watcher(sub_endpoint: str, anomaly_endpoint: str, ack_endpoint: str) -> None:
+    """Background thread: immediately acks broadcaster and resets Groq on reset signal,
+    independent of whether the main thread is blocked in YOLO inference."""
+    ctx = zmq.Context.instance()
+
+    sub = ctx.socket(zmq.SUB)
+    sub.connect(sub_endpoint)
+    sub.setsockopt(zmq.SUBSCRIBE, b"reset")
+
+    groq_sock = ctx.socket(zmq.PUSH)
+    groq_sock.connect(anomaly_endpoint)
+
+    ack_sock = ctx.socket(zmq.PUSH)
+    ack_sock.connect(ack_endpoint)
+
+    while True:
+        sub.recv_multipart()  # block until reset
+        print("[TRACKER/reset-watcher] Reset received — acking broadcaster immediately")
+        try:
+            groq_sock.send(json.dumps({"type": "reset"}).encode("utf-8"))
+        except Exception as e:
+            print(f"[TRACKER/reset-watcher] Failed to forward reset to Groq: {e}")
+        ack_sock.send_json({"worker": "tracker", "type": "reset_ack"})
+        _reset_event.set()
 
 
 def show_debug_frame(frame, tracks, window_name="DEBUG"):
@@ -288,12 +318,15 @@ async def main_async():
 
     motion = MotionDetector() if args.use_motion_fallback else None
 
-    # ZMQ SUB
+    # ZMQ SUB — frame-only socket (reset is handled by the watcher thread)
     context = zmq.Context()
     sub = context.socket(zmq.SUB)
     sub.connect(args.sub_endpoint)
     sub.setsockopt(zmq.SUBSCRIBE, b"frame")
-    sub.setsockopt(zmq.SUBSCRIBE, b"reset")
+    # NOTE: "reset" intentionally NOT subscribed here — the watcher thread has its own
+    # SUB socket for reset so it can ack immediately even while we are mid-YOLO inference.
+    # Also: with RCVHWM=5, a reset arriving when the buffer is full would be silently
+    # dropped; moving it to a dedicated socket avoids that entirely.
     sub.setsockopt(zmq.RCVHWM, 5)
     sub.setsockopt(zmq.RCVTIMEO, 1000)
 
@@ -307,6 +340,14 @@ async def main_async():
     ack_socket = groq_context.socket(zmq.PUSH)
     ack_socket.connect(args.ack_endpoint)
     print(f"[TRACKER] Connected to broadcaster ack socket on {args.ack_endpoint}")
+
+    threading.Thread(
+        target=_reset_watcher,
+        args=(args.sub_endpoint, args.anomaly_endpoint, args.ack_endpoint),
+        daemon=True,
+        name="tracker-reset-watcher",
+    ).start()
+    print("[TRACKER] Reset-watcher thread started")
 
     ws = await ws_connect_loop(args.ws_url)
 
@@ -324,20 +365,28 @@ async def main_async():
             await asyncio.sleep(0.01)
             continue
 
-        topic = parts[0]
-
-        if topic == b"reset":
+        # The watcher thread handles ack + groq-reset immediately when reset arrives.
+        # Here we apply the local state reset (tracks, motion detector, etc.).
+        if _reset_event.is_set():
+            _reset_event.clear()
             tracks = []
             next_track_id = 1
             motion = MotionDetector() if args.use_motion_fallback else None
             first_frame = True
-            try:
-                groq_socket.send(json.dumps({"type": "reset"}).encode("utf-8"))
-            except Exception as e:
-                print(f"[TRACKER] Failed to forward reset to Groq: {e}")
-            ack_socket.send_json({"worker": "tracker", "type": "reset_ack"})
-            print("[TRACKER] Reset received — cleared tracks and state, sent ack to broadcaster")
+            # Drain any stale frames that piled up while we were mid-inference
+            drained = 0
+            while True:
+                try:
+                    sub.recv_multipart(zmq.NOBLOCK)
+                    drained += 1
+                except zmq.error.Again:
+                    break
+            if drained:
+                print(f"[TRACKER] Drained {drained} stale frames after reset")
+            print("[TRACKER] Applied pending reset — cleared tracks and state")
             continue
+
+        topic = parts[0]
 
         if topic != b"frame" or len(parts) < 4:
             continue
@@ -372,6 +421,25 @@ async def main_async():
         dets_objects = [d for d in dets_objects if d["conf"] >= 0.6]
         dets_suspicious = [d for d in dets_suspicious if d["conf"] >= 0.35]
         dets = dets_objects + dets_suspicious
+
+        # If reset arrived while we were mid-YOLO-inference, discard these stale results.
+        if _reset_event.is_set():
+            _reset_event.clear()
+            tracks = []
+            next_track_id = 1
+            motion = MotionDetector() if args.use_motion_fallback else None
+            first_frame = True
+            drained = 0
+            while True:
+                try:
+                    sub.recv_multipart(zmq.NOBLOCK)
+                    drained += 1
+                except zmq.error.Again:
+                    break
+            if drained:
+                print(f"[TRACKER] Drained {drained} stale frames after reset (post-inference)")
+            print("[TRACKER] Reset happened mid-inference — discarding stale results")
+            continue
 
         if motion is not None and len(dets) == 0:
             blobs = motion.detect(frame)
