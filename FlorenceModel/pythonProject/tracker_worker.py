@@ -237,7 +237,9 @@ async def main_async():
     parser.add_argument("--sub_endpoint", default="tcp://127.0.0.1:5560")
     parser.add_argument("--anomaly-endpoint", "--anomaly_endpoint", dest="anomaly_endpoint",
                         default="tcp://127.0.0.1:5580",
-                        help="ZMQ PUSH endpoint for anomaly worker (Qwen on 5580 or Groq on 5581).")
+                        help="ZMQ PUSH endpoint for Groq anomaly worker.")
+    parser.add_argument("--ack-endpoint", dest="ack_endpoint", default="tcp://127.0.0.1:5562",
+                        help="ZeroMQ endpoint to send reset ack back to broadcaster (PUSH).")
     parser.add_argument("--ws_url", default="none")
     parser.add_argument("--yolo_model", default="yolov8n.pt")
     parser.add_argument("--conf_th", type=float, default=0.35)
@@ -291,16 +293,20 @@ async def main_async():
     sub = context.socket(zmq.SUB)
     sub.connect(args.sub_endpoint)
     sub.setsockopt(zmq.SUBSCRIBE, b"frame")
+    sub.setsockopt(zmq.SUBSCRIBE, b"reset")
     sub.setsockopt(zmq.RCVHWM, 5)
     sub.setsockopt(zmq.RCVTIMEO, 1000)
 
     print(f"[TRACKER] SUB connect: {args.sub_endpoint}")
 
-    # ✨ NEW: ZMQ PUSH to Qwen worker (port 5580)
-    qwen_context = zmq.Context()
-    qwen_socket = qwen_context.socket(zmq.PUSH)
-    qwen_socket.connect(args.anomaly_endpoint)
-    print("[TRACKER] Connected to Qwen worker via ZMQ PUSH (tcp://127.0.0.1:5580)")
+    groq_context = zmq.Context()
+    groq_socket = groq_context.socket(zmq.PUSH)
+    groq_socket.connect(args.anomaly_endpoint)
+    print(f"[TRACKER] Connected to Groq worker via ZMQ PUSH ({args.anomaly_endpoint})")
+
+    ack_socket = groq_context.socket(zmq.PUSH)
+    ack_socket.connect(args.ack_endpoint)
+    print(f"[TRACKER] Connected to broadcaster ack socket on {args.ack_endpoint}")
 
     ws = await ws_connect_loop(args.ws_url)
 
@@ -313,10 +319,35 @@ async def main_async():
 
     while True:
         try:
-            frame_idx, video_time_ms, jpg_bytes = await asyncio.to_thread(recv_frame_sub, sub)
+            parts = await asyncio.to_thread(sub.recv_multipart)
         except Exception:
             await asyncio.sleep(0.01)
             continue
+
+        topic = parts[0]
+
+        if topic == b"reset":
+            tracks = []
+            next_track_id = 1
+            motion = MotionDetector() if args.use_motion_fallback else None
+            first_frame = True
+            try:
+                groq_socket.send(json.dumps({"type": "reset"}).encode("utf-8"))
+            except Exception as e:
+                print(f"[TRACKER] Failed to forward reset to Groq: {e}")
+            ack_socket.send_json({"worker": "tracker", "type": "reset_ack"})
+            print("[TRACKER] Reset received — cleared tracks and state, sent ack to broadcaster")
+            continue
+
+        if topic != b"frame" or len(parts) < 4:
+            continue
+
+        frame_idx = int(parts[1].decode("utf-8"))
+        try:
+            video_time_ms = int(parts[2].decode("utf-8"))
+        except Exception:
+            video_time_ms = -1
+        jpg_bytes = parts[3]
 
         if first_frame:
             print(f"[TRACKER] First frame received (idx={frame_idx})")
@@ -425,7 +456,7 @@ async def main_async():
 
         # ✨ Send to Qwen worker
         try:
-            qwen_socket.send(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+            groq_socket.send(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
             print("[TRACKER] Sending to Qwen:", payload)
         except Exception as e:
             print(f"[TRACKER] Failed to send to Qwen: {e}")

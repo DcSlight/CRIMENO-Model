@@ -258,9 +258,11 @@ async def main_async():
     parser = argparse.ArgumentParser()
     parser.add_argument("--video-endpoint", default="tcp://127.0.0.1:5560",
                         help="ZeroMQ endpoint to receive video frames (PULL).")
-    parser.add_argument("--qwen-endpoint", "--anomaly-endpoint", dest="qwen_endpoint",
+    parser.add_argument("--groq-endpoint", "--anomaly-endpoint", dest="groq_endpoint",
                         default="tcp://127.0.0.1:5580",
-                        help="ZeroMQ endpoint to send text records to anomaly worker (Qwen or Groq) (PUSH).")
+                        help="ZeroMQ endpoint to send text records to Groq anomaly worker (PUSH).")
+    parser.add_argument("--ack-endpoint", dest="ack_endpoint", default="tcp://127.0.0.1:5562",
+                        help="ZeroMQ endpoint to send reset ack back to broadcaster (PUSH).")
     parser.add_argument("--ws-url", "--ws_url", dest="ws_url", default="none",
                         help="WebSocket URL for forwarding records (or 'none' to disable).")
     parser.add_argument("--model", default="florence-community/Florence-2-base")
@@ -286,12 +288,16 @@ async def main_async():
     video_socket = context.socket(zmq.SUB)
     video_socket.connect(args.video_endpoint)
     video_socket.setsockopt(zmq.SUBSCRIBE, b"frame")
+    video_socket.setsockopt(zmq.SUBSCRIBE, b"reset")
     print(f"🔗 Connected to video broadcaster on {args.video_endpoint}")
 
-    # ZeroMQ – output (text to Qwen)
-    qwen_socket = context.socket(zmq.PUSH)
-    qwen_socket.connect(args.qwen_endpoint)
-    print(f"🔗 Connected Qwen text output PUSH on {args.qwen_endpoint}")
+    groq_socket = context.socket(zmq.PUSH)
+    groq_socket.connect(args.groq_endpoint)
+    print(f"🔗 Connected to Groq worker via ZMQ PUSH on {args.groq_endpoint}")
+
+    ack_socket = context.socket(zmq.PUSH)
+    ack_socket.connect(args.ack_endpoint)
+    print(f"🔗 Connected to broadcaster ack socket on {args.ack_endpoint}")
 
     ws = await ws_connect_loop(args.ws_url)
 
@@ -308,7 +314,30 @@ async def main_async():
 
     try:
         while True:
-            frame_idx, video_time_ms, jpg_bytes = await asyncio.to_thread(recv_frame, video_socket)
+            parts = await asyncio.to_thread(video_socket.recv_multipart)
+            topic = parts[0]
+
+            if topic == b"reset":
+                print("[Florence] Reset received — clearing background subtractor state")
+                global bg_subtractor
+                bg_subtractor = cv2.createBackgroundSubtractorMOG2(
+                    history=500, varThreshold=16, detectShadows=False
+                )
+                groq_socket.send(json.dumps({"type": "reset"}).encode("utf-8"))
+                ack_socket.send_json({"worker": "florence", "type": "reset_ack"})
+                print("[Florence] Sent reset ack to broadcaster")
+                continue
+
+            if topic != b"frame" or len(parts) < 4:
+                continue
+
+            _, frame_idx_b, video_time_b, jpg_bytes = parts
+            frame_idx = int(frame_idx_b.decode("utf-8"))
+            try:
+                video_time_ms = int(video_time_b.decode("utf-8"))
+            except Exception:
+                video_time_ms = None
+
             if frame_idx % args.process_every_n_frames != 0:
                 continue
             image = pil_from_jpg(jpg_bytes)
@@ -413,7 +442,7 @@ async def main_async():
 
             # ✨ NEW: send to Qwen worker via ZeroMQ (as JSON-line string)
             msg = json.dumps(record, ensure_ascii=False).encode("utf-8")
-            qwen_socket.send(msg)
+            groq_socket.send(msg)
 
             # Send to WebSocket (if enabled)
             try:
@@ -435,7 +464,8 @@ async def main_async():
             except Exception:
                 pass
         video_socket.close()
-        qwen_socket.close()
+        groq_socket.close()
+        ack_socket.close()
         context.term()
 
 
