@@ -1,21 +1,11 @@
------new logs------
-Man_with_Knife', 'conf': 0.8029283881187439, 'source': 'suspicious', 'bbox': {'x1': 36, 'y1': 54, 'x2': 289, 'y2': 185}}], 'motion_detected': False}
-[TRACKER] Sending to Qwen: {'type': 'tracker_frame', 'frame_index': 320, 'video_time_ms': 10666, 'frame_size': {'w': 320, 'h': 240}, 'tracks': [{'track_id': 3, 'cls': 'Man_with_Knife', 'conf': 0.8884571194648743, 'source': 'suspicious', 'bbox': {'x1': 36, 'y1': 53, 'x2': 289, 'y2': 186}}], 'motion_detected': False}
-[TRACKER] Sending to Qwen: {'type': 'tracker_frame', 'frame_index': 330, 'video_time_ms': 11000, 'frame_size': {'w': 320, 'h': 240}, 'tracks': [{'track_id': 3, 'cls': 'Man_with_Knife', 'conf': 0.8581482768058777, 'source': 'suspicious', 'bbox': {'x1': 35, 'y1': 53, 'x2': 289, 'y2': 186}}], 'motion_detected': False}
-[TRACKER] Sending to Qwen: {'type': 'tracker_frame', 'frame_index': 340, 'video_time_ms': 11333, 'frame_size': {'w': 320, 'h': 240}, 'tracks': [{'track_id': 3, 'cls': 'Man_with_Knife', 'conf': 0.8300456404685974, 'source': 'suspicious', 'bbox': {'x1': 35, 'y1': 54, 'x2': 289, 'y2': 185}}], 'motion_detected': False}
-[TRACKER] processed=34 last_frame=340 tracks=1
-[TRACKER] Sending to Qwen: {'type': 'tracker_frame', 'frame_index': 350, 'video_time_ms': 11666, 'frame_size': {'w': 320, 'h': 240}, 'tracks': [{'track_id': 3, 'cls': 'Man_with_Knife', 'conf': 0.8528949022293091, 'source': 'suspicious', 'bbox': {'x1': 34, 'y1': 53, 'x2': 289, 'y2': 185}}], 'motion_detected': False}
-[TRACKER] Sending to Qwen: {'type': 'tracker_frame', 'frame_index': 360, 'video_time_ms': 12000, 'frame_size': {'w': 320, 'h': 240}, 'tracks': [{'track_id': 3, 'cls': 'Man_with_Knife', 'conf': 0.8236454129219055, 'source': 'suspicious', 'bbox': {'x1': 34, 'y1': 53, 'x2': 289, 'y2': 185}}], 'motion_detected': False}
-[TRACKER] Sending to Qwen: {'type': 'tracker_frame', 'frame_index': 370, 'video_time_ms': 12333, 'frame_size': {'w': 320, 'h': 240}, 'tracks': [{'track_id': 3, 'cls': 'Man_with_Knife', 'conf': 0.8194274306297302, 'source': 'suspicious', 'bbox': {'x1': 35, 'y1': 53, 'x2': 289, 'y2': 185}}], 'motion_detected': False}
+: 0.36244556307792664, 'source': 'suspicious', 'bbox': {'x1': 38, 'y1': 54, 'x2': 287, 'y2': 185}}], 'motion_detected': False}
+[TRACKER] Sending to Qwen: {'type': 'tracker_frame', 'frame_index': 470, 'video_time_ms': 15666, 'frame_size': {'w': 320, 'h': 240}, 'tracks': [{'track_id': 3, 'cls': 'Man_with_Knife', 'conf': 0.8110489845275879, 'source': 'suspicious', 'bbox': {'x1': 35, 'y1': 54, 'x2': 289, 'y2': 185}}], 'motion_detected': False}
+[TRACKER] processed=195 last_frame=470 tracks=1
 [TRACKER/reset-watcher] Reset received — forwarding to Groq, waiting for pipeline to clear
-[TRACKER] Drained 7 stale frames after reset (post-inference)
+[TRACKER] Sent UI clear payload on reset
+[TRACKER] Drained 16 stale frames after reset (post-inference)
 [TRACKER] Reset happened mid-inference — discarding stale results
 [TRACKER/reset-watcher] Ack sent to broadcaster
-[TRACKER] First frame received (idx=388)
-[TRACKER] Sending to Qwen: {'type': 'tracker_frame', 'frame_index': 390, 'video_time_ms': 13000, 'frame_size': {'w': 320, 'h': 240}, 'tracks': [{'track_id': 1, 'cls': 'Man_with_Knife', 'conf': 0.8154261708259583, 'source': 'suspicious', 'bbox': {'x1': 36, 'y1': 53, 'x2': 289, 'y2': 185}}], 'motion_detected': False}
-[TRACKER] Sending to Qwen: {'type': 'tracker_frame', 'frame_index': 400, 'video_time_ms': 13333, 'frame_size': {'w': 320, 'h': 240}, 'tracks': [{'track_id': 1, 'cls': 'Man_with_Knife', 'conf': 0.8029788136482239, 'source': 'suspicious', 'bbox': {'x1': 37, 'y1': 53, 'x2': 289, 'y2': 185}}], 'motion_detected': False}
-[TRACKER] processed=39 last_frame=400 tracks=1
-[TRACKER] Sending to Qwen: {'type': 'tracker_frame', 'frame_index': 410, 'video_time_ms': 13666, 'frame_size': {'w': 320, 'h': 240}, 'tracks': [{'track_id': 1, 'cls': 'Man_with_Knife', 'conf': 0.8249232172966003, 'source': 'suspicious', 'bbox': {'x1': 34, 'y1': 53, 'x2': 289, 'y2': 185}}], 'motion_detected': False}
-[TRACKER] Sending to Qwen: {'type': 'tracker_frame', 'frame_index': 420, 'video_time_ms': 14000, 'frame_size': {'w': 320, 'h': 240}, 'tracks': [{'track_id': 1, 'cls': 'Man_with_Knife', 'conf': 0.8573751449584961, 'source': 'suspicious', 'bbox': {'x1': 33, 'y1': 53, 'x2': 289, 'y2': 185}}], 'motion_detected': False}
-[TRACKER] Sending to Qwen: {'type': 'tracker_frame',
-
+[TRACKER] First frame received (idx=497)
+[TRACKER] Sending to Qwen: {'type': 'tracker_frame', 'frame_index': 500, 'video_time_ms': 16666, 'frame_size': {'w': 320, 'h': 240}, 'tracks': [{'track_id': 1, 'cls': 'person', 'conf': 0.6818814873695374, 'source': 'objects', 'bbox': {'x1': 154, 'y1': 44, 'x2': 219, 'y2': 111}}, {'track_id': 2, 'cls': 'Man_with_Knife', 'conf': 0.8026968240737915, 'source': 'suspicious', 'bbox': {'x1': 34, 'y1': 54, 'x2': 289, 'y2': 185}}], 'motion_detected': False}
+[TRACKER] Sending to Qwen: {'type': 'tracker_frame', 'frame_index': 510, 'video_time_ms': 17000, 'frame_size': {'w': 320, 'h': 240}, 'tracks': [{'track_id': 2, 'cls': 'Man_with_Knife', 'conf': 0.8041930794715881, 'source': 'suspicious', 'bbox': {'x1': 32, 'y1': 53, 'x2': 289, 'y2': 185}}], 'motion_detected': False}
