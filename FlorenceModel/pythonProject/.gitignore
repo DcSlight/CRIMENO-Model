@@ -1,3 +1,9 @@
+.env
 analysis.jsonl
 *jsonl
 yolov8n.pt
+.env
+.idea
+#AI
+.claude
+CLAUDE.md

@@ -1,25 +1,59 @@
-# 1) Broadcaster 
-python video_broadcaster.py
+========================================================
+  HOW TO RUN - CRIMENO ML PIPELINE
+========================================================
 
-# 2) Florence (כבד) - כל 60 פריימים
-python florence_worker.py --device cuda --every 30 --ws_url ws://127.0.0.1:3000/ws/prompts
-python florence_worker.py --device cuda --every 30 --bg blur --test show_image
-
-for bg options:
-- black
-- blur
-- focus
-
-# 3) YOLO+Tracking 
-python tracker_worker.py --ws_url ws://127.0.0.1:3000/ws/tracker --send_overlay 0 --send_every_n_frames 2
+CHOOSE YOUR ANOMALY WORKER: Qwen (local GPU) or Groq (API, recommended)
+Then follow the matching set of commands below.
 
 
-4)qwen
+========================================================
+  OPTION A: GROQ (recommended - zero VRAM, fast, smart)
+========================================================
+Prerequisites (one time):
+  pip install groq python-dotenv
+  Put your API key in .env: GROQ_API_KEY=gsk_YOUR_KEY
 
-python qwen_anomaly_worker.py --device cuda
+Step 1 - Broadcaster:
+  python video_broadcaster.py videos/shop.mp4
+
+Step 2 - Groq anomaly worker:
+  python groq_anomaly_worker.py --ws_url ws://127.0.0.1:3000/ws/groq
+
+Step 3 - Florence:
+  python florence_worker.py --device cuda --every 30 --ws_url ws://127.0.0.1:3000/ws/florence --anomaly-endpoint tcp://127.0.0.1:5581
+
+Step 4 - YOLO Tracker:
+  python tracker_worker.py --device cpu --ws_url ws://127.0.0.1:3000/ws/tracker --send_overlay 0 --send_every_n_frames 10 --anomaly-endpoint tcp://127.0.0.1:5581
 
 
-python video_broadcaster.py videos/shop.mp4
+========================================================
+  OPTION B: QWEN (local, requires ~6GB VRAM)
+========================================================
+
+Step 1 - Broadcaster:
+  python video_broadcaster.py videos/shop.mp4
+
+Step 2 - Qwen anomaly worker:
+  python qwen_anomaly_worker.py --device cuda --ws_url ws://127.0.0.1:3000/ws/qwen
+
+Step 3 - Florence:
+  python florence_worker.py --device cuda --every 30 --ws_url ws://127.0.0.1:3000/ws/florence
+
+Step 4 - YOLO Tracker:
+  python tracker_worker.py --device cpu --ws_url ws://127.0.0.1:3000/ws/tracker --send_overlay 0 --send_every_n_frames 10
 
 
-pip install yt-dlp
+========================================================
+  EXTRAS
+========================================================
+
+Florence background options (--bg flag):
+  --bg black   remove background (black)
+  --bg blur    blur background
+  --bg focus   crop + focus on motion area
+
+Florence with preview window:
+  python florence_worker.py --device cuda --every 30 --bg blur --test show_image
+
+Tracker with preview window (no backend needed):
+  python tracker_worker.py --device cpu --send_overlay 0 --send_every_n_frames 2 --test show_image

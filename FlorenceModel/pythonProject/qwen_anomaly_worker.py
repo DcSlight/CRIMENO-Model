@@ -202,12 +202,33 @@ def is_significant_change(new_event: str, last_event: Optional[str], threshold: 
     return sim < threshold
 
 
+def normalize_business_context(context_body: Any) -> str:
+    if context_body is None:
+        return ""
+
+    if isinstance(context_body, str):
+        return context_body.strip()
+
+    try:
+        return json.dumps(context_body, ensure_ascii=False)
+    except Exception:
+        return str(context_body).strip()
+
+
 # ============================================================
 # Scene description builder
 # ============================================================
 
-def build_scene_description(event_history: List[str], current_window_events: List[str]) -> str:
+def build_scene_description(
+    event_history: List[str],
+    current_window_events: List[str],
+    business_context: str = "",
+) -> str:
     lines = []
+
+    if business_context:
+        lines.append("Business context (from NestJS):")
+        lines.append(f"- {business_context}")
 
     if event_history:
         lines.append("Recent context:")
@@ -404,18 +425,20 @@ async def main_async():
     parser.add_argument("--zmq-endpoint", default=ZMQ_ENDPOINT)
     args = parser.parse_args()
 
-    text_gen = load_qwen_pipeline(args.model, args.device)
-
     context = zmq.Context()
     socket = context.socket(zmq.PULL)
     socket.bind(args.zmq_endpoint)
     print(f"🔗 Qwen worker bound on {args.zmq_endpoint}")
+
+    print("[INFO] Loading Qwen model. ZMQ receiver is already bound.")
+    text_gen = load_qwen_pipeline(args.model, args.device)
 
     # Connect to NestJS WebSocket
     ws = await ws_connect_loop(args.ws_url)
 
     raw_queue: List[Dict[str, Any]] = []
     event_history: List[str] = []
+    latest_business_context = ""
 
     # Buffer for YOLO tracker frames by frame_index
     tracker_buffer: Dict[int, Dict[str, Any]] = {}
@@ -427,6 +450,12 @@ async def main_async():
         while True:
             msg = await asyncio.to_thread(socket.recv)
             rec = json.loads(msg.decode("utf-8"))
+
+            if rec.get("type") == "business_context":
+                context_body = rec.get("context")
+                latest_business_context = normalize_business_context(context_body)
+                print("[CTX] Received business context: " + latest_business_context)
+                continue
 
             # If this is a tracker frame → store and continue
             if rec.get("type") == "tracker_frame":
@@ -487,7 +516,11 @@ async def main_async():
             if len(event_history) > MAX_EVENT_HISTORY:
                 event_history = event_history[-MAX_EVENT_HISTORY:]
 
-            scene_description = build_scene_description(event_history, current_window_events)
+            scene_description = build_scene_description(
+                event_history,
+                current_window_events,
+                latest_business_context,
+            )
 
             scene_lines = scene_description.split("\n")
             scene_lines = list(dict.fromkeys(scene_lines))

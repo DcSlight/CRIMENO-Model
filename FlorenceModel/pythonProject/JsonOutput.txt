@@ -1,0 +1,17 @@
+qwen json example:
+
+----- prompt output:
+```
+==================== Anomaly decision ====================
+Frames 0–60
+{
+  "anomaly_score": 0.5,
+  "label": "suspicious",
+  "reason": "Individuals acting suspiciously near cash register.",
+  "key_moments": [
+    "Man holding credit card near cash register",
+    "Woman looking intensely at cash register"
+  ]
+}
+=========================================================
+```
