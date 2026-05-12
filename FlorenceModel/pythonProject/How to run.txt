@@ -57,3 +57,12 @@ Florence with preview window:
 
 Tracker with preview window (no backend needed):
   python tracker_worker.py --device cpu --send_overlay 0 --send_every_n_frames 2 --test show_image
+
+
+
+---------------
+Online
+---------------
+
+London
+https://www.youtube.com/watch?v=8JCk5M_xrBs
