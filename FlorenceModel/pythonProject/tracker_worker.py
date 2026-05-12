@@ -31,6 +31,10 @@ _reset_done_event = threading.Event()
 
 ACK_TIMEOUT_S = 25  # wait up to 25s; broadcaster timeout is 30s
 
+# Used by watcher thread to dispatch an immediate WS-clear into the asyncio event loop.
+_main_loop: Optional[asyncio.AbstractEventLoop] = None
+_clear_queue: Optional[asyncio.Queue] = None
+
 
 def _reset_watcher(sub_endpoint: str, anomaly_endpoint: str, ack_endpoint: str) -> None:
     """Background thread: immediately resets Groq, then waits for the main inference
@@ -54,6 +58,9 @@ def _reset_watcher(sub_endpoint: str, anomaly_endpoint: str, ack_endpoint: str) 
             groq_sock.send(json.dumps({"type": "reset"}).encode("utf-8"))
         except Exception as e:
             print(f"[TRACKER/reset-watcher] Failed to forward reset to Groq: {e}")
+        # Tell React to clear bboxes immediately — before YOLO finishes its current frame.
+        if _main_loop is not None and _clear_queue is not None:
+            _main_loop.call_soon_threadsafe(_clear_queue.put_nowait, "clear")
         _reset_done_event.clear()
         _reset_event.set()
         # Wait for main loop to finish current frame and drain the buffer
@@ -360,6 +367,31 @@ async def main_async():
 
     ws = await ws_connect_loop(args.ws_url)
 
+    global _main_loop, _clear_queue
+    _main_loop = asyncio.get_running_loop()
+    _clear_queue = asyncio.Queue()
+
+    async def clear_sender():
+        nonlocal ws
+        while True:
+            await _clear_queue.get()
+            clear_payload = {
+                "type": "tracker_frame",
+                "frame_index": -1,
+                "video_time_ms": -1,
+                "tracks": [],
+                "motion_detected": False,
+                "reset": True,
+            }
+            try:
+                await ws_send_json(ws, clear_payload)
+                print("[TRACKER] Sent UI clear payload on reset")
+            except Exception as e:
+                print(f"[TRACKER] Clear WS send failed: {e}; reconnecting")
+                ws = await ws_connect_loop(args.ws_url)
+
+    asyncio.create_task(clear_sender())
+
     next_track_id = 1
     tracks: List[Track] = []
 
@@ -417,12 +449,12 @@ async def main_async():
         frame = decode_jpg(jpg_bytes)
         h, w = frame.shape[:2]
 
-        # Run both YOLO models
-        dets_objects = run_yolo(model_objects, frame, args.conf_th, yolo_predict_device)
+        # Run both YOLO models (in threads so the event loop stays free for clear_sender)
+        dets_objects = await asyncio.to_thread(run_yolo, model_objects, frame, args.conf_th, yolo_predict_device)
         for d in dets_objects:
             d["source"] = "objects"
 
-        dets_suspicious = run_yolo(model_suspicious, frame, args.conf_th, yolo_predict_device)
+        dets_suspicious = await asyncio.to_thread(run_yolo, model_suspicious, frame, args.conf_th, yolo_predict_device)
         for d in dets_suspicious:
             d["source"] = "suspicious"
 
