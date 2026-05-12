@@ -29,7 +29,7 @@ except Exception:
 _reset_event = threading.Event()
 _reset_done_event = threading.Event()
 
-ACK_TIMEOUT_S = 25  # wait up to 25s; broadcaster timeout is 30s
+ACK_TIMEOUT_S = 15  # wait up to 15s; broadcaster timeout is 20s
 
 # Used by watcher thread to dispatch an immediate WS-clear into the asyncio event loop.
 _main_loop: Optional[asyncio.AbstractEventLoop] = None

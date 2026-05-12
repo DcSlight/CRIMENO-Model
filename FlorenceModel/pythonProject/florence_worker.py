@@ -28,7 +28,7 @@ bg_subtractor = cv2.createBackgroundSubtractorMOG2(
 _reset_event = threading.Event()
 _reset_done_event = threading.Event()
 
-ACK_TIMEOUT_S = 25  # wait up to 25s for main loop to finish; broadcaster timeout is 30s
+ACK_TIMEOUT_S = 15  # wait up to 15s for main loop to finish; broadcaster timeout is 20s
 
 
 def _reset_watcher(video_endpoint: str, groq_endpoint: str, ack_endpoint: str) -> None:

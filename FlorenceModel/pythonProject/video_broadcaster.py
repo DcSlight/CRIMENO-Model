@@ -5,6 +5,8 @@ import time
 import argparse
 import yt_dlp
 
+WORKER_ACK_TIMEOUT_S = 20  # seconds to wait for all workers to ack a reset before streaming anyway
+
 
 def resolve_video_source(video_path: str, video_type: str) -> str:
     """Returns a source URL/path that cv2.VideoCapture can open."""
@@ -124,7 +126,7 @@ def main():
 
                 expected_acks = {"florence", "tracker"}
                 received_acks = set()
-                deadline = time.time() + 30.0
+                deadline = time.time() + WORKER_ACK_TIMEOUT_S
                 while received_acks < expected_acks and time.time() < deadline:
                     try:
                         ack = ack_socket.recv_json()
