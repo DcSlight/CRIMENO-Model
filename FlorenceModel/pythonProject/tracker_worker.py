@@ -522,7 +522,7 @@ async def main_async():
         if motion is not None and len(dets) == 0:
             blobs = motion.detect(frame)
             for bb in blobs:
-                dets.append({"bbox": bb, "cls_name": "moving_object", "conf": 1.0})
+                dets.append({"bbox": bb, "cls_name": "moving_object", "conf": 1.0, "source": "motion"})
 
         used_tracks = set()
         new_tracks: List[Track] = []
