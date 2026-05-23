@@ -28,6 +28,7 @@ except Exception:
 # _reset_done_event: set by main loop after applying reset, cleared by watcher before each wait.
 _reset_event = threading.Event()
 _reset_done_event = threading.Event()
+_first_frame_pending = threading.Event()  # set on reset; cleared after first real bbox emit
 
 ACK_TIMEOUT_S = 15  # wait up to 15s; broadcaster timeout is 20s
 
@@ -62,6 +63,7 @@ def _reset_watcher(sub_endpoint: str, anomaly_endpoint: str, ack_endpoint: str) 
         if _main_loop is not None and _clear_queue is not None:
             _main_loop.call_soon_threadsafe(_clear_queue.put_nowait, "clear")
         _reset_done_event.clear()
+        _first_frame_pending.set()  # main loop will ack broadcaster after first real bbox
         _reset_event.set()
         # Wait for main loop to finish current frame and drain the buffer
         if not _reset_done_event.wait(timeout=ACK_TIMEOUT_S):
@@ -344,7 +346,7 @@ async def main_async():
     # Also: with RCVHWM=5, a reset arriving when the buffer is full would be silently
     # dropped; moving it to a dedicated socket avoids that entirely.
     sub.setsockopt(zmq.RCVHWM, 5)
-    sub.setsockopt(zmq.RCVTIMEO, 1000)
+    sub.setsockopt(zmq.RCVTIMEO, 100)
 
     print(f"[TRACKER] SUB connect: {args.sub_endpoint}")
 
@@ -400,14 +402,8 @@ async def main_async():
     frames_processed = 0
 
     while True:
-        try:
-            parts = await asyncio.to_thread(sub.recv_multipart)
-        except Exception:
-            await asyncio.sleep(0.01)
-            continue
-
-        # Watcher already forwarded Groq reset and is waiting for our signal before
-        # acking the broadcaster — apply local state reset then unblock it.
+        # Check for pending reset BEFORE blocking on recv so cold-start resets are handled
+        # instantly even when no frames are flowing (avoids the 15s watcher timeout on first play).
         if _reset_event.is_set():
             _reset_event.clear()
             tracks = []
@@ -425,6 +421,14 @@ async def main_async():
                 print(f"[TRACKER] Drained {drained} stale frames after reset")
             print("[TRACKER] Applied pending reset — cleared tracks and state")
             _reset_done_event.set()
+            continue
+
+        try:
+            parts = await asyncio.to_thread(sub.recv_multipart)
+        except zmq.error.Again:
+            continue  # RCVTIMEO fired; loop back to check _reset_event
+        except Exception:
+            await asyncio.sleep(0.01)
             continue
 
         topic = parts[0]
@@ -577,6 +581,16 @@ async def main_async():
         except Exception as e:
             print(f"[TRACKER] WS send failed: {e}. Reconnecting...")
             ws = await ws_connect_loop(args.ws_url)
+
+        # After the first real bbox is on its way to React, ack the broadcaster so it
+        # can reply {ok:true} to NestJS (which unblocks React's loading spinner).
+        if _first_frame_pending.is_set():
+            _first_frame_pending.clear()
+            try:
+                ack_socket.send_json({"worker": "tracker", "type": "first_frame_ack"})
+                print("[TRACKER] first_frame_ack sent to broadcaster")
+            except Exception as e:
+                print(f"[TRACKER] first_frame_ack send failed: {e}")
 
         frames_processed += 1
         now = time.time()
