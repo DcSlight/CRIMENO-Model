@@ -1,7 +1,7 @@
 # tracker_worker.py
 # Real-time multi-class detection + tracking
 # - Subscribes to ZeroMQ PUB stream (topic: "frame")
-# - Runs YOLO11 (COCO whitelist) + weapon model (gun) + simple IOU tracker
+# - Runs YOLO26s (COCO whitelist) + YOLOv8n weapon model (gun) + simple IOU tracker
 # - Optional motion fallback (MOG2)
 # - Sends results to NestJS via WebSocket
 # - ✨ Also sends tracking data to Qwen worker via ZeroMQ PUSH (port 5580)
@@ -332,7 +332,7 @@ async def main_async():
         raise RuntimeError("ultralytics not installed")
 
     print(f"[TRACKER] Loading YOLO model: {args.yolo_model}...")
-    model_objects = YOLO("yolo11s.pt")
+    model_objects = YOLO("yolo26s.pt")
 
     print("[TRACKER] Downloading weapon model (gun detector)...")
     _weapon_pt = hf_hub_download(repo_id="Subh775/Threat-Detection-YOLOv8n", filename="weights/best.pt")
@@ -492,7 +492,7 @@ async def main_async():
         if dets_weapons and not hasattr(main_async, "_weapon_classes_logged"):
             print(f"[TRACKER] Weapon model classes seen: {sorted({d['cls_name'] for d in dets_weapons})}")
             main_async._weapon_classes_logged = True
-        dets_weapons = [d for d in dets_weapons if d["conf"] >= 0.45 and d["cls_name"].lower() in WEAPON_KEEP]
+        dets_weapons = [d for d in dets_weapons if d["conf"] >= 0.60 and d["cls_name"].lower() in WEAPON_KEEP]
         for d in dets_weapons:
             d["cls_name"] = d["cls_name"].lower()  # normalise to lowercase
             d["source"] = "weapons"
