@@ -320,7 +320,7 @@ async def main_async():
     parser.add_argument("--send_every_n_frames", type=int, default=1)
     parser.add_argument("--send_overlay", type=int, default=0)
     parser.add_argument("--overlay_jpeg_quality", type=int, default=80)
-    parser.add_argument("--use_motion_fallback", type=int, default=1)
+    parser.add_argument("--use_motion_fallback", type=int, default=0)
     parser.add_argument("--max_track_age", type=int, default=30)
     parser.add_argument("--iou_match_th", type=float, default=0.30)
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto",
