@@ -464,7 +464,7 @@ async def main_async():
 
         # Merge
         dets_objects = [d for d in dets_objects if d["conf"] >= 0.6]
-        dets_suspicious = [d for d in dets_suspicious if d["conf"] >= 0.35]
+        dets_suspicious = [d for d in dets_suspicious if d["conf"] >= 0.93]
         dets = dets_objects + dets_suspicious
 
         # Reset arrived mid-YOLO-inference — discard stale results, drain, then unblock watcher.
