@@ -1,7 +1,7 @@
 # tracker_worker.py
 # Real-time multi-class detection + tracking
 # - Subscribes to ZeroMQ PUB stream (topic: "frame")
-# - Runs YOLOv8 (COCO) + simple IOU tracker
+# - Runs YOLO11 (COCO whitelist) + weapon model (gun) + simple IOU tracker
 # - Optional motion fallback (MOG2)
 # - Sends results to NestJS via WebSocket
 # - ✨ Also sends tracking data to Qwen worker via ZeroMQ PUSH (port 5580)
@@ -18,11 +18,36 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 import zmq
+from huggingface_hub import hf_hub_download
 
 try:
     from ultralytics import YOLO
 except Exception:
     YOLO = None
+
+# COCO classes relevant to robbery scenarios — everything else is silently dropped
+COCO_RELEVANT = {
+    # People
+    "person",
+    # Weapons & blunt objects
+    "knife", "baseball bat", "scissors", "bottle", "fork",
+    "tennis racket", "skateboard",
+    # Bags & carrying (stolen goods / suspicious carrying)
+    "backpack", "handbag", "suitcase",
+    # High-value electronics (theft targets)
+    "cell phone", "laptop", "tv",
+    # Vehicles (getaway, ram-raids)
+    "car", "motorcycle", "truck", "bicycle", "bus",
+    # Concealment / suspicious items
+    "umbrella",               # blocks cameras, hides weapons
+    # Smash-and-grab tools
+    "chair",                  # thrown through shop windows
+    # Valuable store items
+    "clock", "vase",
+}
+
+# Classes to keep from the weapon detection model (knife already covered by COCO)
+WEAPON_KEEP = {"gun"}
 
 # _reset_event: set by watcher when reset arrives, cleared by main loop after applying it.
 # _reset_done_event: set by main loop after applying reset, cleared by watcher before each wait.
@@ -82,8 +107,8 @@ def show_debug_frame(frame, tracks, window_name="DEBUG"):
         x1, y1, x2, y2 = t.bbox
 
         # Color by source (not by class name)
-        if hasattr(t, "source") and t.source == "suspicious":
-            color = (0, 0, 255)   # RED for suspicious model
+        if hasattr(t, "source") and t.source == "weapons":
+            color = (0, 0, 255)   # RED for weapon detections
         else:
             color = (0, 255, 0)   # GREEN for regular YOLO objects
 
@@ -101,7 +126,7 @@ def show_debug_frame(frame, tracks, window_name="DEBUG"):
 
 def shrink_bbox_tuple(bbox, factor=0.2):
     # Shrinks a bounding box by a given factor (default 20%) while keeping it centered.
-    # Used to reduce oversized detections (e.g., suspicious model outputs) before visualization or sending downstream.
+    # Utility: shrinks a bounding box toward its center by the given factor.
     x1, y1, x2, y2 = bbox
     w = x2 - x1
     h = y2 - y1
@@ -306,8 +331,11 @@ async def main_async():
         raise RuntimeError("ultralytics not installed")
 
     print(f"[TRACKER] Loading YOLO model: {args.yolo_model}...")
-    model_objects = YOLO("yolov8s.pt")
-    model_suspicious = YOLO("Suspicious_Activities_nano.pt")
+    model_objects = YOLO("yolo11s.pt")
+
+    print("[TRACKER] Downloading weapon model (gun detector)...")
+    _weapon_pt = hf_hub_download(repo_id="Subh775/Threat-Detection-YOLOv8n", filename="weights/best.pt")
+    model_weapons = YOLO(_weapon_pt)
 
     yolo_predict_device: Optional[Any] = None
     if args.device == "cpu":
@@ -325,11 +353,11 @@ async def main_async():
     else:
         _ = model_objects.predict(dummy, conf=0.5, verbose=False, device=yolo_predict_device)
 
-    print("[TRACKER] Warming up suspicious model...")
+    print("[TRACKER] Warming up weapon model...")
     if yolo_predict_device is None:
-        _ = model_suspicious.predict(dummy, conf=0.5, verbose=False)
+        _ = model_weapons.predict(dummy, conf=0.5, verbose=False)
     else:
-        _ = model_suspicious.predict(dummy, conf=0.5, verbose=False, device=yolo_predict_device)
+        _ = model_weapons.predict(dummy, conf=0.5, verbose=False, device=yolo_predict_device)
 
     print("[TRACKER] ✓ Both models ready")
 
@@ -455,17 +483,16 @@ async def main_async():
 
         # Run both YOLO models (in threads so the event loop stays free for clear_sender)
         dets_objects = await asyncio.to_thread(run_yolo, model_objects, frame, args.conf_th, yolo_predict_device)
+        dets_objects = [d for d in dets_objects if d["conf"] >= 0.6 and d["cls_name"] in COCO_RELEVANT]
         for d in dets_objects:
             d["source"] = "objects"
 
-        dets_suspicious = await asyncio.to_thread(run_yolo, model_suspicious, frame, args.conf_th, yolo_predict_device)
-        for d in dets_suspicious:
-            d["source"] = "suspicious"
+        dets_weapons = await asyncio.to_thread(run_yolo, model_weapons, frame, args.conf_th, yolo_predict_device)
+        dets_weapons = [d for d in dets_weapons if d["conf"] >= 0.45 and d["cls_name"] in WEAPON_KEEP]
+        for d in dets_weapons:
+            d["source"] = "weapons"
 
-        # Merge
-        dets_objects = [d for d in dets_objects if d["conf"] >= 0.6]
-        dets_suspicious = [d for d in dets_suspicious if d["conf"] >= 0.35]
-        dets = dets_objects + dets_suspicious
+        dets = dets_objects + dets_weapons
 
         # Reset arrived mid-YOLO-inference — discard stale results, drain, then unblock watcher.
         if _reset_event.is_set():
@@ -531,10 +558,7 @@ async def main_async():
 
         tracks = [t for t in new_tracks if (frame_idx - t.last_seen_frame) <= args.max_track_age]
 
-        # shrink AFTER tracking
-        for t in tracks:
-            if hasattr(t, "source") and t.source == "suspicious":
-                t.bbox = shrink_bbox_tuple(t.bbox, factor=0.2)
+        # no bbox shrinking needed — weapon model outputs tight object-level boxes
 
         # DEBUG VISUALIZATION
         if args.test == "show_image":
