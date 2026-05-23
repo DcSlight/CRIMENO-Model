@@ -46,7 +46,8 @@ COCO_RELEVANT = {
     "clock", "vase",
 }
 
-# Classes to keep from the weapon detection model (knife already covered by COCO)
+# Classes to keep from the weapon detection model (knife already covered by COCO).
+# Lowercase — we normalise cls_name to lower() before comparing.
 WEAPON_KEEP = {"gun"}
 
 # _reset_event: set by watcher when reset arrives, cleared by main loop after applying it.
@@ -483,13 +484,17 @@ async def main_async():
 
         # Run both YOLO models (in threads so the event loop stays free for clear_sender)
         dets_objects = await asyncio.to_thread(run_yolo, model_objects, frame, args.conf_th, yolo_predict_device)
-        dets_objects = [d for d in dets_objects if d["conf"] >= 0.6 and d["cls_name"] in COCO_RELEVANT]
+        dets_objects = [d for d in dets_objects if d["conf"] >= 0.45 and d["cls_name"] in COCO_RELEVANT]
         for d in dets_objects:
             d["source"] = "objects"
 
         dets_weapons = await asyncio.to_thread(run_yolo, model_weapons, frame, args.conf_th, yolo_predict_device)
-        dets_weapons = [d for d in dets_weapons if d["conf"] >= 0.45 and d["cls_name"] in WEAPON_KEEP]
+        if dets_weapons and not hasattr(main_async, "_weapon_classes_logged"):
+            print(f"[TRACKER] Weapon model classes seen: {sorted({d['cls_name'] for d in dets_weapons})}")
+            main_async._weapon_classes_logged = True
+        dets_weapons = [d for d in dets_weapons if d["conf"] >= 0.45 and d["cls_name"].lower() in WEAPON_KEEP]
         for d in dets_weapons:
+            d["cls_name"] = d["cls_name"].lower()  # normalise to lowercase
             d["source"] = "weapons"
 
         dets = dets_objects + dets_weapons
