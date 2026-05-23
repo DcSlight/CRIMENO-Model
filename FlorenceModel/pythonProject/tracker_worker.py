@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import base64
 import json
+import os
 import threading
 import time
 from dataclasses import dataclass
@@ -18,7 +19,10 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 import zmq
-from huggingface_hub import hf_hub_download
+from dotenv import load_dotenv
+from inference_sdk import InferenceHTTPClient
+
+load_dotenv()
 
 try:
     from ultralytics import YOLO
@@ -46,9 +50,11 @@ COCO_RELEVANT = {
     "clock", "vase",
 }
 
-# Classes to keep from the weapon detection model (knife already covered by COCO).
+# Classes to keep from the Roboflow weapon model (gun-knife-9rwe9/17).
 # Lowercase — we normalise cls_name to lower() before comparing.
-WEAPON_KEEP = {"gun"}
+WEAPON_KEEP = {"gun", "pistol", "knife"}
+
+ROBOFLOW_WEAPON_MODEL = "gun-knife-9rwe9/17"
 
 # _reset_event: set by watcher when reset arrives, cleared by main loop after applying it.
 # _reset_done_event: set by main loop after applying reset, cleared by watcher before each wait.
@@ -277,6 +283,29 @@ def run_yolo(model, frame_bgr: np.ndarray, conf_th: float, device: Optional[Any]
 
 
 # -------------------------
+# Roboflow weapon detection
+# -------------------------
+def run_roboflow_weapons(client: InferenceHTTPClient, frame_bgr: np.ndarray, conf_th: float) -> List[Dict[str, Any]]:
+    result = client.infer(frame_bgr, model_id=ROBOFLOW_WEAPON_MODEL)
+    dets: List[Dict[str, Any]] = []
+    for pred in result.get("predictions", []):
+        cls_name = pred.get("class", "").lower()
+        conf = float(pred.get("confidence", 0.0))
+        if conf < conf_th:
+            continue
+        cx = pred.get("x", 0)
+        cy = pred.get("y", 0)
+        pw = pred.get("width", 0)
+        ph = pred.get("height", 0)
+        x1 = int(cx - pw / 2)
+        y1 = int(cy - ph / 2)
+        x2 = int(cx + pw / 2)
+        y2 = int(cy + ph / 2)
+        dets.append({"bbox": (x1, y1, x2, y2), "cls_name": cls_name, "conf": conf})
+    return dets
+
+
+# -------------------------
 # WebSocket sender
 # -------------------------
 async def ws_connect_loop(ws_url: str):
@@ -326,6 +355,10 @@ async def main_async():
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto",
                         help="Device for YOLO inference. Use 'cpu' to free GPU memory for Qwen.")
     parser.add_argument("--test", default="none")
+    parser.add_argument("--roboflow_api_key", default=os.environ.get("ROBOFLOW_API_KEY", ""),
+                        help="Roboflow API key. Falls back to ROBOFLOW_API_KEY env var.")
+    parser.add_argument("--roboflow_api_url", default="http://localhost:9001/",
+                        help="Roboflow inference server URL. Use https://serverless.roboflow.com/ for hosted API.")
     args = parser.parse_args()
 
     if YOLO is None:
@@ -334,32 +367,27 @@ async def main_async():
     print(f"[TRACKER] Loading YOLO model: {args.yolo_model}...")
     model_objects = YOLO("yolo11s.pt")
 
-    print("[TRACKER] Downloading weapon model (gun detector)...")
-    _weapon_pt = hf_hub_download(repo_id="Subh775/Threat-Detection-YOLOv8n", filename="weights/best.pt")
-    model_weapons = YOLO(_weapon_pt)
-
     yolo_predict_device: Optional[Any] = None
     if args.device == "cpu":
         yolo_predict_device = "cpu"
     elif args.device == "cuda":
         yolo_predict_device = 0
 
-    # Warmup
-    print("[TRACKER] Warming up model...")
-    dummy = np.zeros((640, 640, 3), dtype=np.uint8)
-
+    # Warmup object model
     print("[TRACKER] Warming up object model...")
+    dummy = np.zeros((640, 640, 3), dtype=np.uint8)
     if yolo_predict_device is None:
         _ = model_objects.predict(dummy, conf=0.5, verbose=False)
     else:
         _ = model_objects.predict(dummy, conf=0.5, verbose=False, device=yolo_predict_device)
 
-    print("[TRACKER] Warming up weapon model...")
-    if yolo_predict_device is None:
-        _ = model_weapons.predict(dummy, conf=0.5, verbose=False)
-    else:
-        _ = model_weapons.predict(dummy, conf=0.5, verbose=False, device=yolo_predict_device)
-
+    # Roboflow weapon client
+    print(f"[TRACKER] Connecting to Roboflow inference server: {args.roboflow_api_url}")
+    roboflow_client = InferenceHTTPClient(
+        api_url=args.roboflow_api_url,
+        api_key=args.roboflow_api_key,
+    )
+    print(f"[TRACKER] Weapon model: {ROBOFLOW_WEAPON_MODEL}")
     print("[TRACKER] ✓ Both models ready")
 
 
@@ -488,13 +516,12 @@ async def main_async():
         for d in dets_objects:
             d["source"] = "objects"
 
-        dets_weapons = await asyncio.to_thread(run_yolo, model_weapons, frame, args.conf_th, yolo_predict_device)
+        dets_weapons = await asyncio.to_thread(run_roboflow_weapons, roboflow_client, frame, 0.60)
         if dets_weapons and not hasattr(main_async, "_weapon_classes_logged"):
             print(f"[TRACKER] Weapon model classes seen: {sorted({d['cls_name'] for d in dets_weapons})}")
             main_async._weapon_classes_logged = True
-        dets_weapons = [d for d in dets_weapons if d["conf"] >= 0.60 and d["cls_name"].lower() in WEAPON_KEEP]
+        dets_weapons = [d for d in dets_weapons if d["cls_name"] in WEAPON_KEEP]
         for d in dets_weapons:
-            d["cls_name"] = d["cls_name"].lower()  # normalise to lowercase
             d["source"] = "weapons"
 
         dets = dets_objects + dets_weapons
