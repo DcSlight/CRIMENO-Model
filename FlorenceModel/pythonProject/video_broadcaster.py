@@ -5,7 +5,8 @@ import time
 import argparse
 import yt_dlp
 
-WORKER_ACK_TIMEOUT_S = 20  # seconds to wait for all workers to ack a reset before streaming anyway
+WORKER_ACK_TIMEOUT_S = 20    # seconds to wait for reset_ack from all workers
+FIRST_FRAME_ACK_TIMEOUT_S = 5  # seconds to wait for tracker to emit its first real bbox
 
 
 def resolve_video_source(video_path: str, video_type: str) -> str:
@@ -111,7 +112,8 @@ def main():
                 cap = cv2.VideoCapture(source)
                 current_video = new_path
                 frame_index = 0
-                stream_start_time = time.time()
+                # stream_start_time is set AFTER the first-frame ack so pacing starts from
+                # the moment React receives {ok:true} — avoids a catch-up burst on first play.
 
                 # Get video FPS
                 video_fps = cap.get(cv2.CAP_PROP_FPS)
@@ -143,20 +145,50 @@ def main():
                 else:
                     print("[CONTROL] All workers ready — starting stream")
 
-                # Reply to NestJS only now — after workers have confirmed they are clean
+                # Publish warmup frame 0 so tracker can run YOLO on it before we reply to NestJS.
+                ret, frame0 = cap.read()
+                if not ret:
+                    cmd_socket.send_json({"status": "error", "msg": "failed to read first frame"})
+                    continue
+                h0, w0 = frame0.shape[:2]
+                if args.resize_width and w0 > args.resize_width:
+                    scale = args.resize_width / float(w0)
+                    frame0 = cv2.resize(frame0, (int(w0 * scale), int(h0 * scale)), interpolation=cv2.INTER_AREA)
+                    h0, w0 = frame0.shape[:2]
+                jpg0 = encode_jpg(frame0, args.jpeg_quality)
+                pub_socket.send_multipart([b"frame", b"0", b"0", jpg0])
+                print("[CONTROL] Warmup frame 0 published — waiting for tracker first_frame_ack")
+
+                # Wait for tracker to confirm it emitted its first bbox over WS (or time out).
+                first_frame_deadline = time.time() + FIRST_FRAME_ACK_TIMEOUT_S
+                got_first_frame = False
+                while time.time() < first_frame_deadline:
+                    try:
+                        ack = ack_socket.recv_json()
+                        if ack.get("type") == "first_frame_ack" and ack.get("worker") == "tracker":
+                            got_first_frame = True
+                            print("[CONTROL] first_frame_ack received — tracker has a bbox ready")
+                            break
+                    except zmq.error.Again:
+                        continue
+                if not got_first_frame:
+                    print("[CONTROL] Timeout waiting for tracker first_frame_ack — replying anyway")
+
+                # Reply to NestJS — by now tracker has sent the first bbox over WS to React.
                 cmd_socket.send_json({
                     "status": "ok",
                     "video": new_path,
                     "workers_ready": sorted(received_acks),
                     "workers_timeout": sorted(missing),
+                    "first_frame_ready": got_first_frame,
                 })
 
-                # Meta-data broadcast for the new stream
-                ret, frame0 = cap.read()
-                if ret:
-                    h0, w0 = frame0.shape[:2]
-                    pub_socket.send_multipart([b"meta", str(w0).encode(), str(h0).encode(), str(video_fps).encode()])
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                # Meta broadcast for the stream
+                pub_socket.send_multipart([b"meta", str(w0).encode(), str(h0).encode(), str(video_fps).encode()])
+
+                # Anchor FPS pacing to now — frame 1 onward is paced from when React started playing.
+                stream_start_time = time.time()
+                frame_index = 1  # frame 0 was already published as the warmup frame
             else:
                 cmd_socket.send_json({"status": "error", "msg": "unknown command"})
 

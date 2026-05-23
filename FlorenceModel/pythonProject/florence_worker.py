@@ -327,6 +327,7 @@ async def main_async():
     video_socket = context.socket(zmq.SUB)
     video_socket.connect(args.video_endpoint)
     video_socket.setsockopt(zmq.SUBSCRIBE, b"frame")
+    video_socket.setsockopt(zmq.RCVTIMEO, 100)  # wake every 100ms to check _reset_event when idle
     # NOTE: "reset" is intentionally NOT subscribed here.
     # The _reset_watcher thread has its own SUB socket for reset signals so it
     # can ack the broadcaster immediately, even while this thread is mid-inference.
@@ -379,16 +380,19 @@ async def main_async():
 
     try:
         while True:
-            parts = await asyncio.to_thread(video_socket.recv_multipart)
-
-            # Watcher already forwarded Groq reset and is waiting for our signal before
-            # acking the broadcaster — drain stale frames then unblock it.
+            # Check for pending reset BEFORE blocking on recv so cold-start resets are handled
+            # instantly even when no frames are flowing (avoids the 15s watcher timeout on first play).
             if _reset_event.is_set():
                 _reset_event.clear()
                 print("[Florence] Applying pending reset — draining stale frames")
                 _drain_and_reset_bg()
                 _reset_done_event.set()
                 continue
+
+            try:
+                parts = await asyncio.to_thread(video_socket.recv_multipart)
+            except zmq.error.Again:
+                continue  # RCVTIMEO fired; loop back to check _reset_event
 
             topic = parts[0]
             if topic != b"frame" or len(parts) < 4:
