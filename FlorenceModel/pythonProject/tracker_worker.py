@@ -178,6 +178,7 @@ class Track:
     cls_name: str
     conf: float
     last_seen_frame: int
+    source: str = ""
 
 
 def draw_tracks(frame: np.ndarray, tracks: List[Track]) -> np.ndarray:
@@ -514,7 +515,7 @@ async def main_async():
                 best_track.cls_name = d["cls_name"]
                 best_track.conf = float(d["conf"])
                 best_track.last_seen_frame = frame_idx
-                best_track.source = d["source"]
+                best_track.source = d.get("source", "")
                 new_tracks.append(best_track)
             else:
                 t = Track(
@@ -523,8 +524,8 @@ async def main_async():
                     cls_name=d["cls_name"],
                     conf=float(d["conf"]),
                     last_seen_frame=frame_idx,
+                    source=d.get("source", ""),
                 )
-                t.source = d["source"]
                 next_track_id += 1
                 used_tracks.add(t.track_id)
                 new_tracks.append(t)
@@ -533,7 +534,7 @@ async def main_async():
 
         # shrink AFTER tracking
         for t in tracks:
-            if hasattr(t, "source") and t.source == "suspicious":
+            if t.source == "suspicious":
                 t.bbox = shrink_bbox_tuple(t.bbox, factor=0.2)
 
         # DEBUG VISUALIZATION
