@@ -4,6 +4,7 @@ import re
 import time
 import argparse
 import asyncio
+import threading
 from typing import Any, Dict, List, Optional, Tuple
 
 import zmq
@@ -19,6 +20,44 @@ bg_subtractor = cv2.createBackgroundSubtractorMOG2(
     varThreshold=16,
     detectShadows=False
 )
+
+# _reset_event: set by watcher thread when reset arrives, cleared by main loop after applying it.
+# _reset_done_event: set by main loop after applying reset, cleared by watcher before each wait.
+# This lets the watcher delay the broadcaster ack until the pipeline is actually clean,
+# restoring the React loading state while still forwarding the Groq reset immediately.
+_reset_event = threading.Event()
+_reset_done_event = threading.Event()
+
+ACK_TIMEOUT_S = 15  # wait up to 15s for main loop to finish; broadcaster timeout is 20s
+
+
+def _reset_watcher(video_endpoint: str, groq_endpoint: str, ack_endpoint: str) -> None:
+    """Background thread: immediately resets Groq, then waits for the main inference
+    loop to finish its current cycle before acking the broadcaster. This keeps the
+    React loading state visible until the pipeline is truly clean."""
+    ctx = zmq.Context.instance()
+
+    sub = ctx.socket(zmq.SUB)
+    sub.connect(video_endpoint)
+    sub.setsockopt(zmq.SUBSCRIBE, b"reset")
+
+    groq_sock = ctx.socket(zmq.PUSH)
+    groq_sock.connect(groq_endpoint)
+
+    ack_sock = ctx.socket(zmq.PUSH)
+    ack_sock.connect(ack_endpoint)
+
+    while True:
+        sub.recv_multipart()  # block until reset
+        print("[Florence/reset-watcher] Reset received — forwarding to Groq, waiting for pipeline to clear")
+        groq_sock.send(json.dumps({"type": "reset"}).encode("utf-8"))
+        _reset_done_event.clear()
+        _reset_event.set()
+        # Wait for main loop to finish current inference and drain the buffer
+        if not _reset_done_event.wait(timeout=ACK_TIMEOUT_S):
+            print("[Florence/reset-watcher] Timeout waiting for pipeline — acking anyway")
+        ack_sock.send_json({"worker": "florence", "type": "reset_ack"})
+        print("[Florence/reset-watcher] Ack sent to broadcaster")
 
 
 # --- Regex extraction ---
@@ -258,9 +297,11 @@ async def main_async():
     parser = argparse.ArgumentParser()
     parser.add_argument("--video-endpoint", default="tcp://127.0.0.1:5560",
                         help="ZeroMQ endpoint to receive video frames (PULL).")
-    parser.add_argument("--qwen-endpoint", "--anomaly-endpoint", dest="qwen_endpoint",
+    parser.add_argument("--groq-endpoint", "--anomaly-endpoint", dest="groq_endpoint",
                         default="tcp://127.0.0.1:5580",
-                        help="ZeroMQ endpoint to send text records to anomaly worker (Qwen or Groq) (PUSH).")
+                        help="ZeroMQ endpoint to send text records to Groq anomaly worker (PUSH).")
+    parser.add_argument("--ack-endpoint", dest="ack_endpoint", default="tcp://127.0.0.1:5562",
+                        help="ZeroMQ endpoint to send reset ack back to broadcaster (PUSH).")
     parser.add_argument("--ws-url", "--ws_url", dest="ws_url", default="none",
                         help="WebSocket URL for forwarding records (or 'none' to disable).")
     parser.add_argument("--model", default="florence-community/Florence-2-base")
@@ -286,12 +327,27 @@ async def main_async():
     video_socket = context.socket(zmq.SUB)
     video_socket.connect(args.video_endpoint)
     video_socket.setsockopt(zmq.SUBSCRIBE, b"frame")
+    video_socket.setsockopt(zmq.RCVTIMEO, 100)  # wake every 100ms to check _reset_event when idle
+    # NOTE: "reset" is intentionally NOT subscribed here.
+    # The _reset_watcher thread has its own SUB socket for reset signals so it
+    # can ack the broadcaster immediately, even while this thread is mid-inference.
     print(f"🔗 Connected to video broadcaster on {args.video_endpoint}")
 
-    # ZeroMQ – output (text to Qwen)
-    qwen_socket = context.socket(zmq.PUSH)
-    qwen_socket.connect(args.qwen_endpoint)
-    print(f"🔗 Connected Qwen text output PUSH on {args.qwen_endpoint}")
+    groq_socket = context.socket(zmq.PUSH)
+    groq_socket.connect(args.groq_endpoint)
+    print(f"🔗 Connected to Groq worker via ZMQ PUSH on {args.groq_endpoint}")
+
+    ack_socket = context.socket(zmq.PUSH)
+    ack_socket.connect(args.ack_endpoint)
+    print(f"🔗 Connected to broadcaster ack socket on {args.ack_endpoint}")
+
+    threading.Thread(
+        target=_reset_watcher,
+        args=(args.video_endpoint, args.groq_endpoint, args.ack_endpoint),
+        daemon=True,
+        name="florence-reset-watcher",
+    ).start()
+    print("[Florence] Reset-watcher thread started")
 
     ws = await ws_connect_loop(args.ws_url)
 
@@ -306,9 +362,49 @@ async def main_async():
     out_path = args.out
     print(f"📝 Writing JSONL to: {out_path}")
 
+    def _drain_and_reset_bg():
+        """Drain stale frames from the frame-only socket and recreate bg_subtractor."""
+        global bg_subtractor
+        bg_subtractor = cv2.createBackgroundSubtractorMOG2(
+            history=500, varThreshold=16, detectShadows=False
+        )
+        drained = 0
+        while True:
+            try:
+                video_socket.recv_multipart(zmq.NOBLOCK)
+                drained += 1
+            except zmq.error.Again:
+                break
+        if drained:
+            print(f"[Florence] Drained {drained} stale frames from buffer")
+
     try:
         while True:
-            frame_idx, video_time_ms, jpg_bytes = await asyncio.to_thread(recv_frame, video_socket)
+            # Check for pending reset BEFORE blocking on recv so cold-start resets are handled
+            # instantly even when no frames are flowing (avoids the 15s watcher timeout on first play).
+            if _reset_event.is_set():
+                _reset_event.clear()
+                print("[Florence] Applying pending reset — draining stale frames")
+                _drain_and_reset_bg()
+                _reset_done_event.set()
+                continue
+
+            try:
+                parts = await asyncio.to_thread(video_socket.recv_multipart)
+            except zmq.error.Again:
+                continue  # RCVTIMEO fired; loop back to check _reset_event
+
+            topic = parts[0]
+            if topic != b"frame" or len(parts) < 4:
+                continue
+
+            _, frame_idx_b, video_time_b, jpg_bytes = parts
+            frame_idx = int(frame_idx_b.decode("utf-8"))
+            try:
+                video_time_ms = int(video_time_b.decode("utf-8"))
+            except Exception:
+                video_time_ms = None
+
             if frame_idx % args.process_every_n_frames != 0:
                 continue
             image = pil_from_jpg(jpg_bytes)
@@ -367,6 +463,14 @@ async def main_async():
                 weapons = f"[ERROR running <OPEN_VOCABULARY_DETECTION>] {e}"
             record["raw"]["open_vocab_weapons"] = weapons
 
+            # Reset arrived mid-inference — discard stale results, drain, then unblock watcher.
+            if _reset_event.is_set():
+                _reset_event.clear()
+                print("[Florence] Reset happened mid-inference — discarding stale results, draining buffer")
+                _drain_and_reset_bg()
+                _reset_done_event.set()
+                continue
+
             # Parse objects and weapons for NestJS
             objects_list = []
             try:
@@ -413,7 +517,7 @@ async def main_async():
 
             # ✨ NEW: send to Qwen worker via ZeroMQ (as JSON-line string)
             msg = json.dumps(record, ensure_ascii=False).encode("utf-8")
-            qwen_socket.send(msg)
+            groq_socket.send(msg)
 
             # Send to WebSocket (if enabled)
             try:
@@ -435,7 +539,8 @@ async def main_async():
             except Exception:
                 pass
         video_socket.close()
-        qwen_socket.close()
+        groq_socket.close()
+        ack_socket.close()
         context.term()
 
 

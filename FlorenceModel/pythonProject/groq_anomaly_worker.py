@@ -423,6 +423,13 @@ async def main_async():
             msg = await asyncio.to_thread(socket.recv)
             rec = json.loads(msg.decode("utf-8"))
 
+            if rec.get("type") == "reset":
+                raw_queue.clear()
+                event_history.clear()
+                tracker_buffer.clear()
+                print("[GROQ] Reset received — cleared raw_queue, event_history, tracker_buffer")
+                continue
+
             if rec.get("type") == "business_context":
                 context_body = rec.get("context")
                 latest_business_context = normalize_business_context(context_body)

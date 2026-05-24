@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import base64
 import json
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
@@ -22,6 +23,53 @@ try:
     from ultralytics import YOLO
 except Exception:
     YOLO = None
+
+# _reset_event: set by watcher when reset arrives, cleared by main loop after applying it.
+# _reset_done_event: set by main loop after applying reset, cleared by watcher before each wait.
+_reset_event = threading.Event()
+_reset_done_event = threading.Event()
+_first_frame_pending = threading.Event()  # set on reset; cleared after first real bbox emit
+
+ACK_TIMEOUT_S = 15  # wait up to 15s; broadcaster timeout is 20s
+
+# Used by watcher thread to dispatch an immediate WS-clear into the asyncio event loop.
+_main_loop: Optional[asyncio.AbstractEventLoop] = None
+_clear_queue: Optional[asyncio.Queue] = None
+
+
+def _reset_watcher(sub_endpoint: str, anomaly_endpoint: str, ack_endpoint: str) -> None:
+    """Background thread: immediately resets Groq, then waits for the main inference
+    loop to finish its current cycle before acking the broadcaster."""
+    ctx = zmq.Context.instance()
+
+    sub = ctx.socket(zmq.SUB)
+    sub.connect(sub_endpoint)
+    sub.setsockopt(zmq.SUBSCRIBE, b"reset")
+
+    groq_sock = ctx.socket(zmq.PUSH)
+    groq_sock.connect(anomaly_endpoint)
+
+    ack_sock = ctx.socket(zmq.PUSH)
+    ack_sock.connect(ack_endpoint)
+
+    while True:
+        sub.recv_multipart()  # block until reset
+        print("[TRACKER/reset-watcher] Reset received — forwarding to Groq, waiting for pipeline to clear")
+        try:
+            groq_sock.send(json.dumps({"type": "reset"}).encode("utf-8"))
+        except Exception as e:
+            print(f"[TRACKER/reset-watcher] Failed to forward reset to Groq: {e}")
+        # Tell React to clear bboxes immediately — before YOLO finishes its current frame.
+        if _main_loop is not None and _clear_queue is not None:
+            _main_loop.call_soon_threadsafe(_clear_queue.put_nowait, "clear")
+        _reset_done_event.clear()
+        _first_frame_pending.set()  # main loop will ack broadcaster after first real bbox
+        _reset_event.set()
+        # Wait for main loop to finish current frame and drain the buffer
+        if not _reset_done_event.wait(timeout=ACK_TIMEOUT_S):
+            print("[TRACKER/reset-watcher] Timeout waiting for pipeline — acking anyway")
+        ack_sock.send_json({"worker": "tracker", "type": "reset_ack"})
+        print("[TRACKER/reset-watcher] Ack sent to broadcaster")
 
 
 def show_debug_frame(frame, tracks, window_name="DEBUG"):
@@ -130,6 +178,7 @@ class Track:
     cls_name: str
     conf: float
     last_seen_frame: int
+    source: str = ""
 
 
 def draw_tracks(frame: np.ndarray, tracks: List[Track]) -> np.ndarray:
@@ -237,7 +286,9 @@ async def main_async():
     parser.add_argument("--sub_endpoint", default="tcp://127.0.0.1:5560")
     parser.add_argument("--anomaly-endpoint", "--anomaly_endpoint", dest="anomaly_endpoint",
                         default="tcp://127.0.0.1:5580",
-                        help="ZMQ PUSH endpoint for anomaly worker (Qwen on 5580 or Groq on 5581).")
+                        help="ZMQ PUSH endpoint for Groq anomaly worker.")
+    parser.add_argument("--ack-endpoint", dest="ack_endpoint", default="tcp://127.0.0.1:5562",
+                        help="ZeroMQ endpoint to send reset ack back to broadcaster (PUSH).")
     parser.add_argument("--ws_url", default="none")
     parser.add_argument("--yolo_model", default="yolov8n.pt")
     parser.add_argument("--conf_th", type=float, default=0.35)
@@ -286,23 +337,63 @@ async def main_async():
 
     motion = MotionDetector() if args.use_motion_fallback else None
 
-    # ZMQ SUB
+    # ZMQ SUB — frame-only socket (reset is handled by the watcher thread)
     context = zmq.Context()
     sub = context.socket(zmq.SUB)
     sub.connect(args.sub_endpoint)
     sub.setsockopt(zmq.SUBSCRIBE, b"frame")
+    # NOTE: "reset" intentionally NOT subscribed here — the watcher thread has its own
+    # SUB socket for reset so it can ack immediately even while we are mid-YOLO inference.
+    # Also: with RCVHWM=5, a reset arriving when the buffer is full would be silently
+    # dropped; moving it to a dedicated socket avoids that entirely.
     sub.setsockopt(zmq.RCVHWM, 5)
-    sub.setsockopt(zmq.RCVTIMEO, 1000)
+    sub.setsockopt(zmq.RCVTIMEO, 100)
 
     print(f"[TRACKER] SUB connect: {args.sub_endpoint}")
 
-    # ✨ NEW: ZMQ PUSH to Qwen worker (port 5580)
-    qwen_context = zmq.Context()
-    qwen_socket = qwen_context.socket(zmq.PUSH)
-    qwen_socket.connect(args.anomaly_endpoint)
-    print("[TRACKER] Connected to Qwen worker via ZMQ PUSH (tcp://127.0.0.1:5580)")
+    groq_context = zmq.Context()
+    groq_socket = groq_context.socket(zmq.PUSH)
+    groq_socket.connect(args.anomaly_endpoint)
+    print(f"[TRACKER] Connected to Groq worker via ZMQ PUSH ({args.anomaly_endpoint})")
+
+    ack_socket = groq_context.socket(zmq.PUSH)
+    ack_socket.connect(args.ack_endpoint)
+    print(f"[TRACKER] Connected to broadcaster ack socket on {args.ack_endpoint}")
+
+    threading.Thread(
+        target=_reset_watcher,
+        args=(args.sub_endpoint, args.anomaly_endpoint, args.ack_endpoint),
+        daemon=True,
+        name="tracker-reset-watcher",
+    ).start()
+    print("[TRACKER] Reset-watcher thread started")
 
     ws = await ws_connect_loop(args.ws_url)
+
+    global _main_loop, _clear_queue
+    _main_loop = asyncio.get_running_loop()
+    _clear_queue = asyncio.Queue()
+
+    async def clear_sender():
+        nonlocal ws
+        while True:
+            await _clear_queue.get()
+            clear_payload = {
+                "type": "tracker_frame",
+                "frame_index": -1,
+                "video_time_ms": -1,
+                "tracks": [],
+                "motion_detected": False,
+                "reset": True,
+            }
+            try:
+                await ws_send_json(ws, clear_payload)
+                print("[TRACKER] Sent UI clear payload on reset")
+            except Exception as e:
+                print(f"[TRACKER] Clear WS send failed: {e}; reconnecting")
+                ws = await ws_connect_loop(args.ws_url)
+
+    asyncio.create_task(clear_sender())
 
     next_track_id = 1
     tracks: List[Track] = []
@@ -312,11 +403,46 @@ async def main_async():
     frames_processed = 0
 
     while True:
+        # Check for pending reset BEFORE blocking on recv so cold-start resets are handled
+        # instantly even when no frames are flowing (avoids the 15s watcher timeout on first play).
+        if _reset_event.is_set():
+            _reset_event.clear()
+            tracks = []
+            next_track_id = 1
+            motion = MotionDetector() if args.use_motion_fallback else None
+            first_frame = True
+            drained = 0
+            while True:
+                try:
+                    sub.recv_multipart(zmq.NOBLOCK)
+                    drained += 1
+                except zmq.error.Again:
+                    break
+            if drained:
+                print(f"[TRACKER] Drained {drained} stale frames after reset")
+            print("[TRACKER] Applied pending reset — cleared tracks and state")
+            _reset_done_event.set()
+            continue
+
         try:
-            frame_idx, video_time_ms, jpg_bytes = await asyncio.to_thread(recv_frame_sub, sub)
+            parts = await asyncio.to_thread(sub.recv_multipart)
+        except zmq.error.Again:
+            continue  # RCVTIMEO fired; loop back to check _reset_event
         except Exception:
             await asyncio.sleep(0.01)
             continue
+
+        topic = parts[0]
+
+        if topic != b"frame" or len(parts) < 4:
+            continue
+
+        frame_idx = int(parts[1].decode("utf-8"))
+        try:
+            video_time_ms = int(parts[2].decode("utf-8"))
+        except Exception:
+            video_time_ms = -1
+        jpg_bytes = parts[3]
 
         if first_frame:
             print(f"[TRACKER] First frame received (idx={frame_idx})")
@@ -328,19 +454,39 @@ async def main_async():
         frame = decode_jpg(jpg_bytes)
         h, w = frame.shape[:2]
 
-        # Run both YOLO models
-        dets_objects = run_yolo(model_objects, frame, args.conf_th, yolo_predict_device)
+        # Run both YOLO models (in threads so the event loop stays free for clear_sender)
+        dets_objects = await asyncio.to_thread(run_yolo, model_objects, frame, args.conf_th, yolo_predict_device)
         for d in dets_objects:
             d["source"] = "objects"
 
-        dets_suspicious = run_yolo(model_suspicious, frame, args.conf_th, yolo_predict_device)
+        dets_suspicious = await asyncio.to_thread(run_yolo, model_suspicious, frame, args.conf_th, yolo_predict_device)
         for d in dets_suspicious:
             d["source"] = "suspicious"
 
         # Merge
         dets_objects = [d for d in dets_objects if d["conf"] >= 0.6]
-        dets_suspicious = [d for d in dets_suspicious if d["conf"] >= 0.35]
+        dets_suspicious = [d for d in dets_suspicious if d["conf"] >= 0.93]
         dets = dets_objects + dets_suspicious
+
+        # Reset arrived mid-YOLO-inference — discard stale results, drain, then unblock watcher.
+        if _reset_event.is_set():
+            _reset_event.clear()
+            tracks = []
+            next_track_id = 1
+            motion = MotionDetector() if args.use_motion_fallback else None
+            first_frame = True
+            drained = 0
+            while True:
+                try:
+                    sub.recv_multipart(zmq.NOBLOCK)
+                    drained += 1
+                except zmq.error.Again:
+                    break
+            if drained:
+                print(f"[TRACKER] Drained {drained} stale frames after reset (post-inference)")
+            print("[TRACKER] Reset happened mid-inference — discarding stale results")
+            _reset_done_event.set()
+            continue
 
         if motion is not None and len(dets) == 0:
             blobs = motion.detect(frame)
@@ -369,7 +515,7 @@ async def main_async():
                 best_track.cls_name = d["cls_name"]
                 best_track.conf = float(d["conf"])
                 best_track.last_seen_frame = frame_idx
-                best_track.source = d["source"]
+                best_track.source = d.get("source", "")
                 new_tracks.append(best_track)
             else:
                 t = Track(
@@ -378,8 +524,8 @@ async def main_async():
                     cls_name=d["cls_name"],
                     conf=float(d["conf"]),
                     last_seen_frame=frame_idx,
+                    source=d.get("source", ""),
                 )
-                t.source = d["source"]
                 next_track_id += 1
                 used_tracks.add(t.track_id)
                 new_tracks.append(t)
@@ -388,7 +534,7 @@ async def main_async():
 
         # shrink AFTER tracking
         for t in tracks:
-            if hasattr(t, "source") and t.source == "suspicious":
+            if t.source == "suspicious":
                 t.bbox = shrink_bbox_tuple(t.bbox, factor=0.2)
 
         # DEBUG VISUALIZATION
@@ -425,7 +571,7 @@ async def main_async():
 
         # ✨ Send to Qwen worker
         try:
-            qwen_socket.send(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+            groq_socket.send(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
             print("[TRACKER] Sending to Qwen:", payload)
         except Exception as e:
             print(f"[TRACKER] Failed to send to Qwen: {e}")
@@ -433,8 +579,19 @@ async def main_async():
         # Send to WS (if enabled)
         try:
             await ws_send_json(ws, payload)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[TRACKER] WS send failed: {e}. Reconnecting...")
+            ws = await ws_connect_loop(args.ws_url)
+
+        # After the first real bbox is on its way to React, ack the broadcaster so it
+        # can reply {ok:true} to NestJS (which unblocks React's loading spinner).
+        if _first_frame_pending.is_set():
+            _first_frame_pending.clear()
+            try:
+                ack_socket.send_json({"worker": "tracker", "type": "first_frame_ack"})
+                print("[TRACKER] first_frame_ack sent to broadcaster")
+            except Exception as e:
+                print(f"[TRACKER] first_frame_ack send failed: {e}")
 
         frames_processed += 1
         now = time.time()
