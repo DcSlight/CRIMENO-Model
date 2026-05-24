@@ -3,14 +3,14 @@
 # - Subscribes to ZeroMQ PUB stream (topic: "frame")
 # - Runs YOLOv8 (COCO) + simple IOU tracker
 # - Optional motion fallback (MOG2)
-# - Sends results to NestJS via WebSocket (NO per-frame JSONL I/O)
-#
-# Optimized for low latency startup and real-time streaming
+# - Sends results to NestJS via WebSocket
+# - ✨ Also sends tracking data to Qwen worker via ZeroMQ PUSH (port 5580)
 
 import argparse
 import asyncio
 import base64
 import json
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
@@ -21,8 +21,93 @@ import zmq
 
 try:
     from ultralytics import YOLO
-except Exception as e:
+except Exception:
     YOLO = None
+
+# _reset_event: set by watcher when reset arrives, cleared by main loop after applying it.
+# _reset_done_event: set by main loop after applying reset, cleared by watcher before each wait.
+_reset_event = threading.Event()
+_reset_done_event = threading.Event()
+_first_frame_pending = threading.Event()  # set on reset; cleared after first real bbox emit
+
+ACK_TIMEOUT_S = 15  # wait up to 15s; broadcaster timeout is 20s
+
+# Used by watcher thread to dispatch an immediate WS-clear into the asyncio event loop.
+_main_loop: Optional[asyncio.AbstractEventLoop] = None
+_clear_queue: Optional[asyncio.Queue] = None
+
+
+def _reset_watcher(sub_endpoint: str, anomaly_endpoint: str, ack_endpoint: str) -> None:
+    """Background thread: immediately resets Groq, then waits for the main inference
+    loop to finish its current cycle before acking the broadcaster."""
+    ctx = zmq.Context.instance()
+
+    sub = ctx.socket(zmq.SUB)
+    sub.connect(sub_endpoint)
+    sub.setsockopt(zmq.SUBSCRIBE, b"reset")
+
+    groq_sock = ctx.socket(zmq.PUSH)
+    groq_sock.connect(anomaly_endpoint)
+
+    ack_sock = ctx.socket(zmq.PUSH)
+    ack_sock.connect(ack_endpoint)
+
+    while True:
+        sub.recv_multipart()  # block until reset
+        print("[TRACKER/reset-watcher] Reset received — forwarding to Groq, waiting for pipeline to clear")
+        try:
+            groq_sock.send(json.dumps({"type": "reset"}).encode("utf-8"))
+        except Exception as e:
+            print(f"[TRACKER/reset-watcher] Failed to forward reset to Groq: {e}")
+        # Tell React to clear bboxes immediately — before YOLO finishes its current frame.
+        if _main_loop is not None and _clear_queue is not None:
+            _main_loop.call_soon_threadsafe(_clear_queue.put_nowait, "clear")
+        _reset_done_event.clear()
+        _first_frame_pending.set()  # main loop will ack broadcaster after first real bbox
+        _reset_event.set()
+        # Wait for main loop to finish current frame and drain the buffer
+        if not _reset_done_event.wait(timeout=ACK_TIMEOUT_S):
+            print("[TRACKER/reset-watcher] Timeout waiting for pipeline — acking anyway")
+        ack_sock.send_json({"worker": "tracker", "type": "reset_ack"})
+        print("[TRACKER/reset-watcher] Ack sent to broadcaster")
+
+
+def show_debug_frame(frame, tracks, window_name="DEBUG"):
+    debug = frame.copy()
+
+    for t in tracks:
+        # Extract fields from Track object
+        cls = t.cls_name
+        conf = t.conf
+        x1, y1, x2, y2 = t.bbox
+
+        # Color by source (not by class name)
+        if hasattr(t, "source") and t.source == "suspicious":
+            color = (0, 0, 255)   # RED for suspicious model
+        else:
+            color = (0, 255, 0)   # GREEN for regular YOLO objects
+
+        # Draw bounding box
+        cv2.rectangle(debug, (x1, y1), (x2, y2), color, 2)
+
+        # Draw label
+        label = f"{cls} {conf:.2f}"
+        cv2.putText(debug, label, (x1, max(0, y1 - 5)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+
+    cv2.imshow(window_name, debug)
+    cv2.waitKey(1)
+
+
+def shrink_bbox_tuple(bbox, factor=0.2):
+    # Shrinks a bounding box by a given factor (default 20%) while keeping it centered.
+    # Used to reduce oversized detections (e.g., suspicious model outputs) before visualization or sending downstream.
+    x1, y1, x2, y2 = bbox
+    w = x2 - x1
+    h = y2 - y1
+    dx = int(w * factor / 2)
+    dy = int(h * factor / 2)
+    return (x1 + dx, y1 + dy, x2 - dx, y2 - dy)
 
 
 # -------------------------
@@ -93,6 +178,7 @@ class Track:
     cls_name: str
     conf: float
     last_seen_frame: int
+    source: str = ""
 
 
 def draw_tracks(frame: np.ndarray, tracks: List[Track]) -> np.ndarray:
@@ -129,14 +215,13 @@ class MotionDetector:
 
 
 # -------------------------
-# YOLO detection with better filtering
+# YOLO detection
 # -------------------------
-def run_yolo(model, frame_bgr: np.ndarray, conf_th: float) -> List[Dict[str, Any]]:
-    """
-    Returns list of detections: {bbox(x1,y1,x2,y2), cls_name, conf}
-    Enhanced to detect more security-relevant objects with better filtering
-    """
-    results = model.predict(frame_bgr, conf=conf_th, verbose=False)
+def run_yolo(model, frame_bgr: np.ndarray, conf_th: float, device: Optional[Any] = None) -> List[Dict[str, Any]]:
+    if device is None:
+        results = model.predict(frame_bgr, conf=conf_th, verbose=False)
+    else:
+        results = model.predict(frame_bgr, conf=conf_th, verbose=False, device=device)
     dets: List[Dict[str, Any]] = []
 
     if not results:
@@ -147,29 +232,16 @@ def run_yolo(model, frame_bgr: np.ndarray, conf_th: float) -> List[Dict[str, Any
         return dets
 
     names = model.names if hasattr(model, "names") else {}
-    
-    # Security-relevant objects to prioritize (COCO dataset)
-    security_objects = {
-        'person', 'backpack', 'handbag', 'suitcase', 'bottle', 'cup',
-        'knife', 'cell phone', 'laptop', 'mouse', 'keyboard', 'book',
-        'scissors', 'car', 'motorcycle', 'bicycle', 'truck', 'bus'
-    }
-    
+
     for b in r.boxes:
-        xyxy = b.xyxy[0].tolist()  # [x1,y1,x2,y2]
+        xyxy = b.xyxy[0].tolist()
         cls_id = int(b.cls[0].item()) if b.cls is not None else -1
         conf = float(b.conf[0].item()) if b.conf is not None else 0.0
 
         x1, y1, x2, y2 = [int(v) for v in xyxy]
         cls_name = names.get(cls_id, str(cls_id))
-        
-        # Apply different confidence thresholds based on object type
-        min_conf = conf_th
-        if cls_name.lower() in security_objects:
-            # Lower threshold for security-relevant objects
-            min_conf = conf_th * 0.7
-        
-        if conf >= min_conf:
+
+        if conf >= conf_th:
             dets.append({
                 "bbox": (x1, y1, x2, y2),
                 "cls_name": cls_name,
@@ -183,10 +255,11 @@ def run_yolo(model, frame_bgr: np.ndarray, conf_th: float) -> List[Dict[str, Any
 # WebSocket sender
 # -------------------------
 async def ws_connect_loop(ws_url: str):
-    """
-    Keeps trying to connect, returns an open websocket.
-    """
-    import websockets  # lazy import
+    import websockets
+
+    if ws_url.lower() == "none":
+        print("[WS] Disabled (ws_url=none)")
+        return None
 
     backoff = 0.25
     while True:
@@ -201,7 +274,8 @@ async def ws_connect_loop(ws_url: str):
 
 
 async def ws_send_json(ws, payload: Dict[str, Any]):
-    await ws.send(json.dumps(payload, ensure_ascii=False))
+    if ws is not None:
+        await ws.send(json.dumps(payload, ensure_ascii=False))
 
 
 # -------------------------
@@ -210,69 +284,168 @@ async def ws_send_json(ws, payload: Dict[str, Any]):
 async def main_async():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sub_endpoint", default="tcp://127.0.0.1:5560")
-    parser.add_argument("--ws_url", default="ws://127.0.0.1:3000/ws/tracker", help="NestJS WS endpoint")
+    parser.add_argument("--anomaly-endpoint", "--anomaly_endpoint", dest="anomaly_endpoint",
+                        default="tcp://127.0.0.1:5580",
+                        help="ZMQ PUSH endpoint for Groq anomaly worker.")
+    parser.add_argument("--ack-endpoint", dest="ack_endpoint", default="tcp://127.0.0.1:5562",
+                        help="ZeroMQ endpoint to send reset ack back to broadcaster (PUSH).")
+    parser.add_argument("--ws_url", default="none")
     parser.add_argument("--yolo_model", default="yolov8n.pt")
     parser.add_argument("--conf_th", type=float, default=0.35)
     parser.add_argument("--send_every_n_frames", type=int, default=1)
-    parser.add_argument("--send_overlay", type=int, default=1, help="1=send JPG overlay, 0=send raw bbox only")
+    parser.add_argument("--send_overlay", type=int, default=0)
     parser.add_argument("--overlay_jpeg_quality", type=int, default=80)
     parser.add_argument("--use_motion_fallback", type=int, default=1)
     parser.add_argument("--max_track_age", type=int, default=30)
     parser.add_argument("--iou_match_th", type=float, default=0.30)
+    parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto",
+                        help="Device for YOLO inference. Use 'cpu' to free GPU memory for Qwen.")
+    parser.add_argument("--test", default="none")
     args = parser.parse_args()
 
     if YOLO is None:
-        raise RuntimeError("ultralytics is not installed. Install it: pip install ultralytics")
+        raise RuntimeError("ultralytics not installed")
 
-    # Pre-load model BEFORE connecting to ZMQ/WS to avoid startup delay
     print(f"[TRACKER] Loading YOLO model: {args.yolo_model}...")
-    load_start = time.time()
-    model = YOLO(args.yolo_model)
-    
-    # Warm up the model with a dummy frame to ensure everything is loaded
+    model_objects = YOLO("yolov8s.pt")
+    model_suspicious = YOLO("Suspicious_Activities_nano.pt")
+
+    yolo_predict_device: Optional[Any] = None
+    if args.device == "cpu":
+        yolo_predict_device = "cpu"
+    elif args.device == "cuda":
+        yolo_predict_device = 0
+
+    # Warmup
     print("[TRACKER] Warming up model...")
-    dummy_frame = np.zeros((640, 640, 3), dtype=np.uint8)
-    _ = model.predict(dummy_frame, conf=0.5, verbose=False)
-    
-    load_time = time.time() - load_start
-    print(f"[TRACKER] ✓ Model loaded and ready ({load_time:.2f}s)")
-    
+    dummy = np.zeros((640, 640, 3), dtype=np.uint8)
+
+    print("[TRACKER] Warming up object model...")
+    if yolo_predict_device is None:
+        _ = model_objects.predict(dummy, conf=0.5, verbose=False)
+    else:
+        _ = model_objects.predict(dummy, conf=0.5, verbose=False, device=yolo_predict_device)
+
+    print("[TRACKER] Warming up suspicious model...")
+    if yolo_predict_device is None:
+        _ = model_suspicious.predict(dummy, conf=0.5, verbose=False)
+    else:
+        _ = model_suspicious.predict(dummy, conf=0.5, verbose=False, device=yolo_predict_device)
+
+    print("[TRACKER] ✓ Both models ready")
+
+
     motion = MotionDetector() if args.use_motion_fallback else None
 
-    # ZMQ SUB
+    # ZMQ SUB — frame-only socket (reset is handled by the watcher thread)
     context = zmq.Context()
     sub = context.socket(zmq.SUB)
     sub.connect(args.sub_endpoint)
     sub.setsockopt(zmq.SUBSCRIBE, b"frame")
+    # NOTE: "reset" intentionally NOT subscribed here — the watcher thread has its own
+    # SUB socket for reset so it can ack immediately even while we are mid-YOLO inference.
+    # Also: with RCVHWM=5, a reset arriving when the buffer is full would be silently
+    # dropped; moving it to a dedicated socket avoids that entirely.
     sub.setsockopt(zmq.RCVHWM, 5)
-    # Set receive timeout to avoid blocking forever
-    sub.setsockopt(zmq.RCVTIMEO, 1000)  # 1 second timeout
+    sub.setsockopt(zmq.RCVTIMEO, 100)
 
-    print(f"[TRACKER] SUB connect: {args.sub_endpoint} topic=frame")
-    print(f"[TRACKER] WS target: {args.ws_url}")
-    print(f"[TRACKER] send_overlay={args.send_overlay}, send_every_n_frames={args.send_every_n_frames}")
+    print(f"[TRACKER] SUB connect: {args.sub_endpoint}")
 
-    # Connect to WebSocket
+    groq_context = zmq.Context()
+    groq_socket = groq_context.socket(zmq.PUSH)
+    groq_socket.connect(args.anomaly_endpoint)
+    print(f"[TRACKER] Connected to Groq worker via ZMQ PUSH ({args.anomaly_endpoint})")
+
+    ack_socket = groq_context.socket(zmq.PUSH)
+    ack_socket.connect(args.ack_endpoint)
+    print(f"[TRACKER] Connected to broadcaster ack socket on {args.ack_endpoint}")
+
+    threading.Thread(
+        target=_reset_watcher,
+        args=(args.sub_endpoint, args.anomaly_endpoint, args.ack_endpoint),
+        daemon=True,
+        name="tracker-reset-watcher",
+    ).start()
+    print("[TRACKER] Reset-watcher thread started")
+
     ws = await ws_connect_loop(args.ws_url)
+
+    global _main_loop, _clear_queue
+    _main_loop = asyncio.get_running_loop()
+    _clear_queue = asyncio.Queue()
+
+    async def clear_sender():
+        nonlocal ws
+        while True:
+            await _clear_queue.get()
+            clear_payload = {
+                "type": "tracker_frame",
+                "frame_index": -1,
+                "video_time_ms": -1,
+                "tracks": [],
+                "motion_detected": False,
+                "reset": True,
+            }
+            try:
+                await ws_send_json(ws, clear_payload)
+                print("[TRACKER] Sent UI clear payload on reset")
+            except Exception as e:
+                print(f"[TRACKER] Clear WS send failed: {e}; reconnecting")
+                ws = await ws_connect_loop(args.ws_url)
+
+    asyncio.create_task(clear_sender())
 
     next_track_id = 1
     tracks: List[Track] = []
 
+    first_frame = True
     last_log_ts = time.time()
     frames_processed = 0
-    first_frame = True
 
     while True:
+        # Check for pending reset BEFORE blocking on recv so cold-start resets are handled
+        # instantly even when no frames are flowing (avoids the 15s watcher timeout on first play).
+        if _reset_event.is_set():
+            _reset_event.clear()
+            tracks = []
+            next_track_id = 1
+            motion = MotionDetector() if args.use_motion_fallback else None
+            first_frame = True
+            drained = 0
+            while True:
+                try:
+                    sub.recv_multipart(zmq.NOBLOCK)
+                    drained += 1
+                except zmq.error.Again:
+                    break
+            if drained:
+                print(f"[TRACKER] Drained {drained} stale frames after reset")
+            print("[TRACKER] Applied pending reset — cleared tracks and state")
+            _reset_done_event.set()
+            continue
+
         try:
-            # ZMQ recv is blocking; run it in a thread to not block asyncio loop
-            frame_idx, video_time_ms, jpg_bytes = await asyncio.to_thread(recv_frame_sub, sub)
-        except Exception as e:
-            # Timeout or other error - continue waiting
+            parts = await asyncio.to_thread(sub.recv_multipart)
+        except zmq.error.Again:
+            continue  # RCVTIMEO fired; loop back to check _reset_event
+        except Exception:
             await asyncio.sleep(0.01)
             continue
 
+        topic = parts[0]
+
+        if topic != b"frame" or len(parts) < 4:
+            continue
+
+        frame_idx = int(parts[1].decode("utf-8"))
+        try:
+            video_time_ms = int(parts[2].decode("utf-8"))
+        except Exception:
+            video_time_ms = -1
+        jpg_bytes = parts[3]
+
         if first_frame:
-            print(f"[TRACKER] ✓ First frame received (idx={frame_idx}) - processing started!")
+            print(f"[TRACKER] First frame received (idx={frame_idx})")
             first_frame = False
 
         if args.send_every_n_frames > 1 and (frame_idx % args.send_every_n_frames) != 0:
@@ -281,22 +454,52 @@ async def main_async():
         frame = decode_jpg(jpg_bytes)
         h, w = frame.shape[:2]
 
-        dets = run_yolo(model, frame, args.conf_th)
+        # Run both YOLO models (in threads so the event loop stays free for clear_sender)
+        dets_objects = await asyncio.to_thread(run_yolo, model_objects, frame, args.conf_th, yolo_predict_device)
+        for d in dets_objects:
+            d["source"] = "objects"
 
-        # Optional motion fallback: add unlabeled moving blobs if YOLO has few detections
+        dets_suspicious = await asyncio.to_thread(run_yolo, model_suspicious, frame, args.conf_th, yolo_predict_device)
+        for d in dets_suspicious:
+            d["source"] = "suspicious"
+
+        # Merge
+        dets_objects = [d for d in dets_objects if d["conf"] >= 0.6]
+        dets_suspicious = [d for d in dets_suspicious if d["conf"] >= 0.93]
+        dets = dets_objects + dets_suspicious
+
+        # Reset arrived mid-YOLO-inference — discard stale results, drain, then unblock watcher.
+        if _reset_event.is_set():
+            _reset_event.clear()
+            tracks = []
+            next_track_id = 1
+            motion = MotionDetector() if args.use_motion_fallback else None
+            first_frame = True
+            drained = 0
+            while True:
+                try:
+                    sub.recv_multipart(zmq.NOBLOCK)
+                    drained += 1
+                except zmq.error.Again:
+                    break
+            if drained:
+                print(f"[TRACKER] Drained {drained} stale frames after reset (post-inference)")
+            print("[TRACKER] Reset happened mid-inference — discarding stale results")
+            _reset_done_event.set()
+            continue
+
         if motion is not None and len(dets) == 0:
             blobs = motion.detect(frame)
             for bb in blobs:
                 dets.append({"bbox": bb, "cls_name": "moving_object", "conf": 1.0})
 
-        # Match detections to existing tracks by IOU
         used_tracks = set()
         new_tracks: List[Track] = []
 
         for d in dets:
             bb = d["bbox"]
             best_iou = 0.0
-            best_track: Optional[Track] = None
+            best_track = None
 
             for t in tracks:
                 if t.track_id in used_tracks:
@@ -312,6 +515,7 @@ async def main_async():
                 best_track.cls_name = d["cls_name"]
                 best_track.conf = float(d["conf"])
                 best_track.last_seen_frame = frame_idx
+                best_track.source = d.get("source", "")
                 new_tracks.append(best_track)
             else:
                 t = Track(
@@ -320,31 +524,44 @@ async def main_async():
                     cls_name=d["cls_name"],
                     conf=float(d["conf"]),
                     last_seen_frame=frame_idx,
+                    source=d.get("source", ""),
                 )
                 next_track_id += 1
                 used_tracks.add(t.track_id)
                 new_tracks.append(t)
 
-        # Keep recent tracks (age-based)
         tracks = [t for t in new_tracks if (frame_idx - t.last_seen_frame) <= args.max_track_age]
 
-        # Prepare payload - EXACT SAME FORMAT AS ORIGINAL
+        # shrink AFTER tracking
+        for t in tracks:
+            if t.source == "suspicious":
+                t.bbox = shrink_bbox_tuple(t.bbox, factor=0.2)
+
+        # DEBUG VISUALIZATION
+        if args.test == "show_image":
+            show_debug_frame(frame, tracks)
+
         tracks_payload = []
         for t in tracks:
             x1, y1, x2, y2 = t.bbox
             tracks_payload.append({
-                "track_id": t.track_id,
-                "cls": t.cls_name,
-                "conf": t.conf,
-                "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
-            })
+            "track_id": t.track_id,
+            "cls": t.cls_name,
+            "conf": t.conf,
+            "source": t.source,
+            "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
+        })
 
-        payload: Dict[str, Any] = {
+        # Check if any tracks are from motion detector
+        has_motion = any(t.cls_name == "moving_object" for t in tracks)
+
+        payload = {
             "type": "tracker_frame",
             "frame_index": frame_idx,
             "video_time_ms": video_time_ms,
             "frame_size": {"w": w, "h": h},
             "tracks": tracks_payload,
+            "motion_detected": has_motion,
         }
 
         if args.send_overlay == 1:
@@ -352,16 +569,29 @@ async def main_async():
             overlay_jpg = encode_jpg(overlay, args.overlay_jpeg_quality)
             payload["overlay_jpg_b64"] = base64.b64encode(overlay_jpg).decode("ascii")
 
-        # Send to WS immediately - broadcaster controls timing
+        # ✨ Send to Qwen worker
+        try:
+            groq_socket.send(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+            print("[TRACKER] Sending to Qwen:", payload)
+        except Exception as e:
+            print(f"[TRACKER] Failed to send to Qwen: {e}")
+
+        # Send to WS (if enabled)
         try:
             await ws_send_json(ws, payload)
         except Exception as e:
-            print(f"[WS] Send failed: {e} -> reconnect")
-            try:
-                await ws.close()
-            except Exception:
-                pass
+            print(f"[TRACKER] WS send failed: {e}. Reconnecting...")
             ws = await ws_connect_loop(args.ws_url)
+
+        # After the first real bbox is on its way to React, ack the broadcaster so it
+        # can reply {ok:true} to NestJS (which unblocks React's loading spinner).
+        if _first_frame_pending.is_set():
+            _first_frame_pending.clear()
+            try:
+                ack_socket.send_json({"worker": "tracker", "type": "first_frame_ack"})
+                print("[TRACKER] first_frame_ack sent to broadcaster")
+            except Exception as e:
+                print(f"[TRACKER] first_frame_ack send failed: {e}")
 
         frames_processed += 1
         now = time.time()
