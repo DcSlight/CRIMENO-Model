@@ -165,12 +165,22 @@ def build_event_sentence(rec: Dict[str, Any]) -> str:
     caption = rec.get("raw", {}).get("more_detailed_caption", "")
     cleaned = clean_caption(caption)
 
+    # Inject Florence weapon detections as a hard alert prefix
+    weapon_prefix = ""
+    weapons_raw = rec.get("raw", {}).get("open_vocab_weapons", "")
+    if weapons_raw and not str(weapons_raw).startswith("[ERROR"):
+        labels = re.findall(r"'([^']+)'", str(weapons_raw))
+        labels = [l for l in labels if l not in ("bboxes", "bboxes_labels")]
+        if labels:
+            weapon_prefix = f"WEAPON DETECTED by Florence: {', '.join(sorted(set(labels)))}. "
+
     tracker_text = build_tracker_sentence(rec)
 
-    if cleaned and tracker_text:
-        return f"{cleaned} {tracker_text}"
-    elif cleaned:
-        return cleaned
+    body = (weapon_prefix + cleaned).strip()
+    if body and tracker_text:
+        return f"{body} {tracker_text}"
+    elif body:
+        return body
     elif tracker_text:
         return tracker_text
 
@@ -337,7 +347,14 @@ def build_prompt(scene_description: str) -> str:
 
     ==============================================================
 
-    Here is the scene description in chronological order:
+    Below is the scene description.
+
+    "Recent context" lists older events for background only.
+    "Current window" lists the most recent events — THIS is what you must decide on.
+    Your label, score, reason, and key_moments MUST be derived from "Current window".
+    Use "Recent context" only to disambiguate the current window (e.g., to know whether
+    a person already entered the store with a weapon). Never decide solely from "Recent
+    context"; never ignore "Current window".
 
     {scene_description}
 
@@ -533,12 +550,9 @@ async def main_async():
 
             print("[DEBUG] Significant change detected → SEND to Groq.")
 
-            for ev in current_window_events:
-                if all(simple_similarity(ev, old) < 0.90 for old in event_history):
-                    event_history.append(ev)
-
-            if len(event_history) > MAX_EVENT_HISTORY:
-                event_history = event_history[-MAX_EVENT_HISTORY:]
+            # Snapshot history BEFORE merging current window so "Recent context"
+            # and "Current window" don't share bullets (dedup would wipe the window).
+            history_for_prompt = list(event_history)
 
             if latest_business_context:
                 print(f"[CTX] Injecting business context into prompt:\n{latest_business_context}")
@@ -546,14 +560,10 @@ async def main_async():
                 print("[CTX] No business context — sending prompt without it.")
 
             scene_description = build_scene_description(
-                event_history,
+                history_for_prompt,
                 current_window_events,
                 latest_business_context,
             )
-
-            scene_lines = scene_description.split("\n")
-            scene_lines = list(dict.fromkeys(scene_lines))
-            scene_description = "\n".join(scene_lines)
 
             prompt = build_prompt(scene_description)
 
@@ -563,6 +573,14 @@ async def main_async():
                 f.write("\n====================================================\n")
 
             result = await asyncio.to_thread(call_groq_for_anomaly, client, args.groq_model, prompt)
+
+            # Update history AFTER sending so the next iteration's Recent context
+            # is accurate but the current window stays separate in this prompt.
+            for ev in current_window_events:
+                if all(simple_similarity(ev, old) < 0.90 for old in event_history):
+                    event_history.append(ev)
+            if len(event_history) > MAX_EVENT_HISTORY:
+                event_history = event_history[-MAX_EVENT_HISTORY:]
 
             label = result.get("label", "")
             score = float(result.get("anomaly_score", 0.0))
