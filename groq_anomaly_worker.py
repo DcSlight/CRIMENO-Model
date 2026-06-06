@@ -127,8 +127,15 @@ def build_tracker_sentence(rec: Dict[str, Any]) -> str:
         x2 = bbox.get("x2")
         y2 = bbox.get("y2")
 
+        pose_str = ""
+        pose = t.get("pose")
+        if pose and isinstance(pose, dict):
+            active = [k for k, v in pose.items() if v]
+            if active:
+                pose_str = ", pose: " + ", ".join(active)
+
         parts.append(
-            f"ID {tid}: {cls} (confidence {conf:.2f}) at [{x1},{y1},{x2},{y2}]"
+            f"ID {tid}: {cls} (confidence {conf:.2f}) at [{x1},{y1},{x2},{y2}]{pose_str}"
         )
 
     if not parts:
@@ -224,9 +231,10 @@ def build_prompt(scene_description: str) -> str:
     You are an expert system for video surveillance anomaly detection.
 
     You receive short textual descriptions of what happens in a surveillance video over time.
-    These descriptions come from two sources:
+    These descriptions come from three sources:
     1. Florence (semantic captions, OCR, object descriptions, behaviors, interactions)
     2. YOLO tracker (object IDs, classes, bounding boxes, continuity across frames)
+    3. Pose estimator (per-person posture flags indicating intent: arm_extended_aim, hands_above_head, torso_lean_forward, crouching)
 
     Your task is to determine whether the described situation represents:
     - normal everyday behavior,
@@ -250,22 +258,24 @@ def build_prompt(scene_description: str) -> str:
 
     ### 3. HOW TO USE THE INPUTS
     - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
+    - Pose estimator flags are also PRIMARY evidence for intent. Use them directly to reason about threatening posture, victim posture, or suspicious body mechanics.
     - YOLO tracker data (IDs, classes, bounding boxes) is SECONDARY and should be used ONLY to:
       * understand continuity of people/objects across frames
       * detect repeated presence or movement patterns
       * identify that the same person appears in multiple frames
 
     ### 4. PROHIBITED USE OF YOLO DATA
-    You MUST NOT use YOLO tracker data as evidence of anomaly.
+    You MUST NOT use raw YOLO tracker data as primary evidence of anomaly.
     Specifically:
     - DO NOT use confidence scores as reasons.
     - DO NOT use bounding boxes as reasons.
     - DO NOT use "ID 1", "ID 2", etc. as key moments.
     - DO NOT treat "multiple people detected" as suspicious by itself.
+    NOTE: Pose flags (arm_extended_aim, hands_above_head, torso_lean_forward, crouching) are PERMITTED and ENCOURAGED as direct evidence of intent. They appear in the tracker sentence as ", pose: <flag_name>" and describe body mechanics, not bounding boxes.
 
     ### 5. KEY MOMENTS RULES
     "key_moments" MUST:
-    - be based ONLY on semantic content from Florence (captions, OCR, behaviors)
+    - be based on semantic content from Florence AND pose estimator flags
     - describe meaningful actions, interactions, or unusual events
     - NOT include YOLO technical data (IDs, confidence, bbox)
 
@@ -274,6 +284,10 @@ def build_prompt(scene_description: str) -> str:
     - "customer leaning over cash register"
     - "person reaching into backpack"
     - "individual looking around nervously"
+    - "individual extended arm with weapon aimed forward"
+    - "person crouched behind display counter"
+    - "subject leaning over restricted area"
+    - "multiple individuals with hands raised above head"
 
     Examples of BAD key moments (FORBIDDEN):
     - "ID 1: person (confidence 0.91)"

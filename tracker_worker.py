@@ -179,6 +179,7 @@ class Track:
     conf: float
     last_seen_frame: int
     source: str = ""
+    pose: Optional[Dict] = None
 
 
 def draw_tracks(frame: np.ndarray, tracks: List[Track]) -> np.ndarray:
@@ -252,6 +253,98 @@ def run_yolo(model, frame_bgr: np.ndarray, conf_th: float, device: Optional[Any]
 
 
 # -------------------------
+# Pose estimation
+# -------------------------
+def _angle_at_joint(a, joint, b) -> float:
+    v1 = np.array([a[0] - joint[0], a[1] - joint[1]], dtype=float)
+    v2 = np.array([b[0] - joint[0], b[1] - joint[1]], dtype=float)
+    n1, n2 = np.linalg.norm(v1), np.linalg.norm(v2)
+    if n1 < 1e-6 or n2 < 1e-6:
+        return 180.0
+    return float(np.degrees(np.arccos(np.clip(np.dot(v1, v2) / (n1 * n2), -1.0, 1.0))))
+
+
+def run_yolo_pose(model, frame_bgr: np.ndarray, conf_th: float, device: Optional[Any] = None) -> List[Dict]:
+    if device is None:
+        results = model.predict(frame_bgr, conf=conf_th, verbose=False)
+    else:
+        results = model.predict(frame_bgr, conf=conf_th, verbose=False, device=device)
+    dets: List[Dict] = []
+    if not results:
+        return dets
+    r = results[0]
+    if r.boxes is None or r.keypoints is None:
+        return dets
+    kp_xy = r.keypoints.xy.cpu().numpy()     # [N, 17, 2]
+    kp_conf = r.keypoints.conf.cpu().numpy() # [N, 17]
+    for i, b in enumerate(r.boxes):
+        conf = float(b.conf[0].item()) if b.conf is not None else 0.0
+        if conf < conf_th:
+            continue
+        x1, y1, x2, y2 = [int(v) for v in b.xyxy[0].tolist()]
+        keypoints = [
+            [float(kp_xy[i, j, 0]), float(kp_xy[i, j, 1]), float(kp_conf[i, j])]
+            for j in range(17)
+        ]
+        dets.append({"bbox": (x1, y1, x2, y2), "conf": conf, "keypoints": keypoints})
+    return dets
+
+
+_KP_CONF_TH = 0.5
+
+
+def derive_pose_flags(keypoints: List) -> Dict[str, bool]:
+    """Return pose intent flags from 17-point COCO keypoints [[x, y, conf], ...].
+
+    COCO indices used: 0=nose, 5/6=shoulders, 7/8=elbows, 9/10=wrists,
+    11/12=hips, 13/14=knees, 15/16=ankles. y-axis is top-down (smaller y = higher).
+    """
+    def pt(i):
+        return keypoints[i][0], keypoints[i][1]
+
+    def ok(i):
+        return keypoints[i][2] >= _KP_CONF_TH
+
+    flags: Dict[str, bool] = {
+        "arm_extended_aim": False,
+        "hands_above_head": False,
+        "torso_lean_forward": False,
+        "crouching": False,
+    }
+
+    # arm_extended_aim: elbow nearly straight (>160°) AND wrist above shoulder
+    for sh, el, wr in [(5, 7, 9), (6, 8, 10)]:
+        if ok(sh) and ok(el) and ok(wr):
+            if _angle_at_joint(pt(sh), pt(el), pt(wr)) >= 160.0 and pt(wr)[1] < pt(sh)[1]:
+                flags["arm_extended_aim"] = True
+                break
+
+    # hands_above_head: both wrists above nose (victim posture)
+    if ok(0) and ok(9) and ok(10):
+        if pt(9)[1] < pt(0)[1] and pt(10)[1] < pt(0)[1]:
+            flags["hands_above_head"] = True
+
+    # torso_lean_forward: shoulders displaced horizontally from hips by >~22°
+    if ok(5) and ok(6) and ok(11) and ok(12):
+        sx = (pt(5)[0] + pt(6)[0]) / 2
+        sy = (pt(5)[1] + pt(6)[1]) / 2
+        hx = (pt(11)[0] + pt(12)[0]) / 2
+        hy = (pt(11)[1] + pt(12)[1]) / 2
+        dy = abs(sy - hy)
+        if dy > 10:
+            flags["torso_lean_forward"] = abs(sx - hx) / dy > 0.4
+
+    # crouching: knee angle <140° on either leg
+    for hip, knee, ank in [(11, 13, 15), (12, 14, 16)]:
+        if ok(hip) and ok(knee) and ok(ank):
+            if _angle_at_joint(pt(hip), pt(knee), pt(ank)) < 140.0:
+                flags["crouching"] = True
+                break
+
+    return flags
+
+
+# -------------------------
 # WebSocket sender
 # -------------------------
 async def ws_connect_loop(ws_url: str):
@@ -291,6 +384,8 @@ async def main_async():
                         help="ZeroMQ endpoint to send reset ack back to broadcaster (PUSH).")
     parser.add_argument("--ws_url", default="none")
     parser.add_argument("--yolo_model", default="yolov8n.pt")
+    parser.add_argument("--pose_model", default="yolo26s-pose.pt",
+                        help="Ultralytics pose model filename (e.g. yolo26s-pose.pt, yolov8s-pose.pt).")
     parser.add_argument("--conf_th", type=float, default=0.35)
     parser.add_argument("--send_every_n_frames", type=int, default=1)
     parser.add_argument("--send_overlay", type=int, default=0)
@@ -309,6 +404,7 @@ async def main_async():
     print(f"[TRACKER] Loading YOLO model: {args.yolo_model}...")
     model_objects = YOLO("yolov8s.pt")
     model_suspicious = YOLO("Suspicious_Activities_nano.pt")
+    model_pose = YOLO(args.pose_model)
 
     yolo_predict_device: Optional[Any] = None
     if args.device == "cpu":
@@ -332,7 +428,13 @@ async def main_async():
     else:
         _ = model_suspicious.predict(dummy, conf=0.5, verbose=False, device=yolo_predict_device)
 
-    print("[TRACKER] ✓ Both models ready")
+    print("[TRACKER] Warming up pose model...")
+    if yolo_predict_device is None:
+        _ = model_pose.predict(dummy, conf=0.5, verbose=False)
+    else:
+        _ = model_pose.predict(dummy, conf=0.5, verbose=False, device=yolo_predict_device)
+
+    print("[TRACKER] ✓ All models ready")
 
 
     motion = MotionDetector() if args.use_motion_fallback else None
@@ -463,6 +565,10 @@ async def main_async():
         for d in dets_suspicious:
             d["source"] = "suspicious"
 
+        pose_dets = await asyncio.to_thread(run_yolo_pose, model_pose, frame, 0.5, yolo_predict_device)
+        if pose_dets:
+            print(f"[POSE] frame={frame_idx} detected {len(pose_dets)} person(s)")
+
         # Merge
         dets_objects = [d for d in dets_objects if d["conf"] >= 0.6]
         dets_suspicious = [d for d in dets_suspicious if d["conf"] >= 0.93]
@@ -532,6 +638,20 @@ async def main_async():
 
         tracks = [t for t in new_tracks if (frame_idx - t.last_seen_frame) <= args.max_track_age]
 
+        # Attach pose flags to tracks via IoU matching against pose detections
+        for t in tracks:
+            best_iou, best_pd = 0.0, None
+            for pd in pose_dets:
+                iou = iou_xyxy(t.bbox, pd["bbox"])
+                if iou > best_iou:
+                    best_iou = iou
+                    best_pd = pd
+            if best_pd is not None and best_iou >= 0.5:
+                t.pose = derive_pose_flags(best_pd["keypoints"])
+                active = [k for k, v in t.pose.items() if v]
+                print(f"[POSE] track_id={t.track_id} cls={t.cls_name} iou={best_iou:.2f} "
+                      f"flags={active if active else 'none'}")
+
         # shrink AFTER tracking
         for t in tracks:
             if t.source == "suspicious":
@@ -544,13 +664,16 @@ async def main_async():
         tracks_payload = []
         for t in tracks:
             x1, y1, x2, y2 = t.bbox
-            tracks_payload.append({
-            "track_id": t.track_id,
-            "cls": t.cls_name,
-            "conf": t.conf,
-            "source": t.source,
-            "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
-        })
+            entry: Dict[str, Any] = {
+                "track_id": t.track_id,
+                "cls": t.cls_name,
+                "conf": t.conf,
+                "source": t.source,
+                "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
+            }
+            if t.pose is not None:
+                entry["pose"] = t.pose
+            tracks_payload.append(entry)
 
         # Check if any tracks are from motion detector
         has_motion = any(t.cls_name == "moving_object" for t in tracks)
