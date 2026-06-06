@@ -196,7 +196,7 @@ def load_florence_pipeline(model_name: str, device_str: str):
         "image-text-to-text",
         model=model_name,
         device=device,
-        torch_dtype=torch_dtype,
+        dtype=torch_dtype,
         trust_remote_code=True,
     )
     print(f"✅ Florence-2 pipeline loaded ({model_name}) on {device_str if device != -1 else 'cpu'}")
