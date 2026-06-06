@@ -256,13 +256,19 @@ def build_prompt(scene_description: str) -> str:
     - If label == "criminal"   → anomaly_score MUST be >= 0.8
     - The score MUST always match the label category.
 
-    ### 3. HOW TO USE THE INPUTS
-    - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
-    - Pose estimator flags are also PRIMARY evidence for intent. Use them directly to reason about threatening posture, victim posture, or suspicious body mechanics.
-    - YOLO tracker data (IDs, classes, bounding boxes) is SECONDARY and should be used ONLY to:
-      * understand continuity of people/objects across frames
-      * detect repeated presence or movement patterns
-      * identify that the same person appears in multiple frames
+    ### 3. HOW TO USE THE INPUTS — STRICT HIERARCHY
+
+    Florence is the PRIMARY source. It tells you WHAT is happening: who is in the scene, what objects are present (gun, register, phone, bag), what behaviors are visible (paying, browsing, threatening, fleeing), and the overall situational context (normal transaction, argument, robbery in progress).
+
+    Pose flags are SUPPORTING evidence. They tell you HOW a person is posturing — they confirm or contradict the intent Florence describes. Pose flags CANNOT by themselves establish that a crime is occurring. A crouching person is only criminal evidence if Florence also describes a threatening context (weapon visible, victim posture, register being emptied, etc.).
+
+    YOLO tracker data (IDs, classes, bounding boxes) is REFERENCE-ONLY: continuity of people/objects across frames. Never evidence on its own.
+
+    DECISION RULE:
+    - "criminal" requires BOTH (a) Florence describing threatening/criminal behavior or objects (gun, weapon, robbery, threat, force, fleeing, victim) AND (b) pose flags that are consistent with that interpretation.
+    - "suspicious" requires Florence to describe unusual or ambiguous behavior, optionally reinforced by pose flags.
+    - If Florence describes only normal activity (working, shopping, paying, talking), the label is "normal" regardless of which pose flags are active. A cashier crouching to open a register is normal. A customer leaning over a counter is normal.
+    - If Florence and pose disagree, trust Florence for the label and note the contradiction in "reason".
 
     ### 4. PROHIBITED USE OF YOLO DATA
     You MUST NOT use raw YOLO tracker data as primary evidence of anomaly.
@@ -273,14 +279,15 @@ def build_prompt(scene_description: str) -> str:
     - DO NOT treat "multiple people detected" as suspicious by itself.
     NOTE: Pose flags (arm_extended_aim, hands_above_head, torso_lean_forward, crouching) are PERMITTED and ENCOURAGED as direct evidence of intent. They appear in the tracker sentence as ", pose: <flag_name>" and describe body mechanics, not bounding boxes.
 
-    ### 4b. POSE FLAG INTERPRETATION (CRITICAL)
-    Pose flags describe BODY MECHANICS — interpret them by combination, not individually:
-    - "torso_lean_forward" alone → normal work posture (desk, counter, laptop). NOT suspicious.
-    - "crouching" alone → completely ambiguous: opening a drawer, picking up an item, tying shoes. NOT criminal by itself. Do NOT treat as evidence of robbery.
-    - "arm_extended_aim" alone → elevated arm, evaluate against Florence context.
-    - "arm_extended_aim" + "crouching" together → strong robbery indicator. Treat as primary criminal evidence.
-    - "hands_above_head" → victim posture, indicates robbery in progress.
-    - No pose flags active → neutral, non-threatening stance regardless of what objects are present.
+    ### 4b. POSE FLAG INTERPRETATION (CRITICAL — read before deciding)
+
+    Pose flags are BODY MECHANICS. They never describe intent on their own. Always cross-check against Florence:
+    - "torso_lean_forward" → reaching/leaning. Normal at desks, counters, registers, laptops. Only meaningful if Florence describes the person leaning into a restricted area or over a victim.
+    - "crouching" → bent legs. Completely ambiguous in isolation: opening a drawer, picking up an item, restocking, tying shoes, hiding. NEVER use crouching alone as criminal evidence. A cashier crouching at the register is normal work behavior.
+    - "arm_extended_aim" → raised straight arm. Could be pointing, reaching for a high shelf, or aiming. Only escalate if Florence describes a weapon, threat, or victim in the scene.
+    - "hands_above_head" → both arms raised. Strong victim posture, but still requires Florence to confirm a threatening context (otherwise could be stretching or reaching).
+    - "arm_extended_aim" + "crouching" on the same person → strong robbery indicator, but STILL requires Florence to confirm the scene is threatening (weapon, multiple people, register, victim). Do not escalate if Florence describes a single person working alone.
+    - No pose flags active → neutral. Decide entirely from Florence.
 
     ### 5. KEY MOMENTS RULES
     "key_moments" MUST:
@@ -303,12 +310,13 @@ def build_prompt(scene_description: str) -> str:
     - "three people detected"
     - "bounding box moved left"
 
-    ### 6. REASON FIELD RULES
+    ### 6. REASON FIELD RULES (STRICT)
+
     The "reason" MUST:
-    - describe behavioral or contextual anomalies
-    - be based on Florence semantic content
-    - NOT mention YOLO IDs, confidence, or bounding boxes
-    - be short and human‑interpretable
+    - Reference what Florence describes: the actual scene content (people, objects, actions, location in the store).
+    - If the label is "criminal" or "suspicious", the reason MUST name the Florence-derived threat (e.g., "armed individual aiming at cashier", "person fleeing with merchandise", "customer reaching into employee area"). Pose flags may be mentioned as supporting detail but must NOT be the entire reason.
+    - A reason that mentions ONLY pose mechanics (e.g., "person crouching", "arm extended") with no Florence content is INVALID — re-derive the label from Florence first.
+    - Be short, human-interpretable, and free of YOLO IDs/confidence/bbox.
 
     ==============================================================
 
