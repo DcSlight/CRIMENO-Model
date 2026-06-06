@@ -1,44 +1,43 @@
 
-Sat Jun  6 23:57:26 2026
-+---------------------------------------------------------------------------------------+
-| NVIDIA-SMI 538.46                 Driver Version: 538.46       CUDA Version: 12.2     |
-|-----------------------------------------+----------------------+----------------------+
-| GPU  Name                     TCC/WDDM  | Bus-Id        Disp.A | Volatile Uncorr. ECC |
-| Fan  Temp   Perf          Pwr:Usage/Cap |         Memory-Usage | GPU-Util  Compute M. |
-|                                         |                      |               MIG M. |
-|=========================================+======================+======================|
-|   0  GRID P40-24Q                 WDDM  | 00000000:02:00.0  On |                    0 |
-| N/A    0C    P0              N/A /  N/A |   3436MiB / 24576MiB |      2%      Default |
-|                                         |                      |                  N/A |
-+-----------------------------------------+----------------------+----------------------+
-
-+---------------------------------------------------------------------------------------+
-| Processes:                                                                            |
-|  GPU   GI   CI        PID   Type   Process name                            GPU Memory |
-|        ID   ID                                                             Usage      |
-|=======================================================================================|
-|    0   N/A  N/A      1572    C+G   ...Programs\Microsoft VS Code\Code.exe    N/A      |
-|    0   N/A  N/A      1616    C+G   ...cal\Microsoft\OneDrive\OneDrive.exe    N/A      |
-|    0   N/A  N/A      1804    C+G   C:\Windows\explorer.exe                   N/A      |
-|    0   N/A  N/A      4396    C+G   ...CBS_cw5n1h2txyewy\TextInputHost.exe    N/A      |
-|    0   N/A  N/A      6572    C+G   ...nt.CBS_cw5n1h2txyewy\SearchHost.exe    N/A      |
-|    0   N/A  N/A      8460    C+G   ...cw5n1h2txyewy\CrossDeviceResume.exe    N/A      |
-|    0   N/A  N/A      9436    C+G   ...t.LockApp_cw5n1h2txyewy\LockApp.exe    N/A      |
-|    0   N/A  N/A      9636    C+G   ...2txyewy\StartMenuExperienceHost.exe    N/A      |
-|    0   N/A  N/A     10248    C+G   ...__8wekyb3d8bbwe\WindowsTerminal.exe    N/A      |
-|    0   N/A  N/A     11112    C+G   ...8bbwe\SnippingTool\SnippingTool.exe    N/A      |
-|    0   N/A  N/A     11292    C+G   ...on\147.0.3912.72\msedgewebview2.exe    N/A      |
-|    0   N/A  N/A     11380    C+G   ...Desktop\app-3.5.8\GitHubDesktop.exe    N/A      |
-|    0   N/A  N/A     11424    C+G   ...on\148.0.3967.96\msedgewebview2.exe    N/A      |
-|    0   N/A  N/A     11556    C+G   ...5n1h2txyewy\ShellExperienceHost.exe    N/A      |
-|    0   N/A  N/A     12012    C+G   ...oogle\Chrome\Application\chrome.exe    N/A      |
-|    0   N/A  N/A     12304      C   ...rograms\Python\Python312\python.exe    N/A      |
-|    0   N/A  N/A     12544    C+G   ...ekyb3d8bbwe\PhoneExperienceHost.exe    N/A      |
-|    0   N/A  N/A     16564    C+G   C:\Windows\System32\ShellHost.exe         N/A      |
-|    0   N/A  N/A     16892    C+G   ...s\System32\ApplicationFrameHost.exe    N/A      |
-|    0   N/A  N/A     17360    C+G   ..._x64__8wekyb3d8bbwe\M365Copilot.exe    N/A      |
-|    0   N/A  N/A     21640    C+G   ...siveControlPanel\SystemSettings.exe    N/A      |
-+---------------------------------------------------------------------------------------+
+  File "C:\Users\idan.noyshul\Documents\GitHub\CRIMENO-Model\florence_worker.py", line 550, in <module>
+    main()
+  File "C:\Users\idan.noyshul\Documents\GitHub\CRIMENO-Model\florence_worker.py", line 546, in main
+    asyncio.run(main_async())
+  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py", line 194, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 686, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\idan.noyshul\Documents\GitHub\CRIMENO-Model\florence_worker.py", line 316, in main_async
+    vision_pipe = load_florence_pipeline(args.model, args.device)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\idan.noyshul\Documents\GitHub\CRIMENO-Model\florence_worker.py", line 195, in load_florence_pipeline
+    vision_pipe = pipeline(
+                  ^^^^^^^^^
+  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\pipelines\__init__.py", line 1197, in pipeline
+    raise e
+  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\pipelines\__init__.py", line 1188, in pipeline
+    processor = AutoProcessor.from_pretrained(processor, _from_pipeline=task, **hub_kwargs, **model_kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\models\auto\processing_auto.py", line 396, in from_pretrained
+    return processor_class.from_pretrained(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\processing_utils.py", line 1396, in from_pretrained
+    return cls.from_args_and_dict(args, processor_dict, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\processing_utils.py", line 1197, in from_args_and_dict
+    processor = cls(*args, **valid_kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\models\florence2\processing_florence2.py", line 121, in __init__
+    self.image_token = tokenizer.image_token
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\tokenization_utils_base.py", line 1128, in __getattr__
+    raise AttributeError(f"{self.__class__.__name__} has no attribute {key}")
+AttributeError: BartTokenizerFast has no attribute image_token. Did you mean: 'mask_token'?
 
 
 
