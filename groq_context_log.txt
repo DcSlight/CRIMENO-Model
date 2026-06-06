@@ -1,0 +1,896 @@
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from three sources:
+    1. Florence (semantic captions, OCR, object descriptions, behaviors, interactions)
+    2. YOLO tracker (object IDs, classes, bounding boxes, continuity across frames)
+    3. Pose estimator (per-person posture flags indicating intent: arm_extended_aim, hands_above_head, torso_lean_forward, crouching)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+
+    ### 3. HOW TO USE THE INPUTS
+    - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
+    - Pose estimator flags are also PRIMARY evidence for intent. Use them directly to reason about threatening posture, victim posture, or suspicious body mechanics.
+    - YOLO tracker data (IDs, classes, bounding boxes) is SECONDARY and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF YOLO DATA
+    You MUST NOT use raw YOLO tracker data as primary evidence of anomaly.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    NOTE: Pose flags (arm_extended_aim, hands_above_head, torso_lean_forward, crouching) are PERMITTED and ENCOURAGED as direct evidence of intent. They appear in the tracker sentence as ", pose: <flag_name>" and describe body mechanics, not bounding boxes.
+
+    ### 4b. POSE FLAG INTERPRETATION (CRITICAL)
+    Pose flags describe BODY MECHANICS — interpret them by combination, not individually:
+    - "torso_lean_forward" alone → normal work posture (desk, counter, laptop). NOT suspicious.
+    - "crouching" alone → completely ambiguous: opening a drawer, picking up an item, tying shoes. NOT criminal by itself. Do NOT treat as evidence of robbery.
+    - "arm_extended_aim" alone → elevated arm, evaluate against Florence context.
+    - "arm_extended_aim" + "crouching" together → strong robbery indicator. Treat as primary criminal evidence.
+    - "hands_above_head" → victim posture, indicates robbery in progress.
+    - No pose flags active → neutral, non-threatening stance regardless of what objects are present.
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - be based on semantic content from Florence AND pose estimator flags
+    - describe meaningful actions, interactions, or unusual events
+    - NOT include YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "man holding phone instead of payment method"
+    - "customer leaning over cash register"
+    - "person reaching into backpack"
+    - "individual looking around nervously"
+    - "individual extended arm with weapon aimed forward"
+    - "person crouched behind display counter"
+    - "subject leaning over restricted area"
+    - "multiple individuals with hands raised above head"
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+    - "bounding box moved left"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe behavioral or contextual anomalies
+    - be based on Florence semantic content
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Downtown Market (grocery)
+Description: Neighborhood store with fresh produce and daily essentials.
+Location: 123 King St W, Toronto
+Sensitivity: high; scoring: aggressive; interaction: medium
+Allowed behaviors: Employees carry boxes, Customers stay in store for long periods, People smoke near entrance
+Forbidden behaviors: holding a gun, holding a knife
+Surveillance cameras (2) — all video frames analyzed are captured from these cameras:
+  - Front Entrance Cam: Mounted above the main entrance door
+  - Checkout Cam: Overlooking all cash registers
+Recent context:
+- A person is sitting on a blue chair in front of the desk, looking at the laptop screen. On the left side of the image, there is a red sign with the store's logo and the date "23:36:27". On the right side, there are shelves with various items such as snacks, drinks, and other items. YOLO tracker detected: ID 1: laptop (confidence 0.94) at [133,76,189,134]; ID 2: bottle (confidence 0.74) at [77,90,109,144].
+- On the desk, there is a laptop, a phone, and various items such as snacks, drinks, and other items. A woman is sitting on a blue chair in front of the desk and appears to be looking at the laptop screen. To the left of the woman, there are two men, one of whom is standing and the other is sitting at the counter. YOLO tracker detected: ID 1: laptop (confidence 0.95) at [133,76,189,134]; ID 3: person (confidence 0.71) at [183,111,263,200]; ID 2: bottle (confidence 0.70) at [77,90,110,145].
+- The desk is cluttered with various items such as snacks, drinks, and other items. The man is standing behind the desk, looking at the computer screen. The woman is sitting on a blue chair and appears to be looking at it intently. YOLO tracker detected: ID 1: laptop (confidence 0.96) at [133,75,188,134]; ID 4: person (confidence 0.88) at [28,4,87,108], pose: torso_lean_forward; ID 3: person (confidence 0.72) at [184,111,262,198]; ID 5: bottle (confidence 0.61) at [75,90,111,148].
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from three sources:
+    1. Florence (semantic captions, OCR, object descriptions, behaviors, interactions)
+    2. YOLO tracker (object IDs, classes, bounding boxes, continuity across frames)
+    3. Pose estimator (per-person posture flags indicating intent: arm_extended_aim, hands_above_head, torso_lean_forward, crouching)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+
+    ### 3. HOW TO USE THE INPUTS
+    - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
+    - Pose estimator flags are also PRIMARY evidence for intent. Use them directly to reason about threatening posture, victim posture, or suspicious body mechanics.
+    - YOLO tracker data (IDs, classes, bounding boxes) is SECONDARY and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF YOLO DATA
+    You MUST NOT use raw YOLO tracker data as primary evidence of anomaly.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    NOTE: Pose flags (arm_extended_aim, hands_above_head, torso_lean_forward, crouching) are PERMITTED and ENCOURAGED as direct evidence of intent. They appear in the tracker sentence as ", pose: <flag_name>" and describe body mechanics, not bounding boxes.
+
+    ### 4b. POSE FLAG INTERPRETATION (CRITICAL)
+    Pose flags describe BODY MECHANICS — interpret them by combination, not individually:
+    - "torso_lean_forward" alone → normal work posture (desk, counter, laptop). NOT suspicious.
+    - "crouching" alone → completely ambiguous: opening a drawer, picking up an item, tying shoes. NOT criminal by itself. Do NOT treat as evidence of robbery.
+    - "arm_extended_aim" alone → elevated arm, evaluate against Florence context.
+    - "arm_extended_aim" + "crouching" together → strong robbery indicator. Treat as primary criminal evidence.
+    - "hands_above_head" → victim posture, indicates robbery in progress.
+    - No pose flags active → neutral, non-threatening stance regardless of what objects are present.
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - be based on semantic content from Florence AND pose estimator flags
+    - describe meaningful actions, interactions, or unusual events
+    - NOT include YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "man holding phone instead of payment method"
+    - "customer leaning over cash register"
+    - "person reaching into backpack"
+    - "individual looking around nervously"
+    - "individual extended arm with weapon aimed forward"
+    - "person crouched behind display counter"
+    - "subject leaning over restricted area"
+    - "multiple individuals with hands raised above head"
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+    - "bounding box moved left"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe behavioral or contextual anomalies
+    - be based on Florence semantic content
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Downtown Market (grocery)
+Description: Neighborhood store with fresh produce and daily essentials.
+Location: 123 King St W, Toronto
+Sensitivity: high; scoring: aggressive; interaction: medium
+Allowed behaviors: Employees carry boxes, Customers stay in store for long periods, People smoke near entrance
+Forbidden behaviors: holding a gun, holding a knife
+Surveillance cameras (2) — all video frames analyzed are captured from these cameras:
+  - Front Entrance Cam: Mounted above the main entrance door
+  - Checkout Cam: Overlooking all cash registers
+Recent context:
+- A person is sitting on a blue chair in front of the desk, looking at the laptop screen. On the left side of the image, there is a red sign with the store's logo and the date "23:36:27". On the right side, there are shelves with various items such as snacks, drinks, and other items. YOLO tracker detected: ID 1: laptop (confidence 0.94) at [133,76,189,134]; ID 2: bottle (confidence 0.74) at [77,90,109,144].
+- On the desk, there is a laptop, a phone, and various items such as snacks, drinks, and other items. A woman is sitting on a blue chair in front of the desk and appears to be looking at the laptop screen. To the left of the woman, there are two men, one of whom is standing and the other is sitting at the counter. YOLO tracker detected: ID 1: laptop (confidence 0.95) at [133,76,189,134]; ID 3: person (confidence 0.71) at [183,111,263,200]; ID 2: bottle (confidence 0.70) at [77,90,110,145].
+- The desk is cluttered with various items such as snacks, drinks, and other items. The man is standing behind the desk, looking at the computer screen. The woman is sitting on a blue chair and appears to be looking at it intently. YOLO tracker detected: ID 1: laptop (confidence 0.96) at [133,75,188,134]; ID 4: person (confidence 0.88) at [28,4,87,108], pose: torso_lean_forward; ID 3: person (confidence 0.72) at [184,111,262,198]; ID 5: bottle (confidence 0.61) at [75,90,111,148].
+- The man is wearing a green shirt and is standing behind the counter, while the woman is sitting on a blue chair. On the countertop, there are various items such as a laptop, a phone, and a few other items. There is also a red sign with the store's logo on it. YOLO tracker detected: ID 1: laptop (confidence 0.97) at [133,76,189,134]; ID 4: person (confidence 0.86) at [67,0,128,92]; ID 3: person (confidence 0.83) at [183,111,262,200]; ID 5: bottle (confidence 0.75) at [77,90,111,147].
+- The man is wearing a gray shirt and the woman is sitting on a blue chair. They are both looking at the cash register and appear to be engaged in a conversation. On the counter, there are various items such as snacks, drinks, and other items. YOLO tracker detected: ID 4: person (confidence 0.87) at [72,0,161,99], pose: crouching; ID 5: bottle (confidence 0.68) at [77,90,110,147]; ID 6: person (confidence 0.67) at [195,108,263,188]; ID 7: laptop (confidence 0.66) at [244,76,271,102].
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from three sources:
+    1. Florence (semantic captions, OCR, object descriptions, behaviors, interactions)
+    2. YOLO tracker (object IDs, classes, bounding boxes, continuity across frames)
+    3. Pose estimator (per-person posture flags indicating intent: arm_extended_aim, hands_above_head, torso_lean_forward, crouching)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+
+    ### 3. HOW TO USE THE INPUTS
+    - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
+    - Pose estimator flags are also PRIMARY evidence for intent. Use them directly to reason about threatening posture, victim posture, or suspicious body mechanics.
+    - YOLO tracker data (IDs, classes, bounding boxes) is SECONDARY and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF YOLO DATA
+    You MUST NOT use raw YOLO tracker data as primary evidence of anomaly.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    NOTE: Pose flags (arm_extended_aim, hands_above_head, torso_lean_forward, crouching) are PERMITTED and ENCOURAGED as direct evidence of intent. They appear in the tracker sentence as ", pose: <flag_name>" and describe body mechanics, not bounding boxes.
+
+    ### 4b. POSE FLAG INTERPRETATION (CRITICAL)
+    Pose flags describe BODY MECHANICS — interpret them by combination, not individually:
+    - "torso_lean_forward" alone → normal work posture (desk, counter, laptop). NOT suspicious.
+    - "crouching" alone → completely ambiguous: opening a drawer, picking up an item, tying shoes. NOT criminal by itself. Do NOT treat as evidence of robbery.
+    - "arm_extended_aim" alone → elevated arm, evaluate against Florence context.
+    - "arm_extended_aim" + "crouching" together → strong robbery indicator. Treat as primary criminal evidence.
+    - "hands_above_head" → victim posture, indicates robbery in progress.
+    - No pose flags active → neutral, non-threatening stance regardless of what objects are present.
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - be based on semantic content from Florence AND pose estimator flags
+    - describe meaningful actions, interactions, or unusual events
+    - NOT include YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "man holding phone instead of payment method"
+    - "customer leaning over cash register"
+    - "person reaching into backpack"
+    - "individual looking around nervously"
+    - "individual extended arm with weapon aimed forward"
+    - "person crouched behind display counter"
+    - "subject leaning over restricted area"
+    - "multiple individuals with hands raised above head"
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+    - "bounding box moved left"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe behavioral or contextual anomalies
+    - be based on Florence semantic content
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Downtown Market (grocery)
+Description: Neighborhood store with fresh produce and daily essentials.
+Location: 123 King St W, Toronto
+Sensitivity: high; scoring: aggressive; interaction: medium
+Allowed behaviors: Employees carry boxes, Customers stay in store for long periods, People smoke near entrance
+Forbidden behaviors: holding a gun, holding a knife
+Surveillance cameras (2) — all video frames analyzed are captured from these cameras:
+  - Front Entrance Cam: Mounted above the main entrance door
+  - Checkout Cam: Overlooking all cash registers
+Recent context:
+- A person is sitting on a blue chair in front of the desk, looking at the laptop screen. On the left side of the image, there is a red sign with the store's logo and the date "23:36:27". On the right side, there are shelves with various items such as snacks, drinks, and other items. YOLO tracker detected: ID 1: laptop (confidence 0.94) at [133,76,189,134]; ID 2: bottle (confidence 0.74) at [77,90,109,144].
+- On the desk, there is a laptop, a phone, and various items such as snacks, drinks, and other items. A woman is sitting on a blue chair in front of the desk and appears to be looking at the laptop screen. To the left of the woman, there are two men, one of whom is standing and the other is sitting at the counter. YOLO tracker detected: ID 1: laptop (confidence 0.95) at [133,76,189,134]; ID 3: person (confidence 0.71) at [183,111,263,200]; ID 2: bottle (confidence 0.70) at [77,90,110,145].
+- The desk is cluttered with various items such as snacks, drinks, and other items. The man is standing behind the desk, looking at the computer screen. The woman is sitting on a blue chair and appears to be looking at it intently. YOLO tracker detected: ID 1: laptop (confidence 0.96) at [133,75,188,134]; ID 4: person (confidence 0.88) at [28,4,87,108], pose: torso_lean_forward; ID 3: person (confidence 0.72) at [184,111,262,198]; ID 5: bottle (confidence 0.61) at [75,90,111,148].
+- The man is wearing a green shirt and is standing behind the counter, while the woman is sitting on a blue chair. On the countertop, there are various items such as a laptop, a phone, and a few other items. There is also a red sign with the store's logo on it. YOLO tracker detected: ID 1: laptop (confidence 0.97) at [133,76,189,134]; ID 4: person (confidence 0.86) at [67,0,128,92]; ID 3: person (confidence 0.83) at [183,111,262,200]; ID 5: bottle (confidence 0.75) at [77,90,111,147].
+- The man is wearing a gray shirt and the woman is sitting on a blue chair. They are both looking at the cash register and appear to be engaged in a conversation. On the counter, there are various items such as snacks, drinks, and other items. YOLO tracker detected: ID 4: person (confidence 0.87) at [72,0,161,99], pose: crouching; ID 5: bottle (confidence 0.68) at [77,90,110,147]; ID 6: person (confidence 0.67) at [195,108,263,188]; ID 7: laptop (confidence 0.66) at [244,76,271,102].
+- The desk is cluttered with various items such as a laptop, a phone, and a few other items. The man is standing behind the desk, looking at the laptop screen. The woman is sitting on a blue chair and appears to be working on the computer. YOLO tracker detected: ID 8: laptop (confidence 0.95) at [134,76,189,134]; ID 12: person (confidence 0.72) at [72,0,133,94], pose: crouching; ID 5: bottle (confidence 0.64) at [77,90,111,148].
+- The desk is cluttered with various items such as snacks, drinks, and other items. The man is standing behind the desk and appears to be looking at the computer screen. The woman is sitting on a blue chair and is holding a phone in her hand. YOLO tracker detected: ID 8: laptop (confidence 0.95) at [133,76,189,135]; ID 14: person (confidence 0.79) at [174,116,257,202], pose: arm_extended_aim, crouching; ID 5: bottle (confidence 0.72) at [77,90,112,148]; ID 12: person (confidence 0.64) at [68,0,116,93].
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from three sources:
+    1. Florence (semantic captions, OCR, object descriptions, behaviors, interactions)
+    2. YOLO tracker (object IDs, classes, bounding boxes, continuity across frames)
+    3. Pose estimator (per-person posture flags indicating intent: arm_extended_aim, hands_above_head, torso_lean_forward, crouching)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+
+    ### 3. HOW TO USE THE INPUTS
+    - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
+    - Pose estimator flags are also PRIMARY evidence for intent. Use them directly to reason about threatening posture, victim posture, or suspicious body mechanics.
+    - YOLO tracker data (IDs, classes, bounding boxes) is SECONDARY and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF YOLO DATA
+    You MUST NOT use raw YOLO tracker data as primary evidence of anomaly.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    NOTE: Pose flags (arm_extended_aim, hands_above_head, torso_lean_forward, crouching) are PERMITTED and ENCOURAGED as direct evidence of intent. They appear in the tracker sentence as ", pose: <flag_name>" and describe body mechanics, not bounding boxes.
+
+    ### 4b. POSE FLAG INTERPRETATION (CRITICAL)
+    Pose flags describe BODY MECHANICS — interpret them by combination, not individually:
+    - "torso_lean_forward" alone → normal work posture (desk, counter, laptop). NOT suspicious.
+    - "crouching" alone → completely ambiguous: opening a drawer, picking up an item, tying shoes. NOT criminal by itself. Do NOT treat as evidence of robbery.
+    - "arm_extended_aim" alone → elevated arm, evaluate against Florence context.
+    - "arm_extended_aim" + "crouching" together → strong robbery indicator. Treat as primary criminal evidence.
+    - "hands_above_head" → victim posture, indicates robbery in progress.
+    - No pose flags active → neutral, non-threatening stance regardless of what objects are present.
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - be based on semantic content from Florence AND pose estimator flags
+    - describe meaningful actions, interactions, or unusual events
+    - NOT include YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "man holding phone instead of payment method"
+    - "customer leaning over cash register"
+    - "person reaching into backpack"
+    - "individual looking around nervously"
+    - "individual extended arm with weapon aimed forward"
+    - "person crouched behind display counter"
+    - "subject leaning over restricted area"
+    - "multiple individuals with hands raised above head"
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+    - "bounding box moved left"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe behavioral or contextual anomalies
+    - be based on Florence semantic content
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Downtown Market (grocery)
+Description: Neighborhood store with fresh produce and daily essentials.
+Location: 123 King St W, Toronto
+Sensitivity: high; scoring: aggressive; interaction: medium
+Allowed behaviors: Employees carry boxes, Customers stay in store for long periods, People smoke near entrance
+Forbidden behaviors: holding a gun, holding a knife
+Surveillance cameras (2) — all video frames analyzed are captured from these cameras:
+  - Front Entrance Cam: Mounted above the main entrance door
+  - Checkout Cam: Overlooking all cash registers
+Recent context:
+- A person is sitting on a blue chair in front of the desk, looking at the laptop screen. On the left side of the image, there is a red sign with the store's logo and the date "23:36:27". On the right side, there are shelves with various items such as snacks, drinks, and other items. YOLO tracker detected: ID 1: laptop (confidence 0.94) at [133,76,189,134]; ID 2: bottle (confidence 0.74) at [77,90,109,144].
+- On the desk, there is a laptop, a phone, and various items such as snacks, drinks, and other items. A woman is sitting on a blue chair in front of the desk and appears to be looking at the laptop screen. To the left of the woman, there are two men, one of whom is standing and the other is sitting at the counter. YOLO tracker detected: ID 1: laptop (confidence 0.95) at [133,76,189,134]; ID 3: person (confidence 0.71) at [183,111,263,200]; ID 2: bottle (confidence 0.70) at [77,90,110,145].
+- The desk is cluttered with various items such as snacks, drinks, and other items. The man is standing behind the desk, looking at the computer screen. The woman is sitting on a blue chair and appears to be looking at it intently. YOLO tracker detected: ID 1: laptop (confidence 0.96) at [133,75,188,134]; ID 4: person (confidence 0.88) at [28,4,87,108], pose: torso_lean_forward; ID 3: person (confidence 0.72) at [184,111,262,198]; ID 5: bottle (confidence 0.61) at [75,90,111,148].
+- The man is wearing a green shirt and is standing behind the counter, while the woman is sitting on a blue chair. On the countertop, there are various items such as a laptop, a phone, and a few other items. There is also a red sign with the store's logo on it. YOLO tracker detected: ID 1: laptop (confidence 0.97) at [133,76,189,134]; ID 4: person (confidence 0.86) at [67,0,128,92]; ID 3: person (confidence 0.83) at [183,111,262,200]; ID 5: bottle (confidence 0.75) at [77,90,111,147].
+- The man is wearing a gray shirt and the woman is sitting on a blue chair. They are both looking at the cash register and appear to be engaged in a conversation. On the counter, there are various items such as snacks, drinks, and other items. YOLO tracker detected: ID 4: person (confidence 0.87) at [72,0,161,99], pose: crouching; ID 5: bottle (confidence 0.68) at [77,90,110,147]; ID 6: person (confidence 0.67) at [195,108,263,188]; ID 7: laptop (confidence 0.66) at [244,76,271,102].
+- The desk is cluttered with various items such as a laptop, a phone, and a few other items. The man is standing behind the desk, looking at the laptop screen. The woman is sitting on a blue chair and appears to be working on the computer. YOLO tracker detected: ID 8: laptop (confidence 0.95) at [134,76,189,134]; ID 12: person (confidence 0.72) at [72,0,133,94], pose: crouching; ID 5: bottle (confidence 0.64) at [77,90,111,148].
+- The desk is cluttered with various items such as snacks, drinks, and other items. The man is standing behind the desk and appears to be looking at the computer screen. The woman is sitting on a blue chair and is holding a phone in her hand. YOLO tracker detected: ID 8: laptop (confidence 0.95) at [133,76,189,135]; ID 14: person (confidence 0.79) at [174,116,257,202], pose: arm_extended_aim, crouching; ID 5: bottle (confidence 0.72) at [77,90,112,148]; ID 12: person (confidence 0.64) at [68,0,116,93].
+- The man is wearing a gray shirt and appears to be in his late twenties or early thirties. He is looking at the laptop screen and seems to be working on a project. On the counter, there are various items such as snacks, drinks, and other items. YOLO tracker detected: ID 8: laptop (confidence 0.96) at [133,76,189,134]; ID 12: person (confidence 0.83) at [67,0,127,93]; ID 5: bottle (confidence 0.75) at [77,90,112,147].
+- The man is wearing a blue shirt and appears to be in his late twenties or early thirties. He is looking at the laptop screen with a serious expression on his face. On the counter, there are various items such as a bottle of soda, a jar of chips, and a few other items. YOLO tracker detected: ID 8: laptop (confidence 0.95) at [133,76,189,134]; ID 12: person (confidence 0.85) at [66,0,126,93]; ID 5: bottle (confidence 0.74) at [77,90,111,148].
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from three sources:
+    1. Florence (semantic captions, OCR, object descriptions, behaviors, interactions)
+    2. YOLO tracker (object IDs, classes, bounding boxes, continuity across frames)
+    3. Pose estimator (per-person posture flags indicating intent: arm_extended_aim, hands_above_head, torso_lean_forward, crouching)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+
+    ### 3. HOW TO USE THE INPUTS
+    - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
+    - Pose estimator flags are also PRIMARY evidence for intent. Use them directly to reason about threatening posture, victim posture, or suspicious body mechanics.
+    - YOLO tracker data (IDs, classes, bounding boxes) is SECONDARY and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF YOLO DATA
+    You MUST NOT use raw YOLO tracker data as primary evidence of anomaly.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    NOTE: Pose flags (arm_extended_aim, hands_above_head, torso_lean_forward, crouching) are PERMITTED and ENCOURAGED as direct evidence of intent. They appear in the tracker sentence as ", pose: <flag_name>" and describe body mechanics, not bounding boxes.
+
+    ### 4b. POSE FLAG INTERPRETATION (CRITICAL)
+    Pose flags describe BODY MECHANICS — interpret them by combination, not individually:
+    - "torso_lean_forward" alone → normal work posture (desk, counter, laptop). NOT suspicious.
+    - "crouching" alone → completely ambiguous: opening a drawer, picking up an item, tying shoes. NOT criminal by itself. Do NOT treat as evidence of robbery.
+    - "arm_extended_aim" alone → elevated arm, evaluate against Florence context.
+    - "arm_extended_aim" + "crouching" together → strong robbery indicator. Treat as primary criminal evidence.
+    - "hands_above_head" → victim posture, indicates robbery in progress.
+    - No pose flags active → neutral, non-threatening stance regardless of what objects are present.
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - be based on semantic content from Florence AND pose estimator flags
+    - describe meaningful actions, interactions, or unusual events
+    - NOT include YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "man holding phone instead of payment method"
+    - "customer leaning over cash register"
+    - "person reaching into backpack"
+    - "individual looking around nervously"
+    - "individual extended arm with weapon aimed forward"
+    - "person crouched behind display counter"
+    - "subject leaning over restricted area"
+    - "multiple individuals with hands raised above head"
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+    - "bounding box moved left"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe behavioral or contextual anomalies
+    - be based on Florence semantic content
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Downtown Market (grocery)
+Description: Neighborhood store with fresh produce and daily essentials.
+Location: 123 King St W, Toronto
+Sensitivity: high; scoring: aggressive; interaction: medium
+Allowed behaviors: Employees carry boxes, Customers stay in store for long periods, People smoke near entrance
+Forbidden behaviors: holding a gun, holding a knife
+Surveillance cameras (2) — all video frames analyzed are captured from these cameras:
+  - Front Entrance Cam: Mounted above the main entrance door
+  - Checkout Cam: Overlooking all cash registers
+Recent context:
+- On the desk, there is a laptop, a phone, and various items such as snacks, drinks, and other items. A woman is sitting on a blue chair in front of the desk and appears to be looking at the laptop screen. To the left of the woman, there are two men, one of whom is standing and the other is sitting at the counter. YOLO tracker detected: ID 1: laptop (confidence 0.95) at [133,76,189,134]; ID 3: person (confidence 0.71) at [183,111,263,200]; ID 2: bottle (confidence 0.70) at [77,90,110,145].
+- The desk is cluttered with various items such as snacks, drinks, and other items. The man is standing behind the desk, looking at the computer screen. The woman is sitting on a blue chair and appears to be looking at it intently. YOLO tracker detected: ID 1: laptop (confidence 0.96) at [133,75,188,134]; ID 4: person (confidence 0.88) at [28,4,87,108], pose: torso_lean_forward; ID 3: person (confidence 0.72) at [184,111,262,198]; ID 5: bottle (confidence 0.61) at [75,90,111,148].
+- The man is wearing a green shirt and is standing behind the counter, while the woman is sitting on a blue chair. On the countertop, there are various items such as a laptop, a phone, and a few other items. There is also a red sign with the store's logo on it. YOLO tracker detected: ID 1: laptop (confidence 0.97) at [133,76,189,134]; ID 4: person (confidence 0.86) at [67,0,128,92]; ID 3: person (confidence 0.83) at [183,111,262,200]; ID 5: bottle (confidence 0.75) at [77,90,111,147].
+- The man is wearing a gray shirt and the woman is sitting on a blue chair. They are both looking at the cash register and appear to be engaged in a conversation. On the counter, there are various items such as snacks, drinks, and other items. YOLO tracker detected: ID 4: person (confidence 0.87) at [72,0,161,99], pose: crouching; ID 5: bottle (confidence 0.68) at [77,90,110,147]; ID 6: person (confidence 0.67) at [195,108,263,188]; ID 7: laptop (confidence 0.66) at [244,76,271,102].
+- The desk is cluttered with various items such as a laptop, a phone, and a few other items. The man is standing behind the desk, looking at the laptop screen. The woman is sitting on a blue chair and appears to be working on the computer. YOLO tracker detected: ID 8: laptop (confidence 0.95) at [134,76,189,134]; ID 12: person (confidence 0.72) at [72,0,133,94], pose: crouching; ID 5: bottle (confidence 0.64) at [77,90,111,148].
+- The desk is cluttered with various items such as snacks, drinks, and other items. The man is standing behind the desk and appears to be looking at the computer screen. The woman is sitting on a blue chair and is holding a phone in her hand. YOLO tracker detected: ID 8: laptop (confidence 0.95) at [133,76,189,135]; ID 14: person (confidence 0.79) at [174,116,257,202], pose: arm_extended_aim, crouching; ID 5: bottle (confidence 0.72) at [77,90,112,148]; ID 12: person (confidence 0.64) at [68,0,116,93].
+- The man is wearing a gray shirt and appears to be in his late twenties or early thirties. He is looking at the laptop screen and seems to be working on a project. On the counter, there are various items such as snacks, drinks, and other items. YOLO tracker detected: ID 8: laptop (confidence 0.96) at [133,76,189,134]; ID 12: person (confidence 0.83) at [67,0,127,93]; ID 5: bottle (confidence 0.75) at [77,90,112,147].
+- The man is wearing a blue shirt and appears to be in his late twenties or early thirties. He is looking at the laptop screen with a serious expression on his face. On the counter, there are various items such as a bottle of soda, a jar of chips, and a few other items. YOLO tracker detected: ID 8: laptop (confidence 0.95) at [133,76,189,134]; ID 12: person (confidence 0.85) at [66,0,126,93]; ID 5: bottle (confidence 0.74) at [77,90,111,148].
+- The man is wearing a black t-shirt and appears to be in his late twenties or early thirties. He is looking at the laptop screen and seems to be working on it intently. On the counter, there are various items such as snacks, drinks, and other items. YOLO tracker detected: ID 8: laptop (confidence 0.94) at [133,75,189,134]; ID 12: person (confidence 0.80) at [65,1,127,92]; ID 5: bottle (confidence 0.72) at [77,90,110,147].
+- The man is wearing a gray sweater and appears to be in his late twenties or early thirties. He is looking at the laptop screen and seems to be working on it intently. On the right side of the counter, there is a woman sitting on a blue chair and looking at a computer screen. YOLO tracker detected: ID 8: laptop (confidence 0.96) at [134,75,189,134]; ID 12: person (confidence 0.81) at [64,6,127,93].
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from three sources:
+    1. Florence (semantic captions, OCR, object descriptions, behaviors, interactions)
+    2. YOLO tracker (object IDs, classes, bounding boxes, continuity across frames)
+    3. Pose estimator (per-person posture flags indicating intent: arm_extended_aim, hands_above_head, torso_lean_forward, crouching)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+
+    ### 3. HOW TO USE THE INPUTS
+    - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
+    - Pose estimator flags are also PRIMARY evidence for intent. Use them directly to reason about threatening posture, victim posture, or suspicious body mechanics.
+    - YOLO tracker data (IDs, classes, bounding boxes) is SECONDARY and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF YOLO DATA
+    You MUST NOT use raw YOLO tracker data as primary evidence of anomaly.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    NOTE: Pose flags (arm_extended_aim, hands_above_head, torso_lean_forward, crouching) are PERMITTED and ENCOURAGED as direct evidence of intent. They appear in the tracker sentence as ", pose: <flag_name>" and describe body mechanics, not bounding boxes.
+
+    ### 4b. POSE FLAG INTERPRETATION (CRITICAL)
+    Pose flags describe BODY MECHANICS — interpret them by combination, not individually:
+    - "torso_lean_forward" alone → normal work posture (desk, counter, laptop). NOT suspicious.
+    - "crouching" alone → completely ambiguous: opening a drawer, picking up an item, tying shoes. NOT criminal by itself. Do NOT treat as evidence of robbery.
+    - "arm_extended_aim" alone → elevated arm, evaluate against Florence context.
+    - "arm_extended_aim" + "crouching" together → strong robbery indicator. Treat as primary criminal evidence.
+    - "hands_above_head" → victim posture, indicates robbery in progress.
+    - No pose flags active → neutral, non-threatening stance regardless of what objects are present.
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - be based on semantic content from Florence AND pose estimator flags
+    - describe meaningful actions, interactions, or unusual events
+    - NOT include YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "man holding phone instead of payment method"
+    - "customer leaning over cash register"
+    - "person reaching into backpack"
+    - "individual looking around nervously"
+    - "individual extended arm with weapon aimed forward"
+    - "person crouched behind display counter"
+    - "subject leaning over restricted area"
+    - "multiple individuals with hands raised above head"
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+    - "bounding box moved left"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe behavioral or contextual anomalies
+    - be based on Florence semantic content
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Downtown Market (grocery)
+Description: Neighborhood store with fresh produce and daily essentials.
+Location: 123 King St W, Toronto
+Sensitivity: high; scoring: aggressive; interaction: medium
+Allowed behaviors: Employees carry boxes, Customers stay in store for long periods, People smoke near entrance
+Forbidden behaviors: holding a gun, holding a knife
+Surveillance cameras (2) — all video frames analyzed are captured from these cameras:
+  - Front Entrance Cam: Mounted above the main entrance door
+  - Checkout Cam: Overlooking all cash registers
+Recent context:
+- The man is wearing a green shirt and is standing behind the counter, while the woman is sitting on a blue chair. On the countertop, there are various items such as a laptop, a phone, and a few other items. There is also a red sign with the store's logo on it. YOLO tracker detected: ID 1: laptop (confidence 0.97) at [133,76,189,134]; ID 4: person (confidence 0.86) at [67,0,128,92]; ID 3: person (confidence 0.83) at [183,111,262,200]; ID 5: bottle (confidence 0.75) at [77,90,111,147].
+- The man is wearing a gray shirt and the woman is sitting on a blue chair. They are both looking at the cash register and appear to be engaged in a conversation. On the counter, there are various items such as snacks, drinks, and other items. YOLO tracker detected: ID 4: person (confidence 0.87) at [72,0,161,99], pose: crouching; ID 5: bottle (confidence 0.68) at [77,90,110,147]; ID 6: person (confidence 0.67) at [195,108,263,188]; ID 7: laptop (confidence 0.66) at [244,76,271,102].
+- The desk is cluttered with various items such as a laptop, a phone, and a few other items. The man is standing behind the desk, looking at the laptop screen. The woman is sitting on a blue chair and appears to be working on the computer. YOLO tracker detected: ID 8: laptop (confidence 0.95) at [134,76,189,134]; ID 12: person (confidence 0.72) at [72,0,133,94], pose: crouching; ID 5: bottle (confidence 0.64) at [77,90,111,148].
+- The desk is cluttered with various items such as snacks, drinks, and other items. The man is standing behind the desk and appears to be looking at the computer screen. The woman is sitting on a blue chair and is holding a phone in her hand. YOLO tracker detected: ID 8: laptop (confidence 0.95) at [133,76,189,135]; ID 14: person (confidence 0.79) at [174,116,257,202], pose: arm_extended_aim, crouching; ID 5: bottle (confidence 0.72) at [77,90,112,148]; ID 12: person (confidence 0.64) at [68,0,116,93].
+- The man is wearing a gray shirt and appears to be in his late twenties or early thirties. He is looking at the laptop screen and seems to be working on a project. On the counter, there are various items such as snacks, drinks, and other items. YOLO tracker detected: ID 8: laptop (confidence 0.96) at [133,76,189,134]; ID 12: person (confidence 0.83) at [67,0,127,93]; ID 5: bottle (confidence 0.75) at [77,90,112,147].
+- The man is wearing a blue shirt and appears to be in his late twenties or early thirties. He is looking at the laptop screen with a serious expression on his face. On the counter, there are various items such as a bottle of soda, a jar of chips, and a few other items. YOLO tracker detected: ID 8: laptop (confidence 0.95) at [133,76,189,134]; ID 12: person (confidence 0.85) at [66,0,126,93]; ID 5: bottle (confidence 0.74) at [77,90,111,148].
+- The man is wearing a black t-shirt and appears to be in his late twenties or early thirties. He is looking at the laptop screen and seems to be working on it intently. On the counter, there are various items such as snacks, drinks, and other items. YOLO tracker detected: ID 8: laptop (confidence 0.94) at [133,75,189,134]; ID 12: person (confidence 0.80) at [65,1,127,92]; ID 5: bottle (confidence 0.72) at [77,90,110,147].
+- The man is wearing a gray sweater and appears to be in his late twenties or early thirties. He is looking at the laptop screen and seems to be working on it intently. On the right side of the counter, there is a woman sitting on a blue chair and looking at a computer screen. YOLO tracker detected: ID 8: laptop (confidence 0.96) at [134,75,189,134]; ID 12: person (confidence 0.81) at [64,6,127,93].
+- He is wearing a black t-shirt and appears to be in his late twenties or early thirties. On the desk, there are various items such as snacks, drinks, and other items. There is a red sign on the left side of the image that reads "KFC". YOLO tracker detected: ID 8: laptop (confidence 0.96) at [133,75,189,134]; ID 12: person (confidence 0.81) at [67,4,129,92].
+- He is wearing a grey t-shirt and appears to be in his late twenties or early thirties. On the counter, there are various items such as snacks, drinks, and other items. A woman is sitting on a chair next to the counter and is looking at the laptop screen. YOLO tracker detected: ID 8: laptop (confidence 0.87) at [133,75,187,135]; ID 12: person (confidence 0.79) at [66,5,134,92]; ID 18: bottle (confidence 0.72) at [77,90,111,148].
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from three sources:
+    1. Florence (semantic captions, OCR, object descriptions, behaviors, interactions)
+    2. YOLO tracker (object IDs, classes, bounding boxes, continuity across frames)
+    3. Pose estimator (per-person posture flags indicating intent: arm_extended_aim, hands_above_head, torso_lean_forward, crouching)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+
+    ### 3. HOW TO USE THE INPUTS
+    - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
+    - Pose estimator flags are also PRIMARY evidence for intent. Use them directly to reason about threatening posture, victim posture, or suspicious body mechanics.
+    - YOLO tracker data (IDs, classes, bounding boxes) is SECONDARY and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF YOLO DATA
+    You MUST NOT use raw YOLO tracker data as primary evidence of anomaly.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    NOTE: Pose flags (arm_extended_aim, hands_above_head, torso_lean_forward, crouching) are PERMITTED and ENCOURAGED as direct evidence of intent. They appear in the tracker sentence as ", pose: <flag_name>" and describe body mechanics, not bounding boxes.
+
+    ### 4b. POSE FLAG INTERPRETATION (CRITICAL)
+    Pose flags describe BODY MECHANICS — interpret them by combination, not individually:
+    - "torso_lean_forward" alone → normal work posture (desk, counter, laptop). NOT suspicious.
+    - "crouching" alone → completely ambiguous: opening a drawer, picking up an item, tying shoes. NOT criminal by itself. Do NOT treat as evidence of robbery.
+    - "arm_extended_aim" alone → elevated arm, evaluate against Florence context.
+    - "arm_extended_aim" + "crouching" together → strong robbery indicator. Treat as primary criminal evidence.
+    - "hands_above_head" → victim posture, indicates robbery in progress.
+    - No pose flags active → neutral, non-threatening stance regardless of what objects are present.
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - be based on semantic content from Florence AND pose estimator flags
+    - describe meaningful actions, interactions, or unusual events
+    - NOT include YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "man holding phone instead of payment method"
+    - "customer leaning over cash register"
+    - "person reaching into backpack"
+    - "individual looking around nervously"
+    - "individual extended arm with weapon aimed forward"
+    - "person crouched behind display counter"
+    - "subject leaning over restricted area"
+    - "multiple individuals with hands raised above head"
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+    - "bounding box moved left"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe behavioral or contextual anomalies
+    - be based on Florence semantic content
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Downtown Market (grocery)
+Description: Neighborhood store with fresh produce and daily essentials.
+Location: 123 King St W, Toronto
+Sensitivity: high; scoring: aggressive; interaction: medium
+Allowed behaviors: Employees carry boxes, Customers stay in store for long periods, People smoke near entrance
+Forbidden behaviors: holding a gun, holding a knife
+Surveillance cameras (2) — all video frames analyzed are captured from these cameras:
+  - Front Entrance Cam: Mounted above the main entrance door
+  - Checkout Cam: Overlooking all cash registers
+Recent context:
+- The desk is cluttered with various items such as a laptop, a phone, and a few other items. The man is standing behind the desk, looking at the laptop screen. The woman is sitting on a blue chair and appears to be working on the computer. YOLO tracker detected: ID 8: laptop (confidence 0.95) at [134,76,189,134]; ID 12: person (confidence 0.72) at [72,0,133,94], pose: crouching; ID 5: bottle (confidence 0.64) at [77,90,111,148].
+- The desk is cluttered with various items such as snacks, drinks, and other items. The man is standing behind the desk and appears to be looking at the computer screen. The woman is sitting on a blue chair and is holding a phone in her hand. YOLO tracker detected: ID 8: laptop (confidence 0.95) at [133,76,189,135]; ID 14: person (confidence 0.79) at [174,116,257,202], pose: arm_extended_aim, crouching; ID 5: bottle (confidence 0.72) at [77,90,112,148]; ID 12: person (confidence 0.64) at [68,0,116,93].
+- The man is wearing a gray shirt and appears to be in his late twenties or early thirties. He is looking at the laptop screen and seems to be working on a project. On the counter, there are various items such as snacks, drinks, and other items. YOLO tracker detected: ID 8: laptop (confidence 0.96) at [133,76,189,134]; ID 12: person (confidence 0.83) at [67,0,127,93]; ID 5: bottle (confidence 0.75) at [77,90,112,147].
+- The man is wearing a blue shirt and appears to be in his late twenties or early thirties. He is looking at the laptop screen with a serious expression on his face. On the counter, there are various items such as a bottle of soda, a jar of chips, and a few other items. YOLO tracker detected: ID 8: laptop (confidence 0.95) at [133,76,189,134]; ID 12: person (confidence 0.85) at [66,0,126,93]; ID 5: bottle (confidence 0.74) at [77,90,111,148].
+- The man is wearing a black t-shirt and appears to be in his late twenties or early thirties. He is looking at the laptop screen and seems to be working on it intently. On the counter, there are various items such as snacks, drinks, and other items. YOLO tracker detected: ID 8: laptop (confidence 0.94) at [133,75,189,134]; ID 12: person (confidence 0.80) at [65,1,127,92]; ID 5: bottle (confidence 0.72) at [77,90,110,147].
+- The man is wearing a gray sweater and appears to be in his late twenties or early thirties. He is looking at the laptop screen and seems to be working on it intently. On the right side of the counter, there is a woman sitting on a blue chair and looking at a computer screen. YOLO tracker detected: ID 8: laptop (confidence 0.96) at [134,75,189,134]; ID 12: person (confidence 0.81) at [64,6,127,93].
+- He is wearing a black t-shirt and appears to be in his late twenties or early thirties. On the desk, there are various items such as snacks, drinks, and other items. There is a red sign on the left side of the image that reads "KFC". YOLO tracker detected: ID 8: laptop (confidence 0.96) at [133,75,189,134]; ID 12: person (confidence 0.81) at [67,4,129,92].
+- He is wearing a grey t-shirt and appears to be in his late twenties or early thirties. On the counter, there are various items such as snacks, drinks, and other items. A woman is sitting on a chair next to the counter and is looking at the laptop screen. YOLO tracker detected: ID 8: laptop (confidence 0.87) at [133,75,187,135]; ID 12: person (confidence 0.79) at [66,5,134,92]; ID 18: bottle (confidence 0.72) at [77,90,111,148].
+- He is wearing a gray t-shirt and appears to be in his late twenties or early thirties. On the counter, there are various items such as snacks, drinks, and other items. A woman is kneeling on the floor next to the counter and is looking at the laptop screen. YOLO tracker detected: ID 12: person (confidence 0.83) at [67,1,125,94].
+- The man is wearing a black t-shirt and appears to be in his late twenties or early thirties. He is looking at the laptop screen with a serious expression on his face. On the right side of the image, there is a woman sitting on a blue chair in front of the counter, looking at a computer screen. YOLO tracker detected: ID 20: laptop (confidence 0.93) at [134,75,189,134]; ID 21: person (confidence 0.72) at [63,2,124,96].
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from three sources:
+    1. Florence (semantic captions, OCR, object descriptions, behaviors, interactions)
+    2. YOLO tracker (object IDs, classes, bounding boxes, continuity across frames)
+    3. Pose estimator (per-person posture flags indicating intent: arm_extended_aim, hands_above_head, torso_lean_forward, crouching)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+
+    ### 3. HOW TO USE THE INPUTS
+    - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
+    - Pose estimator flags are also PRIMARY evidence for intent. Use them directly to reason about threatening posture, victim posture, or suspicious body mechanics.
+    - YOLO tracker data (IDs, classes, bounding boxes) is SECONDARY and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF YOLO DATA
+    You MUST NOT use raw YOLO tracker data as primary evidence of anomaly.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    NOTE: Pose flags (arm_extended_aim, hands_above_head, torso_lean_forward, crouching) are PERMITTED and ENCOURAGED as direct evidence of intent. They appear in the tracker sentence as ", pose: <flag_name>" and describe body mechanics, not bounding boxes.
+
+    ### 4b. POSE FLAG INTERPRETATION (CRITICAL)
+    Pose flags describe BODY MECHANICS — interpret them by combination, not individually:
+    - "torso_lean_forward" alone → normal work posture (desk, counter, laptop). NOT suspicious.
+    - "crouching" alone → completely ambiguous: opening a drawer, picking up an item, tying shoes. NOT criminal by itself. Do NOT treat as evidence of robbery.
+    - "arm_extended_aim" alone → elevated arm, evaluate against Florence context.
+    - "arm_extended_aim" + "crouching" together → strong robbery indicator. Treat as primary criminal evidence.
+    - "hands_above_head" → victim posture, indicates robbery in progress.
+    - No pose flags active → neutral, non-threatening stance regardless of what objects are present.
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - be based on semantic content from Florence AND pose estimator flags
+    - describe meaningful actions, interactions, or unusual events
+    - NOT include YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "man holding phone instead of payment method"
+    - "customer leaning over cash register"
+    - "person reaching into backpack"
+    - "individual looking around nervously"
+    - "individual extended arm with weapon aimed forward"
+    - "person crouched behind display counter"
+    - "subject leaning over restricted area"
+    - "multiple individuals with hands raised above head"
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+    - "bounding box moved left"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe behavioral or contextual anomalies
+    - be based on Florence semantic content
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Downtown Market (grocery)
+Description: Neighborhood store with fresh produce and daily essentials.
+Location: 123 King St W, Toronto
+Sensitivity: high; scoring: aggressive; interaction: medium
+Allowed behaviors: Employees carry boxes, Customers stay in store for long periods, People smoke near entrance
+Forbidden behaviors: holding a gun, holding a knife
+Surveillance cameras (2) — all video frames analyzed are captured from these cameras:
+  - Front Entrance Cam: Mounted above the main entrance door
+  - Checkout Cam: Overlooking all cash registers
+Recent context:
+- The man is wearing a gray shirt and appears to be in his late twenties or early thirties. He is looking at the laptop screen and seems to be working on a project. On the counter, there are various items such as snacks, drinks, and other items. YOLO tracker detected: ID 8: laptop (confidence 0.96) at [133,76,189,134]; ID 12: person (confidence 0.83) at [67,0,127,93]; ID 5: bottle (confidence 0.75) at [77,90,112,147].
+- The man is wearing a blue shirt and appears to be in his late twenties or early thirties. He is looking at the laptop screen with a serious expression on his face. On the counter, there are various items such as a bottle of soda, a jar of chips, and a few other items. YOLO tracker detected: ID 8: laptop (confidence 0.95) at [133,76,189,134]; ID 12: person (confidence 0.85) at [66,0,126,93]; ID 5: bottle (confidence 0.74) at [77,90,111,148].
+- The man is wearing a black t-shirt and appears to be in his late twenties or early thirties. He is looking at the laptop screen and seems to be working on it intently. On the counter, there are various items such as snacks, drinks, and other items. YOLO tracker detected: ID 8: laptop (confidence 0.94) at [133,75,189,134]; ID 12: person (confidence 0.80) at [65,1,127,92]; ID 5: bottle (confidence 0.72) at [77,90,110,147].
+- The man is wearing a gray sweater and appears to be in his late twenties or early thirties. He is looking at the laptop screen and seems to be working on it intently. On the right side of the counter, there is a woman sitting on a blue chair and looking at a computer screen. YOLO tracker detected: ID 8: laptop (confidence 0.96) at [134,75,189,134]; ID 12: person (confidence 0.81) at [64,6,127,93].
+- He is wearing a black t-shirt and appears to be in his late twenties or early thirties. On the desk, there are various items such as snacks, drinks, and other items. There is a red sign on the left side of the image that reads "KFC". YOLO tracker detected: ID 8: laptop (confidence 0.96) at [133,75,189,134]; ID 12: person (confidence 0.81) at [67,4,129,92].
+- He is wearing a grey t-shirt and appears to be in his late twenties or early thirties. On the counter, there are various items such as snacks, drinks, and other items. A woman is sitting on a chair next to the counter and is looking at the laptop screen. YOLO tracker detected: ID 8: laptop (confidence 0.87) at [133,75,187,135]; ID 12: person (confidence 0.79) at [66,5,134,92]; ID 18: bottle (confidence 0.72) at [77,90,111,148].
+- He is wearing a gray t-shirt and appears to be in his late twenties or early thirties. On the counter, there are various items such as snacks, drinks, and other items. A woman is kneeling on the floor next to the counter and is looking at the laptop screen. YOLO tracker detected: ID 12: person (confidence 0.83) at [67,1,125,94].
+- The man is wearing a black t-shirt and appears to be in his late twenties or early thirties. He is looking at the laptop screen with a serious expression on his face. On the right side of the image, there is a woman sitting on a blue chair in front of the counter, looking at a computer screen. YOLO tracker detected: ID 20: laptop (confidence 0.93) at [134,75,189,134]; ID 21: person (confidence 0.72) at [63,2,124,96].
+- The man is standing behind the counter, looking at the cash register with a serious expression on his face. The woman is sitting on a blue chair and appears to be working on a laptop. There is a red sign on the left side of the image that reads "Krispy Kreme". YOLO tracker detected: ID 20: laptop (confidence 0.93) at [133,75,189,134]; ID 23: person (confidence 0.72) at [68,0,121,88].
+- A woman is sitting on a blue chair in front of the counter, looking at the laptop screen. There is a man standing behind the counter and another person standing in the background. The date "2010 23:36:43" is visible in the bottom right corner of the image. YOLO tracker detected: ID 20: laptop (confidence 0.89) at [133,75,188,134]; ID 26: bottle (confidence 0.61) at [76,90,110,148].
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
