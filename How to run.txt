@@ -31,7 +31,7 @@ Step 4 - YOLO Tracker:
 ========================================================
 
 Step 1 - Broadcaster:
-  python video_broadcaster.py videos/shop.mp4
+  python video_broadcaster.py videos/market.mp4
 
 Step 2 - Qwen anomaly worker:
   python qwen_anomaly_worker.py --device cuda --ws_url ws://127.0.0.1:3000/ws/qwen
