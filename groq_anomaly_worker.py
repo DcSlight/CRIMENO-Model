@@ -273,6 +273,15 @@ def build_prompt(scene_description: str) -> str:
     - DO NOT treat "multiple people detected" as suspicious by itself.
     NOTE: Pose flags (arm_extended_aim, hands_above_head, torso_lean_forward, crouching) are PERMITTED and ENCOURAGED as direct evidence of intent. They appear in the tracker sentence as ", pose: <flag_name>" and describe body mechanics, not bounding boxes.
 
+    ### 4b. POSE FLAG INTERPRETATION (CRITICAL)
+    Pose flags describe BODY MECHANICS — interpret them by combination, not individually:
+    - "torso_lean_forward" alone → normal work posture (desk, counter, laptop). NOT suspicious.
+    - "crouching" alone → completely ambiguous: opening a drawer, picking up an item, tying shoes. NOT criminal by itself. Do NOT treat as evidence of robbery.
+    - "arm_extended_aim" alone → elevated arm, evaluate against Florence context.
+    - "arm_extended_aim" + "crouching" together → strong robbery indicator. Treat as primary criminal evidence.
+    - "hands_above_head" → victim posture, indicates robbery in progress.
+    - No pose flags active → neutral, non-threatening stance regardless of what objects are present.
+
     ### 5. KEY MOMENTS RULES
     "key_moments" MUST:
     - be based on semantic content from Florence AND pose estimator flags
