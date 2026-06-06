@@ -506,14 +506,12 @@ async def main_async():
             # Console output
             dt = record["text_overlay"]["datetime_candidates"]
             dt_str = dt[0] if dt else "-"
-            caption_short = caption.replace("\n", " ").strip()
-            if len(caption_short) > 120:
-                caption_short = caption_short[:120] + "..."
+            caption_full = caption.replace("\n", " ").strip()
 
             print(f"🎬 Frame {frame_idx}"
                   + (f" | t={video_time_ms}ms" if video_time_ms is not None else "")
                   + f" | dt={dt_str}"
-                  + f" | caption={caption_short}")
+                  + f"\n   caption={caption_full}")
 
             # ✨ NEW: send to Qwen worker via ZeroMQ (as JSON-line string)
             msg = json.dumps(record, ensure_ascii=False).encode("utf-8")

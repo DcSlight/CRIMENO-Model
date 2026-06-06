@@ -47,8 +47,16 @@ GENERIC_START_PATTERNS = [
     "this image shows",
     "the image is a still from",
     "the image appears to be",
+    "the image is taken from",
     "it shows",
     "in the image",
+]
+
+ALERT_KEYWORDS = [
+    "robber", "thief", "robbery", "gun", "knife", "weapon", "pistol", "firearm",
+    "lying on the floor", "lying on floor", "on the ground", "victim",
+    "assault", "attack", "threatening", "threat", "crime", "criminal",
+    "fleeing", "fleeing the scene", "running away", "hands up", "hands raised",
 ]
 
 GENERIC_NOISE_FRAGMENTS = [
@@ -97,11 +105,20 @@ def clean_caption(raw_caption: str, max_sentences: int = 3) -> str:
     if not meaningful:
         meaningful = sentences
 
+    # Prioritize alert sentences so they survive the max_sentences cutoff
+    def _is_alert(s: str) -> bool:
+        sl = s.lower()
+        return any(kw in sl for kw in ALERT_KEYWORDS)
+
+    alert_sents = [s for s in meaningful if _is_alert(s)]
+    other_sents = [s for s in meaningful if not _is_alert(s)]
+    meaningful = alert_sents + other_sents
+
     meaningful = meaningful[:max_sentences]
     cleaned = " ".join(meaningful)
 
-    if len(cleaned) > 400:
-        cleaned = cleaned[:400].rstrip() + "..."
+    if len(cleaned) > 500:
+        cleaned = cleaned[:500].rstrip() + "..."
 
     return cleaned
 
