@@ -1,3 +1,8 @@
+frame 330 florence
+The image is a still from a CCTV footage of a convenience store. It shows a man sitting at a desk with a laptop in front of him. He is wearing a black t-shirt and appears to be in his late twenties or early thirties. On the desk, there are various items such as snacks, drinks, and other items. There is a red sign on the left side of the image that reads "KFC". On the right side, there is a person lying on the floor, possibly a robber or a thief. The image is taken from a high angle, looking down on the man and the items on the desk.
+
+
+
 [INFO] Initializing Groq client. ZMQ receiver is already bound.
 ✅ Groq client initialized
 [WS] Connected: ws://127.0.0.1:3000/ws/groq
@@ -31,11 +36,11 @@ Frames 0–60
 {
   "anomaly_score": 0.1,
   "label": "normal",
-  "reason": "Customers and employee interacting normally",
+  "reason": "people browsing and working",
   "key_moments": [
     "woman looking at laptop screen",
     "man standing behind desk",
-    "people interacting at counter"
+    "person leaning forward at counter"
   ]
 }
 =========================================================
@@ -58,12 +63,13 @@ Surveillance cameras (2) — all video frames analyzed are captured from these c
 ==================== Anomaly decision ====================
 Frames 60–120
 {
-  "anomaly_score": 0.9,
-  "label": "criminal",
-  "reason": "crouching person near cash register",
+  "anomaly_score": 0.1,
+  "label": "normal",
+  "reason": "customers and employee interacting at register",
   "key_moments": [
-    "person crouching behind counter",
-    "individual near cash register"
+    "woman sitting on blue chair looking at laptop",
+    "man standing behind counter looking at computer screen",
+    "man and woman engaged in conversation at cash register"
   ]
 }
 =========================================================
@@ -88,11 +94,11 @@ Frames 120–180
 {
   "anomaly_score": 0.9,
   "label": "criminal",
-  "reason": "Person crouching with arm extended",
+  "reason": "person aiming with extended arm near register",
   "key_moments": [
     "person crouching behind counter",
     "individual with arm extended and aiming",
-    "person holding phone instead of payment method"
+    "person holding phone near cash register"
   ]
 }
 =========================================================
@@ -115,12 +121,13 @@ Surveillance cameras (2) — all video frames analyzed are captured from these c
 ==================== Anomaly decision ====================
 Frames 180–240
 {
-  "anomaly_score": 0.9,
-  "label": "criminal",
-  "reason": "crouching with arm extended",
+  "anomaly_score": 0.1,
+  "label": "normal",
+  "reason": "people working and shopping",
   "key_moments": [
-    "person crouching behind counter",
-    "arm extended with aim"
+    "woman looking at laptop screen",
+    "man standing behind counter",
+    "people engaged in conversation"
   ]
 }
 =========================================================
@@ -143,12 +150,13 @@ Surveillance cameras (2) — all video frames analyzed are captured from these c
 ==================== Anomaly decision ====================
 Frames 240–300
 {
-  "anomaly_score": 0.9,
-  "label": "criminal",
-  "reason": "Person crouching with arm extended",
+  "anomaly_score": 0.1,
+  "label": "normal",
+  "reason": "people working and shopping",
   "key_moments": [
-    "person crouching behind counter",
-    "arm extended with aim"
+    "man working on laptop",
+    "woman sitting and looking at computer screen",
+    "people engaged in conversation"
   ]
 }
 =========================================================
@@ -173,7 +181,7 @@ Frames 300–360
 {
   "anomaly_score": 0.1,
   "label": "normal",
-  "reason": "People working and shopping",
+  "reason": "people working and shopping",
   "key_moments": [
     "man working on laptop",
     "woman sitting on blue chair",
@@ -205,7 +213,8 @@ Frames 360–420
   "reason": "people working on laptops",
   "key_moments": [
     "man working on laptop",
-    "woman using computer"
+    "woman sitting on blue chair",
+    "people looking at computer screens"
   ]
 }
 =========================================================
@@ -232,9 +241,66 @@ Frames 420–480
   "label": "normal",
   "reason": "people working on laptops",
   "key_moments": [
+    "man working on laptop at counter",
+    "woman sitting on blue chair looking at laptop screen"
+  ]
+}
+=========================================================
+
+[WS] Sent anomaly result to NestJS
+[DEBUG] New event: The desk is cluttered with various items such as snacks, drinks, and other items. There is a red sign on the left side of the desk that reads "KFC" and a few people can be seen in the background. The woman appears to be working on her laptop and is looking at it intently. YOLO tracker detected: ID 20: laptop (confidence 0.94) at [133,75,189,134]; ID 26: bottle (confidence 0.69) at [76,90,111,148].
+[DEBUG] Similarity to last event: 0.269
+[DEBUG] Significant change detected → SEND to Groq.
+[CTX] Injecting business context into prompt:
+Store: Downtown Market (grocery)
+Description: Neighborhood store with fresh produce and daily essentials.
+Location: 123 King St W, Toronto
+Sensitivity: high; scoring: aggressive; interaction: medium
+Allowed behaviors: Employees carry boxes, Customers stay in store for long periods, People smoke near entrance
+Forbidden behaviors: holding a gun, holding a knife
+Surveillance cameras (2) — all video frames analyzed are captured from these cameras:
+  - Front Entrance Cam: Mounted above the main entrance door
+  - Checkout Cam: Overlooking all cash registers
+
+==================== Anomaly decision ====================
+Frames 480–540
+{
+  "anomaly_score": 0.1,
+  "label": "normal",
+  "reason": "people working on laptops",
+  "key_moments": [
     "man working on laptop",
-    "woman sitting next to counter",
-    "people looking at screens"
+    "woman sitting on blue chair looking at laptop",
+    "people standing behind counter"
+  ]
+}
+=========================================================
+
+[WS] Sent anomaly result to NestJS
+[DEBUG] New event: She is wearing a black jacket and appears to be working on the laptop. On the desk, there are various items such as snacks, drinks, and other items. There are also a few other items scattered around the desk. YOLO tracker detected: ID 20: laptop (confidence 0.95) at [133,75,189,134]; ID 26: bottle (confidence 0.69) at [77,90,110,145].
+[DEBUG] Similarity to last event: 0.463
+[DEBUG] Significant change detected → SEND to Groq.
+[CTX] Injecting business context into prompt:
+Store: Downtown Market (grocery)
+Description: Neighborhood store with fresh produce and daily essentials.
+Location: 123 King St W, Toronto
+Sensitivity: high; scoring: aggressive; interaction: medium
+Allowed behaviors: Employees carry boxes, Customers stay in store for long periods, People smoke near entrance
+Forbidden behaviors: holding a gun, holding a knife
+Surveillance cameras (2) — all video frames analyzed are captured from these cameras:
+  - Front Entrance Cam: Mounted above the main entrance door
+  - Checkout Cam: Overlooking all cash registers
+
+==================== Anomaly decision ====================
+Frames 540–600
+{
+  "anomaly_score": 0.1,
+  "label": "normal",
+  "reason": "people working on laptops",
+  "key_moments": [
+    "man looking at laptop screen",
+    "woman working on laptop",
+    "people standing behind counter"
   ]
 }
 =========================================================
