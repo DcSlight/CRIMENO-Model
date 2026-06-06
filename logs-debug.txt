@@ -1,7 +1,17 @@
-
-  File "C:\Users\idan.noyshul\Documents\GitHub\CRIMENO-Model\florence_worker.py", line 550, in <module>
+PS C:\Users\idan.noyshul\Documents\GitHub\CRIMENO-Model> python florence_worker.py --model microsoft/Florence-2-large --device cuda --every 30 --ws_url ws://127.0.0.1:3000/ws/florence --anomaly-endpoint tcp://127.0.0.1:5581
+Device set to use cuda
+configuration_florence2.py: 15.1kB [00:00, 15.2MB/s]
+C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\huggingface_hub\file_download.py:143: UserWarning: `huggingface_hub` cache-system uses symlinks by default to efficiently store duplicated files but your machine does not support them in C:\Users\idan.noyshul\.cache\huggingface\hub\models--microsoft--Florence-2-large. Caching files will still work but in a degraded version that might require more space on your disk. This warning can be disabled by setting the `HF_HUB_DISABLE_SYMLINKS_WARNING` environment variable. For more details, see https://huggingface.co/docs/huggingface_hub/how-to-cache#limitations.
+To support symlinks on Windows, you either need to activate Developer Mode or to run Python as an administrator. In order to activate developer mode, see this article: https://docs.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development
+  warnings.warn(message)
+A new version of the following files was downloaded from https://huggingface.co/microsoft/Florence-2-large:
+- configuration_florence2.py
+. Make sure to double-check they do not contain any added malicious code. To avoid downloading new versions of the code file, you can pin a revision.
+`torch_dtype` is deprecated! Use `dtype` instead!
+Traceback (most recent call last):
+  File "C:\Users\idan.noyshul\Documents\GitHub\CRIMENO-Model\florence_worker.py", line 551, in <module>
     main()
-  File "C:\Users\idan.noyshul\Documents\GitHub\CRIMENO-Model\florence_worker.py", line 546, in main
+  File "C:\Users\idan.noyshul\Documents\GitHub\CRIMENO-Model\florence_worker.py", line 547, in main
     asyncio.run(main_async())
   File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py", line 194, in run
     return runner.run(main)
@@ -12,33 +22,54 @@
   File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 686, in run_until_complete
     return future.result()
            ^^^^^^^^^^^^^^^
-  File "C:\Users\idan.noyshul\Documents\GitHub\CRIMENO-Model\florence_worker.py", line 316, in main_async
+  File "C:\Users\idan.noyshul\Documents\GitHub\CRIMENO-Model\florence_worker.py", line 317, in main_async
     vision_pipe = load_florence_pipeline(args.model, args.device)
                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   File "C:\Users\idan.noyshul\Documents\GitHub\CRIMENO-Model\florence_worker.py", line 195, in load_florence_pipeline
     vision_pipe = pipeline(
                   ^^^^^^^^^
-  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\pipelines\__init__.py", line 1197, in pipeline
-    raise e
-  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\pipelines\__init__.py", line 1188, in pipeline
-    processor = AutoProcessor.from_pretrained(processor, _from_pipeline=task, **hub_kwargs, **model_kwargs)
-                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\models\auto\processing_auto.py", line 396, in from_pretrained
-    return processor_class.from_pretrained(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\processing_utils.py", line 1396, in from_pretrained
-    return cls.from_args_and_dict(args, processor_dict, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\processing_utils.py", line 1197, in from_args_and_dict
-    processor = cls(*args, **valid_kwargs)
-                ^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\models\florence2\processing_florence2.py", line 121, in __init__
-    self.image_token = tokenizer.image_token
-                       ^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\tokenization_utils_base.py", line 1128, in __getattr__
-    raise AttributeError(f"{self.__class__.__name__} has no attribute {key}")
-AttributeError: BartTokenizerFast has no attribute image_token. Did you mean: 'mask_token'?
-
+  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\pipelines\__init__.py", line 1027, in pipeline
+    framework, model = infer_framework_load_model(
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\pipelines\base.py", line 293, in infer_framework_load_model
+    model = model_class.from_pretrained(model, **kwargs)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\models\auto\auto_factory.py", line 604, in from_pretrained
+    return model_class.from_pretrained(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\modeling_utils.py", line 277, in _wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\modeling_utils.py", line 4971, in from_pretrained
+    model = cls(config, *model_args, **model_kwargs)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\models\florence2\modeling_florence2.py", line 832, in __init__
+    self.model = Florence2Model(config)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\models\florence2\modeling_florence2.py", line 656, in __init__
+    self.vision_tower = Florence2VisionBackbone(config=config.vision_config)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\models\florence2\modeling_florence2.py", line 512, in __init__
+    self.embed_dim = config.embed_dim
+                     ^^^^^^^^^^^^^^^^
+  File "C:\Users\idan.noyshul\AppData\Local\Programs\Python\Python312\Lib\site-packages\transformers\configuration_utils.py", line 207, in __getattribute__
+    return super().__getattribute__(key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Florence2VisionConfig' object has no attribute 'embed_dim'
+PS C:\Users\idan.noyshul\Documents\GitHub\CRIMENO-Model> python florence_worker.py --device cuda --every 30 --ws_url ws://127.0.0.1:3000/ws/florence --anomaly-endpoint tcp://127.0.0.1:5581
+Device set to use cuda
+`torch_dtype` is deprecated! Use `dtype` instead!
+Using a slow image processor as `use_fast` is unset and a slow processor was saved with this model. `use_fast=True` will be the default behavior in v4.52, even if the model was saved with a slow processor. This will result in minor differences in outputs. You'll still be able to use a slow processor with `use_fast=False`.
+Device set to use cuda:0
+✅ Florence-2 pipeline loaded (florence-community/Florence-2-base) on cuda
+[Florence] Warming up model...
+[Florence] ✓ Warmup complete
+🔗 Connected to video broadcaster on tcp://127.0.0.1:5560
+🔗 Connected to Groq worker via ZMQ PUSH on tcp://127.0.0.1:5581
+🔗 Connected to broadcaster ack socket on tcp://127.0.0.1:5562
+[Florence] Reset-watcher thread started
+[WS] Connected: ws://127.0.0.1:3000/ws/florence
+📝 Writing JSONL to: analysis.jsonl
 
 
 
