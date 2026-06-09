@@ -53,10 +53,13 @@ GENERIC_START_PATTERNS = [
 ]
 
 ALERT_KEYWORDS = [
-    "robber", "thief", "robbery", "gun", "knife", "weapon", "pistol", "firearm",
+    "robber", "thief", "robbery", "theft", "gun", "knife", "weapon", "pistol", "firearm",
     "lying on the floor", "lying on floor", "on the ground", "victim",
     "assault", "attack", "threatening", "threat", "crime", "criminal",
     "fleeing", "fleeing the scene", "running away", "hands up", "hands raised",
+    "mask", "masked", "hood", "hooded", "balaclava", "ski mask", "helmet", "covering face",
+    "smash", "shatter", "broken glass", "breaking", "hammer", "crowbar",
+    "grab", "behind the counter", "climbing over", "forced", "restrain",
 ]
 
 GENERIC_NOISE_FRAGMENTS = [
@@ -84,7 +87,7 @@ def is_generic_sentence(sent: str) -> bool:
     return False
 
 
-def clean_caption(raw_caption: str, max_sentences: int = 3) -> str:
+def clean_caption(raw_caption: str, max_sentences: int = 5) -> str:
     if not raw_caption:
         return ""
 
@@ -117,8 +120,8 @@ def clean_caption(raw_caption: str, max_sentences: int = 3) -> str:
     meaningful = meaningful[:max_sentences]
     cleaned = " ".join(meaningful)
 
-    if len(cleaned) > 500:
-        cleaned = cleaned[:500].rstrip() + "..."
+    if len(cleaned) > 800:
+        cleaned = cleaned[:800].rstrip() + "..."
 
     return cleaned
 
@@ -161,6 +164,45 @@ def build_tracker_sentence(rec: Dict[str, Any]) -> str:
     return "YOLO tracker detected: " + "; ".join(parts) + "."
 
 
+def build_pose_summary(frames: Dict[int, Dict[str, Any]]) -> str:
+    """Aggregate pose flags and suspicious-model hits across all tracker frames in a
+    window. Momentary signals (e.g. arm_extended_aim on one frame between Florence
+    samples) would otherwise be lost by exact-frame matching."""
+    if not frames:
+        return ""
+
+    per_track: Dict[int, Dict[str, Any]] = {}
+    suspicious_hits: Dict[int, str] = {}
+
+    for fidx in sorted(frames):
+        for t in frames[fidx].get("tracks", []):
+            tid = t.get("track_id")
+            cls = t.get("cls", "object")
+            if t.get("source") == "suspicious":
+                suspicious_hits.setdefault(tid, cls)
+            pose = t.get("pose")
+            if pose and isinstance(pose, dict):
+                active = [k for k, v in pose.items() if v]
+                if active:
+                    entry = per_track.setdefault(tid, {"cls": cls, "flags": set()})
+                    entry["flags"].update(active)
+
+    sentences = []
+    if per_track:
+        parts = [
+            f"{e['cls']} ID {tid}: {', '.join(sorted(e['flags']))}"
+            for tid, e in sorted(per_track.items())
+        ]
+        sentences.append(
+            f"Pose summary (frames {min(frames)}-{max(frames)}): " + "; ".join(parts) + "."
+        )
+    if suspicious_hits:
+        parts = [f"{cls} (ID {tid})" for tid, cls in sorted(suspicious_hits.items())]
+        sentences.append("Suspicious-activity detector flagged: " + "; ".join(parts) + ".")
+
+    return " ".join(sentences)
+
+
 def build_event_sentence(rec: Dict[str, Any]) -> str:
     caption = rec.get("raw", {}).get("more_detailed_caption", "")
     cleaned = clean_caption(caption)
@@ -175,14 +217,12 @@ def build_event_sentence(rec: Dict[str, Any]) -> str:
             weapon_prefix = f"WEAPON DETECTED by Florence: {', '.join(sorted(set(labels)))}. "
 
     tracker_text = build_tracker_sentence(rec)
+    pose_summary = rec.get("pose_summary", "")
 
     body = (weapon_prefix + cleaned).strip()
-    if body and tracker_text:
-        return f"{body} {tracker_text}"
-    elif body:
-        return body
-    elif tracker_text:
-        return tracker_text
+    pieces = [p for p in (body, tracker_text, pose_summary) if p]
+    if pieces:
+        return " ".join(pieces)
 
     return "No significant visual change."
 
@@ -229,12 +269,16 @@ def build_scene_description(
     event_history: List[str],
     current_window_events: List[str],
     business_context: str = "",
+    prev_verdict: str = "",
 ) -> str:
     lines = []
 
     if business_context:
         lines.append("Business context (from NestJS):")
         lines.append(f"- {business_context}")
+
+    if prev_verdict:
+        lines.append(f"Previous window verdict: {prev_verdict}")
 
     if event_history:
         lines.append("Recent context:")
@@ -292,9 +336,13 @@ def build_prompt(scene_description: str) -> str:
     YOLO tracker data (IDs, classes, bounding boxes) is REFERENCE-ONLY: continuity of people/objects across frames. Never evidence on its own.
 
     DECISION RULE:
-    - "criminal" requires BOTH (a) Florence describing threatening/criminal behavior or objects (gun, weapon, robbery, threat, force, fleeing, victim) AND (b) pose flags that are consistent with that interpretation.
-    - "suspicious" requires Florence to describe unusual or ambiguous behavior, optionally reinforced by pose flags.
-    - If Florence describes only normal activity (working, shopping, paying, talking), the label is "normal" regardless of which pose flags are active. A cashier crouching to open a register is normal. A customer leaning over a counter is normal.
+    - "criminal" if EITHER of the following holds:
+      (a) Florence describes clearly threatening or criminal behavior or objects: a gun or other weapon, robbery, threat, physical force, smashing or breaking display glass, looting or grabbing merchandise, someone forced or dragged behind the counter, a victim, or fleeing with goods. Pose flags are NOT required when Florence is this explicit.
+      (b) The scene matches one of the business context's "Forbidden behaviors" AND pose flags reinforce the threat (arm_extended_aim or hands_above_head on any person).
+    - "suspicious" requires Florence to describe unusual or ambiguous behavior, OR any match against the business context's "Forbidden behaviors" list (e.g., face coverings such as hoods, masks, balaclavas or helmets inside the store; reaching behind the cashier counter; opening display cases without an employee; loitering near high-value displays), optionally reinforced by pose flags.
+    - ALWAYS cross-check what Florence describes against the "Forbidden behaviors" list in the business context. Any match raises the label to at least "suspicious", even if the activity is described in neutral terms (e.g., "men wearing masks looking at jewelry" = suspicious, not normal).
+    - ESCALATION: if a "Previous window verdict" of suspicious or criminal is given and the current window continues or intensifies the same activity (same people, same forbidden behavior, new threats), escalate rather than reset — sustained suspicious activity across windows becomes criminal when new criminal indicators appear.
+    - If Florence describes only normal activity (working, shopping, paying, talking) and nothing matches the forbidden behaviors, the label is "normal" regardless of which pose flags are active. A cashier crouching to open a register is normal. A customer leaning over a counter is normal.
     - If Florence and pose disagree, trust Florence for the label and note the contradiction in "reason".
 
     ### 4. PROHIBITED USE OF YOLO DATA
@@ -304,7 +352,8 @@ def build_prompt(scene_description: str) -> str:
     - DO NOT use bounding boxes as reasons.
     - DO NOT use "ID 1", "ID 2", etc. as key moments.
     - DO NOT treat "multiple people detected" as suspicious by itself.
-    NOTE: Pose flags (arm_extended_aim, hands_above_head, torso_lean_forward, crouching) are PERMITTED and ENCOURAGED as direct evidence of intent. They appear in the tracker sentence as ", pose: <flag_name>" and describe body mechanics, not bounding boxes.
+    NOTE: Pose flags (arm_extended_aim, hands_above_head, torso_lean_forward, crouching) are PERMITTED and ENCOURAGED as direct evidence of intent. They appear in the tracker sentence as ", pose: <flag_name>" and in aggregated "Pose summary (frames X-Y): ..." sentences, and describe body mechanics, not bounding boxes. A "Suspicious-activity detector flagged: ..." sentence reports hits from a dedicated detector that is known to produce false positives for weapons — treat it as WEAK evidence only: it may support a label the Florence description already justifies, but must NEVER raise the label by itself.
+    In contrast, an event containing "WEAPON VERIFIED on zoomed view" is STRONG evidence: the weapon was confirmed by a two-stage verification (a detector tip-off followed by a vision-language model examining a zoomed-in crop of the person). Treat it exactly as if Florence explicitly described the weapon — it satisfies criminal path (a) of the DECISION RULE on its own.
 
     ### 4b. POSE FLAG INTERPRETATION (CRITICAL — read before deciding)
 
@@ -479,6 +528,8 @@ async def main_async():
     latest_business_context = ""
 
     tracker_buffer: Dict[int, Dict[str, Any]] = {}
+    last_attached_frame = -1
+    prev_verdict = ""
 
     window_size = BASE_WINDOW_SIZE
     jump_size = 2
@@ -492,6 +543,8 @@ async def main_async():
                 raw_queue.clear()
                 event_history.clear()
                 tracker_buffer.clear()
+                last_attached_frame = -1
+                prev_verdict = ""
                 print("[GROQ] Reset received — cleared raw_queue, event_history, tracker_buffer")
                 continue
 
@@ -509,8 +562,20 @@ async def main_async():
 
             frame_idx = rec.get("frame_index")
 
-            if isinstance(frame_idx, int) and frame_idx in tracker_buffer:
-                rec["tracker"] = tracker_buffer[frame_idx]
+            if isinstance(frame_idx, int):
+                # Aggregate ALL tracker frames since the previous Florence sample, not just
+                # the exact-index match: momentary pose flags between samples matter.
+                window_keys = [k for k in tracker_buffer if last_attached_frame < k <= frame_idx]
+                if window_keys:
+                    rec["tracker"] = tracker_buffer[max(window_keys)]
+                    rec["pose_summary"] = build_pose_summary(
+                        {k: tracker_buffer[k] for k in window_keys}
+                    )
+                # Prune consumed/stale entries so the buffer doesn't grow unbounded.
+                for k in list(tracker_buffer):
+                    if k <= frame_idx:
+                        del tracker_buffer[k]
+                last_attached_frame = frame_idx
 
             raw_queue.append(rec)
 
@@ -519,10 +584,14 @@ async def main_async():
                 raw_queue = raw_queue[drop_count:]
                 print(f"⚠️ Dropping {drop_count} old records to avoid backlog.")
 
-            if len(raw_queue) < window_size:
+            # Verified-weapon events bypass the window wait and similarity gate:
+            # decide immediately on the newest records, which include this one.
+            force_send = rec.get("priority") == "high"
+
+            if not force_send and len(raw_queue) < window_size:
                 continue
 
-            current_window = raw_queue[:window_size]
+            current_window = raw_queue[-window_size:] if force_send else raw_queue[:window_size]
 
             current_window_events = []
             for r in current_window:
@@ -543,12 +612,15 @@ async def main_async():
             else:
                 print("[DEBUG] No last event, treating as significant change.")
 
-            if last_event and simple_similarity(new_event, last_event) >= 0.90:
+            if not force_send and last_event and simple_similarity(new_event, last_event) >= 0.90:
                 print("[DEBUG] No significant change → SKIP sending to Groq.")
                 raw_queue = raw_queue[jump_size:]
                 continue
 
-            print("[DEBUG] Significant change detected → SEND to Groq.")
+            if force_send:
+                print("[DEBUG] HIGH-PRIORITY event (verified weapon) → forcing immediate Groq decision.")
+            else:
+                print("[DEBUG] Significant change detected → SEND to Groq.")
 
             # Snapshot history BEFORE merging current window so "Recent context"
             # and "Current window" don't share bullets (dedup would wipe the window).
@@ -563,6 +635,7 @@ async def main_async():
                 history_for_prompt,
                 current_window_events,
                 latest_business_context,
+                prev_verdict,
             )
 
             prompt = build_prompt(scene_description)
@@ -593,6 +666,9 @@ async def main_async():
                 score = max(score, 0.8)
 
             result["anomaly_score"] = score
+
+            if label in ("normal", "suspicious", "criminal"):
+                prev_verdict = f"{label} (anomaly_score {score})"
 
             frame_start = current_window[0].get("frame_index")
             frame_end = current_window[-1].get("frame_index")

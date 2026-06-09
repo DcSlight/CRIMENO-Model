@@ -69,3 +69,19 @@ Online
 
 London
 https://www.youtube.com/watch?v=8JCk5M_xrBs
+
+
+
+
+
+
+----Tmp
+
+  # 1. One-time install (Qwen2.5-VL support; first run also downloads ~7 GB of weights)
+  pip install -U "transformers>=4.49" qwen-vl-utils
+
+  # 2. Run the pipeline exactly as before — same args still work:
+  python video_broadcaster.py
+  python tracker_worker.py --device cuda --ws_url ws://127.0.0.1:3000/ws/tracker --send_overlay 0 --send_every_n_frames 5 --anomaly-endpoint tcp://127.0.0.1:5581
+  python florence_worker.py --device cuda --ws_url ws://127.0.0.1:3000/ws/florence --anomaly-endpoint tcp://127.0.0.1:5581
+  python groq_anomaly_worker.py --ws_url ws://127.0.0.1:3000/ws/groq

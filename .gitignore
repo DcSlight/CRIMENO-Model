@@ -7,3 +7,4 @@ yolov8n.pt
 #AI
 .claude
 CLAUDE.md
+__pycache__/

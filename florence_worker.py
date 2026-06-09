@@ -1,3 +1,4 @@
+import base64
 import io
 import json
 import re
@@ -10,7 +11,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import zmq
 import torch
 from PIL import Image
-from transformers import pipeline
+from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
+from qwen_vl_utils import process_vision_info
 
 import cv2
 import numpy as np
@@ -182,25 +184,98 @@ def now_unix_ms() -> int:
     return int(time.time() * 1000)
 
 
-def load_florence_pipeline(model_name: str, device_str: str):
-    if device_str == "cuda" and torch.cuda.is_available():
-        device = 0
-        torch_dtype = torch.float16
-        print("Device set to use cuda")
-    else:
-        device = -1
-        torch_dtype = torch.float32
-        print("Device set to use cpu")
+# Single instruction prompt replacing the 4 Florence tasks (caption/OD/OCR/weapon-OVD).
+# Qwen2.5-VL follows instructions, so we ask directly for the security-relevant details
+# that Florence-2-base could not produce (face coverings, weapons, who is behind the counter).
+SURVEILLANCE_PROMPT = (
+    "This is a surveillance camera frame from a jewelry store. Describe concisely and factually:\n"
+    "1. How many people are visible and where they are (behind the cashier counter, at the display cases, at the entrance).\n"
+    "2. Their clothing, and especially any face or head coverings: hoods, ski masks, balaclavas, helmets, caps pulled low.\n"
+    "3. Any objects held in hands: guns or other weapons, hammers, crowbars, bags, phones, jewelry.\n"
+    "4. What each person is doing: browsing, paying, talking, reaching into or opening display cases, smashing glass, "
+    "grabbing items, raising hands, restraining or threatening someone, running or fleeing.\n"
+    "State plainly if anything looks like a robbery, theft, or threat. Do not speculate beyond what is visible."
+)
 
-    vision_pipe = pipeline(
-        "image-text-to-text",
-        model=model_name,
-        device=device,
-        dtype=torch_dtype,
-        trust_remote_code=True,
-    )
-    print(f"✅ Florence-2 pipeline loaded ({model_name}) on {device_str if device != -1 else 'cpu'}")
-    return vision_pipe
+
+# Verification prompt for zoomed person crops sent by the tracker (detect → verify).
+# The crop is upscaled, so a hand-held weapon is actually visible — unlike the 640x360
+# full frame where a handgun is ~10 px and the noisy YOLO tip-off model hallucinates.
+VERIFY_PROMPT = (
+    "This is a zoomed-in close-up of one person from a jewelry store security camera. "
+    "Look carefully at their hands. Are they holding a weapon (gun, pistol, revolver, knife) "
+    "or a glass-breaking tool (hammer, crowbar)?\n"
+    "Answer in this exact format: 'WEAPON: <object>' or 'NO WEAPON'. "
+    "Then add one short sentence describing what is actually in their hands."
+)
+
+
+def load_vlm(model_name: str, device_str: str):
+    if device_str == "cuda" and torch.cuda.is_available():
+        device = "cuda"
+    else:
+        device = "cpu"
+    print(f"Device set to use {device}")
+
+    # GRID P40 / Pascal GPUs have crippled fp16 throughput — load in fp32.
+    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+        model_name,
+        torch_dtype=torch.float32,
+    ).to(device)
+    model.eval()
+    processor = AutoProcessor.from_pretrained(model_name)
+    print(f"✅ VLM loaded ({model_name}) on {device}")
+    return model, processor, device
+
+
+def run_vlm(model, processor, device: str, image: Image.Image, prompt: str,
+            max_new_tokens: int = 220) -> str:
+    messages = [{
+        "role": "user",
+        "content": [
+            {"type": "image", "image": image},
+            {"type": "text", "text": prompt},
+        ],
+    }]
+    text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    image_inputs, video_inputs = process_vision_info(messages)
+    inputs = processor(
+        text=[text],
+        images=image_inputs,
+        videos=video_inputs,
+        padding=True,
+        return_tensors="pt",
+    ).to(device)
+
+    with torch.no_grad():
+        generated = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+
+    trimmed = [out[len(inp):] for inp, out in zip(inputs.input_ids, generated)]
+    decoded = processor.batch_decode(trimmed, skip_special_tokens=True,
+                                     clean_up_tokenization_spaces=False)
+    return decoded[0].strip() if decoded else ""
+
+
+WEAPON_WORDS = [
+    "gun", "handgun", "pistol", "revolver", "firearm", "rifle", "shotgun",
+    "knife", "machete", "weapon",
+]
+NEGATION_TOKENS = [
+    "no ", "not ", "without", "none", "n't", "unarmed", "cannot see", "can't see",
+]
+
+
+def extract_weapon_mentions(text: str) -> List[str]:
+    """Weapon words from VLM text, skipping negated sentences ('no weapons visible')."""
+    found = set()
+    for sent in re.split(r'(?<=[.!?])\s+', text):
+        sl = sent.lower()
+        if any(neg in sl for neg in NEGATION_TOKENS):
+            continue
+        for w in WEAPON_WORDS:
+            if w in sl:
+                found.add(w)
+    return sorted(found)
 
 
 def recv_frame(socket) -> Tuple[int, Optional[int], bytes]:
@@ -236,20 +311,6 @@ def recv_frame(socket) -> Tuple[int, Optional[int], bytes]:
 
 def pil_from_jpg(jpg_bytes: bytes) -> Image.Image:
     return Image.open(io.BytesIO(jpg_bytes)).convert("RGB")
-
-
-def run_task(vision_pipe, image: Image.Image, task_text: str) -> str:
-    out = vision_pipe(image, text=task_text)
-
-    if isinstance(out, list) and out:
-        first = out[0]
-        if isinstance(first, dict):
-            if "generated_text" in first:
-                return str(first["generated_text"])
-            return json.dumps(first, ensure_ascii=False)
-        return str(first)
-
-    return str(out)
 
 
 def extract_datetime_candidates(text: str) -> List[str]:
@@ -303,29 +364,35 @@ async def main_async():
                         help="ZeroMQ endpoint to send text records to Groq anomaly worker (PUSH).")
     parser.add_argument("--ack-endpoint", dest="ack_endpoint", default="tcp://127.0.0.1:5562",
                         help="ZeroMQ endpoint to send reset ack back to broadcaster (PUSH).")
+    parser.add_argument("--verify-endpoint", "--verify_endpoint", dest="verify_endpoint",
+                        default="tcp://127.0.0.1:5582",
+                        help="ZeroMQ PULL endpoint (bound) receiving person crops from the tracker for weapon verification.")
     parser.add_argument("--ws-url", "--ws_url", dest="ws_url", default="none",
                         help="WebSocket URL for forwarding records (or 'none' to disable).")
-    parser.add_argument("--model", default="florence-community/Florence-2-base")
+    parser.add_argument("--model", default="Qwen/Qwen2.5-VL-3B-Instruct")
     parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
     parser.add_argument("--out", default="analysis.jsonl")
     parser.add_argument("--process_every_n_frames", "--every", dest="process_every_n_frames", type=int, default=30,
-                        help="Process one frame every N frames.")
+                        help="Legacy fallback: process one frame every N frames (used only when frames carry no video_time_ms).")
+    parser.add_argument("--min-interval-ms", "--min_interval_ms", dest="min_interval_ms", type=int, default=1500,
+                        help="Minimum video time between processed frames. The worker always grabs the NEWEST frame, "
+                             "dropping any backlog, so decisions track real time regardless of model speed.")
     parser.add_argument("--bg", default="none")
     parser.add_argument("--test", default="none")
     args = parser.parse_args()
 
-    vision_pipe = load_florence_pipeline(args.model, args.device)
+    model, processor, device = load_vlm(args.model, args.device)
 
     print("[Florence] Warming up model...")
     _dummy = Image.new("RGB", (224, 224), color=(128, 128, 128))
-    for _task in ("<MORE_DETAILED_CAPTION>", "<OD>", "<OCR>"):
-        run_task(vision_pipe, _dummy, _task)
+    run_vlm(model, processor, device, _dummy, "Describe this image in one sentence.", max_new_tokens=20)
     del _dummy
     print("[Florence] ✓ Warmup complete")
 
     # ZeroMQ – input (video frames)
     context = zmq.Context()
     video_socket = context.socket(zmq.SUB)
+    video_socket.setsockopt(zmq.RCVHWM, 10)  # backstop: never queue a deep backlog of frames
     video_socket.connect(args.video_endpoint)
     video_socket.setsockopt(zmq.SUBSCRIBE, b"frame")
     video_socket.setsockopt(zmq.RCVTIMEO, 100)  # wake every 100ms to check _reset_event when idle
@@ -342,6 +409,10 @@ async def main_async():
     ack_socket.connect(args.ack_endpoint)
     print(f"🔗 Connected to broadcaster ack socket on {args.ack_endpoint}")
 
+    verify_socket = context.socket(zmq.PULL)
+    verify_socket.bind(args.verify_endpoint)
+    print(f"🔗 Verify socket bound on {args.verify_endpoint} (weapon crop verification)")
+
     threading.Thread(
         target=_reset_watcher,
         args=(args.video_endpoint, args.groq_endpoint, args.ack_endpoint),
@@ -351,13 +422,6 @@ async def main_async():
     print("[Florence] Reset-watcher thread started")
 
     ws = await ws_connect_loop(args.ws_url)
-
-    # Tasks
-    TASK_CAPTION = "<MORE_DETAILED_CAPTION>"
-    TASK_OD = "<OD>"
-    TASK_OCR = "<OCR>"
-    WEAPON_QUERY = "gun, handgun, pistol, revolver, firearm, rifle, shotgun, knife, blade, switchblade"
-    TASK_WEAPONS = f"<OPEN_VOCABULARY_DETECTION>{WEAPON_QUERY}"
 
     # Open output file (append)
     out_path = args.out
@@ -376,8 +440,91 @@ async def main_async():
                 drained += 1
             except zmq.error.Again:
                 break
+        while True:
+            try:
+                verify_socket.recv(zmq.NOBLOCK)
+                drained += 1
+            except zmq.error.Again:
+                break
         if drained:
             print(f"[Florence] Drained {drained} stale frames from buffer")
+
+    async def handle_verifications(max_checks: int = 2):
+        """Drain pending weapon-verification requests from the tracker and run the VLM on
+        the zoomed crops. Only the newest request per track is kept; confirmed weapons are
+        pushed to Groq as high-priority events, rejections die here — this is the stage
+        that filters the suspicious model's false positives."""
+        nonlocal ws
+
+        pending: Dict[int, Dict[str, Any]] = {}
+        while True:
+            try:
+                raw_msg = verify_socket.recv(zmq.NOBLOCK)
+            except zmq.error.Again:
+                break
+            try:
+                req = json.loads(raw_msg.decode("utf-8"))
+            except Exception:
+                continue
+            if req.get("type") == "verify_weapon" and isinstance(req.get("track_id"), int):
+                pending[req["track_id"]] = req  # newest per track wins
+
+        for tid, req in list(pending.items())[:max_checks]:
+            try:
+                crop = pil_from_jpg(base64.b64decode(req["crop_jpg_b64"]))
+            except Exception as e:
+                print(f"[VERIFY] bad crop for track {tid}: {e}")
+                continue
+
+            try:
+                answer = await asyncio.to_thread(
+                    run_vlm, model, processor, device, crop, VERIFY_PROMPT, 60
+                )
+            except Exception as e:
+                print(f"[VERIFY] VLM failed for track {tid}: {e}")
+                continue
+
+            upper = answer.upper()
+            if "NO WEAPON" in upper or "WEAPON:" not in upper:
+                print(f"[VERIFY] track {tid}: NO WEAPON ({answer[:100]})")
+                continue
+
+            m = re.search(r"WEAPON:\s*([^\n.]+)", answer, flags=re.IGNORECASE)
+            weapon_obj = m.group(1).strip().lower() if m else "weapon"
+            caption = (f"WEAPON VERIFIED on zoomed view: person (track ID {tid}) "
+                       f"is holding {weapon_obj}. {answer}")
+            print(f"[VERIFY] track {tid}: WEAPON CONFIRMED → {weapon_obj}")
+
+            record = {
+                "type": "florence_frame",
+                "frame_index": req.get("frame_index"),
+                "video_time_ms": req.get("video_time_ms"),
+                "priority": "high",
+                "verified_weapon": True,
+                "raw": {
+                    "more_detailed_caption": caption,
+                    "object_detection": "",
+                    "ocr": "",
+                    "open_vocab_weapons": str({"bboxes": [], "bboxes_labels": [weapon_obj]}),
+                },
+                "caption": caption,
+                "objects": [],
+                "weapons_detected": [weapon_obj],
+                "text_overlay": {"datetime_candidates": []},
+                "meta": {
+                    "generated_at_unix_ms": now_unix_ms(),
+                    "model": args.model,
+                    "trigger": req.get("candidate", ""),
+                },
+            }
+            groq_socket.send(json.dumps(record, ensure_ascii=False).encode("utf-8"))
+            try:
+                await ws_send_json(ws, record)
+            except Exception as e:
+                print(f"[WS] Send failed: {e}. Reconnecting...")
+                ws = await ws_connect_loop(args.ws_url)
+
+    last_processed_ms: Optional[int] = None
 
     try:
         while True:
@@ -387,17 +534,31 @@ async def main_async():
                 _reset_event.clear()
                 print("[Florence] Applying pending reset — draining stale frames")
                 _drain_and_reset_bg()
+                last_processed_ms = None
                 _reset_done_event.set()
                 continue
 
             try:
                 parts = await asyncio.to_thread(video_socket.recv_multipart)
             except zmq.error.Again:
+                await handle_verifications()  # idle moment — serve pending crop checks
                 continue  # RCVTIMEO fired; loop back to check _reset_event
 
             topic = parts[0]
             if topic != b"frame" or len(parts) < 4:
                 continue
+
+            # Drop-to-latest: drain any backlog and keep only the newest frame, so the
+            # worker judges the present even when inference is slower than the stream.
+            dropped = 0
+            while True:
+                try:
+                    newer = video_socket.recv_multipart(zmq.NOBLOCK)
+                except zmq.error.Again:
+                    break
+                if newer[0] == b"frame" and len(newer) >= 4:
+                    parts = newer
+                    dropped += 1
 
             _, frame_idx_b, video_time_b, jpg_bytes = parts
             frame_idx = int(frame_idx_b.decode("utf-8"))
@@ -406,8 +567,18 @@ async def main_async():
             except Exception:
                 video_time_ms = None
 
-            if frame_idx % args.process_every_n_frames != 0:
-                continue
+            if video_time_ms is not None:
+                if last_processed_ms is not None and video_time_ms < last_processed_ms:
+                    last_processed_ms = None  # video restarted
+                if last_processed_ms is not None and video_time_ms - last_processed_ms < args.min_interval_ms:
+                    await handle_verifications()  # use the wait between samples for crop checks
+                    continue
+                last_processed_ms = video_time_ms
+            elif frame_idx % args.process_every_n_frames != 0:
+                continue  # legacy fallback when frames carry no timestamp
+
+            if dropped:
+                print(f"[Florence] Skipped {dropped} backlogged frames → processing frame {frame_idx}")
             image = pil_from_jpg(jpg_bytes)
 
             if args.bg == "blur":
@@ -433,36 +604,25 @@ async def main_async():
                 }
             }
 
-            # Caption
+            # One instruction-following VLM pass replaces caption/OD/OCR/weapon-OVD.
             try:
-                caption = run_task(vision_pipe, image, TASK_CAPTION)
+                caption = run_vlm(model, processor, device, image, SURVEILLANCE_PROMPT)
             except Exception as e:
-                caption = f"[ERROR running {TASK_CAPTION}] {e}"
+                caption = f"[ERROR running VLM] {e}"
             record["raw"]["more_detailed_caption"] = caption
-
-            # OD
-            try:
-                od = run_task(vision_pipe, image, TASK_OD)
-            except Exception as e:
-                od = f"[ERROR running {TASK_OD}] {e}"
-            record["raw"]["object_detection"] = od
-
-            # OCR
-            try:
-                ocr = run_task(vision_pipe, image, TASK_OCR)
-            except Exception as e:
-                ocr = f"[ERROR running {TASK_OCR}] {e}"
-            record["raw"]["ocr"] = ocr
+            record["raw"]["object_detection"] = ""
+            record["raw"]["ocr"] = ""
             record["text_overlay"] = {
-                "datetime_candidates": extract_datetime_candidates(ocr),
+                "datetime_candidates": extract_datetime_candidates(caption),
             }
 
-            # Open vocab weapons
-            try:
-                weapons = run_task(vision_pipe, image, TASK_WEAPONS)
-            except Exception as e:
-                weapons = f"[ERROR running <OPEN_VOCABULARY_DETECTION>] {e}"
-            record["raw"]["open_vocab_weapons"] = weapons
+            # Weapon mentions from the VLM text, in the dict-string format the Groq
+            # worker's "WEAPON DETECTED" prefix parser expects (quoted labels).
+            weapon_mentions = extract_weapon_mentions(caption) if not caption.startswith("[ERROR") else []
+            if weapon_mentions:
+                record["raw"]["open_vocab_weapons"] = str({"bboxes": [], "bboxes_labels": weapon_mentions})
+            else:
+                record["raw"]["open_vocab_weapons"] = ""
 
             # Reset arrived mid-inference — discard stale results, drain, then unblock watcher.
             if _reset_event.is_set():
@@ -472,37 +632,10 @@ async def main_async():
                 _reset_done_event.set()
                 continue
 
-            # Parse objects and weapons for NestJS
-            objects_list = []
-            try:
-                od_str = record["raw"]["object_detection"]
-                if od_str and not od_str.startswith("[ERROR"):
-                    # Try to parse if it's JSON-like
-                    import ast
-                    try:
-                        objects_list = ast.literal_eval(od_str) if isinstance(od_str, str) else []
-                    except:
-                        # If not parseable, just use empty list
-                        pass
-            except:
-                pass
-
-            weapons_list = []
-            try:
-                weapons_str = record["raw"]["open_vocab_weapons"]
-                if weapons_str and not weapons_str.startswith("[ERROR"):
-                    import ast
-                    try:
-                        weapons_list = ast.literal_eval(weapons_str) if isinstance(weapons_str, str) else []
-                    except:
-                        pass
-            except:
-                pass
-
             # Add NestJS-friendly fields
             record["caption"] = caption
-            record["objects"] = objects_list
-            record["weapons_detected"] = weapons_list
+            record["objects"] = []
+            record["weapons_detected"] = weapon_mentions
 
             # Console output
             dt = record["text_overlay"]["datetime_candidates"]
@@ -529,6 +662,8 @@ async def main_async():
             with open(out_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
+            await handle_verifications()
+
     except KeyboardInterrupt:
         print("\n[INFO] Stopped by user (Florence worker).")
     finally:
@@ -540,6 +675,7 @@ async def main_async():
         video_socket.close()
         groq_socket.close()
         ack_socket.close()
+        verify_socket.close()
         context.term()
 
 

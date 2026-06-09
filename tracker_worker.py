@@ -32,6 +32,12 @@ _first_frame_pending = threading.Event()  # set on reset; cleared after first re
 
 ACK_TIMEOUT_S = 15  # wait up to 15s; broadcaster timeout is 20s
 
+# Detect → verify: suspicious-model hits and aiming poses are cheap tip-offs that must
+# persist before we ask the VLM to verify a zoomed crop. Single-frame hits are ignored.
+VERIFY_MIN_HITS = 2            # hits required within the persistence window
+VERIFY_PERSISTENCE_FRAMES = 15  # window length, in *processed* frames
+VERIFY_COOLDOWN_MS = 5000      # per-track minimum video time between crop sends
+
 # Used by watcher thread to dispatch an immediate WS-clear into the asyncio event loop.
 _main_loop: Optional[asyncio.AbstractEventLoop] = None
 _clear_queue: Optional[asyncio.Queue] = None
@@ -108,6 +114,28 @@ def shrink_bbox_tuple(bbox, factor=0.2):
     dx = int(w * factor / 2)
     dy = int(h * factor / 2)
     return (x1 + dx, y1 + dy, x2 - dx, y2 - dy)
+
+
+def crop_person_region(frame: np.ndarray, bbox: Tuple[int, int, int, int],
+                       margin: float = 0.25, min_side: int = 336):
+    """Crop a person's bbox with margin and upscale so a hand-held weapon is actually
+    visible to the VLM (at 640x360 a handgun is ~10 px in the full frame)."""
+    h, w = frame.shape[:2]
+    x1, y1, x2, y2 = bbox
+    bw, bh = x2 - x1, y2 - y1
+    if bw <= 0 or bh <= 0:
+        return None
+    mx, my = int(bw * margin), int(bh * margin)
+    x1, y1 = max(0, x1 - mx), max(0, y1 - my)
+    x2, y2 = min(w, x2 + mx), min(h, y2 + my)
+    crop = frame[y1:y2, x1:x2]
+    if crop.size == 0:
+        return None
+    ch, cw = crop.shape[:2]
+    scale = min_side / min(ch, cw)
+    if scale > 1.0:
+        crop = cv2.resize(crop, (int(cw * scale), int(ch * scale)), interpolation=cv2.INTER_CUBIC)
+    return crop
 
 
 # -------------------------
@@ -387,6 +415,13 @@ async def main_async():
     parser.add_argument("--pose_model", default="yolo26s-pose.pt",
                         help="Ultralytics pose model filename (e.g. yolo26s-pose.pt, yolov8s-pose.pt).")
     parser.add_argument("--conf_th", type=float, default=0.35)
+    parser.add_argument("--suspicious_conf_th", type=float, default=0.40,
+                        help="Confidence threshold for suspicious-model TIP-OFFS. Hits are never sent to Groq/UI "
+                             "directly (the model false-positives weapons) — they only nominate a person track "
+                             "for VLM crop verification after persisting across frames.")
+    parser.add_argument("--verify-endpoint", "--verify_endpoint", dest="verify_endpoint",
+                        default="tcp://127.0.0.1:5582",
+                        help="ZMQ PUSH endpoint for sending person crops to the VLM worker for weapon verification.")
     parser.add_argument("--send_every_n_frames", type=int, default=1)
     parser.add_argument("--send_overlay", type=int, default=0)
     parser.add_argument("--overlay_jpeg_quality", type=int, default=80)
@@ -405,6 +440,7 @@ async def main_async():
     model_objects = YOLO("yolov8s.pt")
     model_suspicious = YOLO("Suspicious_Activities_nano.pt")
     model_pose = YOLO(args.pose_model)
+    print(f"[TRACKER] Suspicious model classes: {model_suspicious.names}")
 
     yolo_predict_device: Optional[Any] = None
     if args.device == "cpu":
@@ -462,6 +498,11 @@ async def main_async():
     ack_socket.connect(args.ack_endpoint)
     print(f"[TRACKER] Connected to broadcaster ack socket on {args.ack_endpoint}")
 
+    verify_socket = groq_context.socket(zmq.PUSH)
+    verify_socket.setsockopt(zmq.SNDHWM, 10)
+    verify_socket.connect(args.verify_endpoint)
+    print(f"[TRACKER] Connected to VLM verify socket on {args.verify_endpoint}")
+
     threading.Thread(
         target=_reset_watcher,
         args=(args.sub_endpoint, args.anomaly_endpoint, args.ack_endpoint),
@@ -500,6 +541,11 @@ async def main_async():
     next_track_id = 1
     tracks: List[Track] = []
 
+    # Detect → verify state: tip-off hit frames per track, and per-track send cooldown.
+    suspicious_hit_frames: Dict[int, List[int]] = {}
+    aim_hit_frames: Dict[int, List[int]] = {}
+    verify_last_sent_ms: Dict[int, int] = {}
+
     first_frame = True
     last_log_ts = time.time()
     frames_processed = 0
@@ -513,6 +559,9 @@ async def main_async():
             next_track_id = 1
             motion = MotionDetector() if args.use_motion_fallback else None
             first_frame = True
+            suspicious_hit_frames.clear()
+            aim_hit_frames.clear()
+            verify_last_sent_ms.clear()
             drained = 0
             while True:
                 try:
@@ -569,10 +618,12 @@ async def main_async():
         if pose_dets:
             print(f"[POSE] frame={frame_idx} detected {len(pose_dets)} person(s)")
 
-        # Merge
+        # Suspicious-model hits are TIP-OFFS only — never merged into the tracks that go
+        # to Groq/UI (the model false-positives weapons). They nominate person tracks for
+        # VLM crop verification below.
         dets_objects = [d for d in dets_objects if d["conf"] >= 0.6]
-        dets_suspicious = [d for d in dets_suspicious if d["conf"] >= 0.93]
-        dets = dets_objects + dets_suspicious
+        dets_suspicious = [d for d in dets_suspicious if d["conf"] >= args.suspicious_conf_th]
+        dets = dets_objects
 
         # Reset arrived mid-YOLO-inference — discard stale results, drain, then unblock watcher.
         if _reset_event.is_set():
@@ -581,6 +632,9 @@ async def main_async():
             next_track_id = 1
             motion = MotionDetector() if args.use_motion_fallback else None
             first_frame = True
+            suspicious_hit_frames.clear()
+            aim_hit_frames.clear()
+            verify_last_sent_ms.clear()
             drained = 0
             while True:
                 try:
@@ -652,10 +706,64 @@ async def main_async():
                 print(f"[POSE] track_id={t.track_id} cls={t.cls_name} iou={best_iou:.2f} "
                       f"flags={active if active else 'none'}")
 
-        # shrink AFTER tracking
+        # --- Detect → verify: nominate person tracks for VLM crop verification ---
+        # A suspicious det must overlap an actual person track (boxes on empty areas are
+        # classic false positives) and tip-offs must persist before a crop is sent.
+        window_frames = VERIFY_PERSISTENCE_FRAMES * max(1, args.send_every_n_frames)
+
+        for d in dets_suspicious:
+            best_iou, best_t = 0.0, None
+            for t in tracks:
+                if t.cls_name != "person":
+                    continue
+                i = iou_xyxy(t.bbox, d["bbox"])
+                if i > best_iou:
+                    best_iou, best_t = i, t
+            if best_t is not None and best_iou >= args.iou_match_th:
+                suspicious_hit_frames.setdefault(best_t.track_id, []).append(frame_idx)
+
         for t in tracks:
-            if t.source == "suspicious":
-                t.bbox = shrink_bbox_tuple(t.bbox, factor=0.2)
+            if t.pose is not None and t.pose.get("arm_extended_aim"):
+                aim_hit_frames.setdefault(t.track_id, []).append(frame_idx)
+
+        verify_candidates: Dict[int, str] = {}  # track_id -> trigger reason
+        for hits_map, reason in ((suspicious_hit_frames, "suspicious-model hit"),
+                                 (aim_hit_frames, "pose:arm_extended_aim")):
+            for tid in list(hits_map):
+                hits_map[tid] = [h for h in hits_map[tid] if h >= frame_idx - window_frames]
+                if not hits_map[tid]:
+                    del hits_map[tid]
+                elif len(hits_map[tid]) >= VERIFY_MIN_HITS:
+                    verify_candidates.setdefault(tid, reason)
+
+        now_ms = video_time_ms if video_time_ms >= 0 else int(frame_idx * 33)
+        for tid, reason in verify_candidates.items():
+            t = next((x for x in tracks if x.track_id == tid), None)
+            if t is None:
+                continue
+            last_sent = verify_last_sent_ms.get(tid)
+            if last_sent is not None and now_ms - last_sent < VERIFY_COOLDOWN_MS:
+                continue
+            crop = crop_person_region(frame, t.bbox)
+            if crop is None:
+                continue
+            try:
+                verify_payload = {
+                    "type": "verify_weapon",
+                    "frame_index": frame_idx,
+                    "video_time_ms": video_time_ms,
+                    "track_id": tid,
+                    "candidate": reason,
+                    "crop_jpg_b64": base64.b64encode(
+                        encode_jpg(crop, args.overlay_jpeg_quality)).decode("ascii"),
+                }
+                verify_socket.send(json.dumps(verify_payload).encode("utf-8"), zmq.NOBLOCK)
+                verify_last_sent_ms[tid] = now_ms
+                suspicious_hit_frames.pop(tid, None)
+                aim_hit_frames.pop(tid, None)
+                print(f"[VERIFY] sent crop for track {tid} (frame {frame_idx}, trigger: {reason})")
+            except Exception as e:
+                print(f"[VERIFY] send failed for track {tid}: {e}")
 
         # DEBUG VISUALIZATION
         if args.test == "show_image":
