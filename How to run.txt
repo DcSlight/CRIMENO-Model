@@ -29,10 +29,13 @@ Step 4 - YOLO Tracker:
   python tracker_worker.py --device cuda --ws_url ws://127.0.0.1:3000/ws/tracker --send_overlay 0 --send_every_n_frames 5 --anomaly-endpoint tcp://127.0.0.1:5581
 
 Step 5 - VLM layer (PaliGemma 2, full-frame robbery Q&A):
-  python vlm_worker.py --device cuda --every 30 --ws-url ws://127.0.0.1:3000/ws/vlm --anomaly-endpoint tcp://127.0.0.1:5581
+  python vlm_worker.py --device cuda --every 30 --ws-url none --anomaly-endpoint tcp://127.0.0.1:5581
   Notes: ~6-7GB VRAM. If the GPU is full, use --device cpu (slower), raise --every, or use a smaller
   PaliGemma mix variant via --vlm_model. The whole frame is sent; for more small-figure detail use
   --vlm_model google/paligemma2-3b-mix-896.
+  WS: use --ws-url none unless the NestJS backend actually exposes a /ws/vlm route (it does NOT by
+  default — a missing route causes "did not receive a valid HTTP response" and the worker hangs
+  retrying). The VLM reaches Groq via the anomaly-endpoint (5581) regardless of WS.
 
 
 ========================================================
