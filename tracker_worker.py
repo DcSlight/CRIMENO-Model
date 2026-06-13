@@ -52,7 +52,7 @@ ROBBERY_OBJECT_CLASSES = {
 # gating + temporal confirmation (see main loop).
 SUSPICIOUS_CLASS_THRESHOLDS = {
     "Man_With_Gun": 0.45,
-    "Man_with_Knife": 0.45,
+    "Man_with_Knife": 0.80,   # knife class is weak/FP-prone on this model — keep it strict
     "Theaf_Robbery": 0.55,
     "Fighting": 0.55,
 }
@@ -356,6 +356,9 @@ async def main_async():
                         help="Run the (heavy) appearance model once every N processed frames.")
     parser.add_argument("--weapon_confirm_frames", type=int, default=3,
                         help="A weapon (gun/knife) track must persist this many consecutive frames before it is emitted.")
+    parser.add_argument("--disable_suspicious", default="",
+                        help="Comma-separated suspicious classes to ignore entirely, "
+                             "e.g. 'Man_with_Knife' or 'Man_with_Knife,Fighting'.")
     parser.add_argument("--conf_th", type=float, default=0.35)
     parser.add_argument("--send_every_n_frames", type=int, default=1)
     parser.add_argument("--send_overlay", type=int, default=0)
@@ -370,6 +373,10 @@ async def main_async():
 
     if YOLO is None:
         raise RuntimeError("ultralytics not installed")
+
+    disabled_suspicious = {c.strip() for c in args.disable_suspicious.split(",") if c.strip()}
+    if disabled_suspicious:
+        print(f"[TRACKER] Disabled suspicious classes: {sorted(disabled_suspicious)}")
 
     print(f"[TRACKER] Loading YOLO26 object model: {args.yolo_model}...")
     model_objects = YOLO(args.yolo_model)
@@ -568,6 +575,8 @@ async def main_async():
         gated_suspicious = []
         for d in dets_suspicious:
             cls = d["cls_name"]
+            if cls in disabled_suspicious:
+                continue
             floor = SUSPICIOUS_CLASS_THRESHOLDS.get(cls, DEFAULT_SUSPICIOUS_TH)
             if d["conf"] < floor:
                 continue
