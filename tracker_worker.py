@@ -63,11 +63,13 @@ DEFAULT_SUSPICIOUS_TH = 0.50
 # temporal confirmation across several frames before being emitted.
 WEAPON_SUSPICIOUS_CLASSES = {"Man_With_Gun", "Man_with_Knife"}
 
-# Open-vocabulary appearance prompts for the YOLOE-26 model. These describe how
-# a robber typically looks; matched detections are attached as attribute tags to
-# the nearest person track rather than emitted as separate boxes.
+# Open-vocabulary appearance prompts for the YOLOE-26 model. Concealment-focused
+# cues only — "helmet" and the loose "hooded person" were removed because YOLOE
+# fired them on construction hard hats / baseball caps / almost every head,
+# flooding the anomaly prompt with false positives. Matched detections are
+# attached as confirmed attribute tags to the nearest person track.
 APPEARANCE_PROMPTS = [
-    "hood", "mask", "balaclava", "helmet", "hooded person", "dark clothing",
+    "hood", "ski mask", "balaclava", "face mask", "dark clothing",
 ]
 
 # Open-vocabulary WEAPON prompts for the same YOLOE-26 model. No training needed:
@@ -263,7 +265,8 @@ class Track:
     last_seen_frame: int
     source: str = ""
     hits: int = 1                       # consecutive matches; for temporal confirmation
-    attributes: List[str] = field(default_factory=list)  # appearance tags (hood, dark clothing...)
+    attributes: List[str] = field(default_factory=list)  # confirmed appearance tags (hood, dark clothing...)
+    attr_counts: Dict[str, int] = field(default_factory=dict)  # per-tag sightings, for confirmation
 
 
 def draw_tracks(frame: np.ndarray, tracks: List[Track]) -> np.ndarray:
@@ -389,6 +392,15 @@ async def main_async():
     parser.add_argument("--openvocab_weapon_conf", type=float, default=0.30,
                         help="Confidence floor for open-vocab weapon detections (gun/knife). Open-vocab "
                              "confidences run lower than a trained head — raise if FPs, lower if misses.")
+    parser.add_argument("--appearance_conf", type=float, default=0.45,
+                        help="Confidence floor for open-vocab appearance tags (hood/mask/dark clothing). "
+                             "Raise if appearance tags are noisy.")
+    parser.add_argument("--appearance_confirm", type=int, default=2,
+                        help="An appearance tag must be seen this many frames on a person before it sticks "
+                             "(kills single-frame false tags).")
+    parser.add_argument("--appearance_as_boxes", type=int, default=0,
+                        help="1 = also emit each confirmed appearance detection as its own on-screen box "
+                             "(source='appearance') so it's visible in the UI for verification.")
     parser.add_argument("--weapon_confirm_frames", type=int, default=3,
                         help="A weapon (gun/knife) track must persist this many consecutive frames before it is emitted.")
     parser.add_argument("--use_suspicious", type=int, default=1,
@@ -689,6 +701,8 @@ async def main_async():
                     d["source"] = "weapon"
                     weapon_dets.append(d)
                 elif cls in APPEARANCE_PROMPTS:
+                    if d["conf"] < args.appearance_conf:
+                        continue
                     appearance_dets.append(d)
 
             # Open-vocab weapons join the detection set so they get tracked + confirmed.
@@ -739,7 +753,11 @@ async def main_async():
             if t.source == "suspicious":
                 t.bbox = shrink_bbox_tuple(t.bbox, factor=0.2)
 
-        # ---- Attach appearance attributes to the nearest person track (sticky) ----
+        # ---- Attach appearance attributes to the nearest person track ----
+        # A tag only "sticks" after it has been seen on the same track for
+        # `appearance_confirm` frames — kills single-frame false tags (e.g. a
+        # baseball cap briefly read as a hood).
+        confirmed_appearance_boxes: List[Dict[str, Any]] = []
         if appearance_dets:
             person_tracks = [t for t in tracks if t.cls_name == "person"]
             for ad in appearance_dets:
@@ -751,8 +769,14 @@ async def main_async():
                     if i > best_i:
                         best_i = i
                         best_t = t
-                if best_t is not None and best_i > 0.0 and tag not in best_t.attributes:
-                    best_t.attributes.append(tag)
+                if best_t is None or best_i <= 0.0:
+                    continue
+                best_t.attr_counts[tag] = best_t.attr_counts.get(tag, 0) + 1
+                if best_t.attr_counts[tag] >= args.appearance_confirm:
+                    if tag not in best_t.attributes:
+                        best_t.attributes.append(tag)
+                    # Record the (confirmed) detection box for optional UI emit.
+                    confirmed_appearance_boxes.append({"bbox": ad["bbox"], "tag": tag, "conf": ad["conf"]})
 
         # ---- Temporal confirmation gate: a weapon track (nano OR open-vocab) is
         # only emitted once it has persisted `weapon_confirm_frames` frames. ----
@@ -781,6 +805,20 @@ async def main_async():
             "attributes": t.attributes,
             "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
         })
+
+        # Optionally emit confirmed appearance detections as their own boxes so
+        # they're visible in the UI for verification (off by default).
+        if args.appearance_as_boxes and confirmed_appearance_boxes:
+            for i, ab in enumerate(confirmed_appearance_boxes):
+                ax1, ay1, ax2, ay2 = ab["bbox"]
+                tracks_payload.append({
+                    "track_id": 90000 + i,
+                    "cls": ab["tag"],
+                    "conf": ab["conf"],
+                    "source": "appearance",
+                    "attributes": [],
+                    "bbox": {"x1": ax1, "y1": ay1, "x2": ax2, "y2": ay2},
+                })
 
         # Check if any tracks are from motion detector
         has_motion = any(t.cls_name == "moving_object" for t in emitted_tracks)

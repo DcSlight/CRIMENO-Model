@@ -157,27 +157,31 @@ SUSPICIOUS_CLASS_PHRASES = {
 
 
 def build_appearance_weapon_sentence(rec: Dict[str, Any]) -> str:
-    """Semantic, LLM-usable summary of robbery cues from the tracker: confirmed
-    weapons/activities and person appearance attributes (hood, mask, dark clothing)."""
+    """Two clearly-separated lines from the tracker so the LLM can weight them
+    differently: confirmed WEAPONS (strong evidence) vs APPEARANCE (context only)."""
     tracker = rec.get("tracker")
     if not tracker:
         return ""
 
-    highlights: List[str] = []
+    weapons: List[str] = []
+    appearance: List[str] = []
     for t in tracker.get("tracks", []):
         cls = t.get("cls", "")
         phrase = SUSPICIOUS_CLASS_PHRASES.get(cls)
-        if phrase and phrase not in highlights:
-            highlights.append(phrase)
+        if phrase and phrase not in weapons:
+            weapons.append(phrase)
 
         attrs = t.get("attributes") or []
         if attrs and cls == "person":
-            highlights.append("a person wearing " + ", ".join(attrs))
+            appearance.append("person wearing " + ", ".join(attrs))
 
-    if not highlights:
-        return ""
+    lines: List[str] = []
+    if weapons:
+        lines.append("WEAPON ALERT: " + "; ".join(weapons) + ".")
+    if appearance:
+        lines.append("Appearance (context only, NOT proof of crime): " + "; ".join(appearance) + ".")
 
-    return "Visual cues: " + "; ".join(highlights) + "."
+    return " ".join(lines)
 
 
 def build_event_sentence(rec: Dict[str, Any]) -> str:
@@ -288,14 +292,21 @@ def build_prompt(scene_description: str) -> str:
     - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
     - If label == "criminal"   → anomaly_score MUST be >= 0.8
     - The score MUST always match the label category.
+    - "criminal" REQUIRES one of: a WEAPON ALERT, or a clearly described forbidden
+      ACTION (e.g. theft / taking items, forcing a display case, physical aggression,
+      reaching behind the counter, leaving without payment). Appearance ALONE
+      (clothing, hood, mask, hat) can NEVER be "criminal".
 
-    ### 3. HOW TO USE THE INPUTS
-    - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
-    - "Visual cues:" lines ARE reliable evidence and SHOULD be used. They report
-      confirmed weapons (gun/knife — already filtered for false positives) and how
-      people look (hood, mask, dark clothing). A confirmed weapon is strong evidence
-      of criminal/dangerous activity; concealing appearance (hood + mask) is
-      strong evidence of suspicious behavior in a robbery context.
+    ### 3. HOW TO USE THE INPUTS — BEHAVIOR FIRST
+    - The PRIMARY question is: what are people DOING, and does it match the store's
+      Allowed behaviors or the Forbidden behaviors in the business context above?
+      Base your decision mainly on the ACTIONS Florence describes vs that list.
+    - "WEAPON ALERT:" lines are STRONG evidence (weapons are person-gated + confirmed)
+      and can justify "criminal" on their own.
+    - "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
+      hoods, masks and hats are frequently benign (hard hats, fashion, weather).
+      Appearance may RAISE concern only when combined with suspicious behavior. It
+      MUST NOT be the sole reason and MUST NOT push the label above "suspicious".
     - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
       and should be used ONLY to:
       * understand continuity of people/objects across frames
@@ -309,32 +320,33 @@ def build_prompt(scene_description: str) -> str:
     - DO NOT use bounding boxes as reasons.
     - DO NOT use "ID 1", "ID 2", etc. as key moments.
     - DO NOT treat "multiple people detected" as suspicious by itself.
-    (This prohibition does NOT apply to "Visual cues:" lines, which are allowed evidence.)
+    (This prohibition does NOT apply to WEAPON ALERT / Appearance lines.)
 
     ### 5. KEY MOMENTS RULES
     "key_moments" MUST:
-    - be based on semantic content from Florence (captions, OCR, behaviors) and/or
-      the "Visual cues:" lines (confirmed weapons, appearance attributes)
-    - describe meaningful actions, interactions, or unusual events
+    - describe ACTIONS / behaviors first (what people do), based on Florence and the
+      store's forbidden-behaviors list; a confirmed weapon is also a valid key moment
+    - mention appearance only as a MODIFIER of an action, never on its own
     - NOT include raw YOLO technical data (IDs, confidence, bbox)
 
     Examples of GOOD key moments:
-    - "man holding phone instead of payment method"
-    - "customer leaning over cash register"
-    - "person reaching into backpack"
-    - "individual looking around nervously"
-    - "person wearing a hood and mask"
+    - "person reaching behind the cashier counter"
+    - "customer leaning over a display case and taking an item"
+    - "individual hiding jewelry inside their jacket"
     - "person appears to be holding a gun"
+    - "hooded person forcing open a display case"   (appearance + action)
 
     Examples of BAD key moments (FORBIDDEN):
+    - "person wearing a hood"          (appearance with no action)
+    - "multiple people wearing hats"   (appearance with no action)
     - "ID 1: person (confidence 0.91)"
     - "three people detected"
-    - "bounding box moved left"
 
     ### 6. REASON FIELD RULES
     The "reason" MUST:
-    - describe behavioral or contextual anomalies
-    - be based on Florence semantic content
+    - describe the behavioral/contextual anomaly (the ACTION), or the weapon
+    - be based on Florence semantic content (and the forbidden-behaviors list)
+    - NOT be about appearance alone (e.g. "person wearing a hood" is NOT acceptable)
     - NOT mention YOLO IDs, confidence, or bounding boxes
     - be short and human‑interpretable
 
