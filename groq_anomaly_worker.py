@@ -142,10 +142,17 @@ def build_tracker_sentence(rec: Dict[str, Any]) -> str:
 # person-overlap + multi-frame temporal confirmation in the tracker, and
 # appearance attributes come from the open-vocab model.
 SUSPICIOUS_CLASS_PHRASES = {
+    # custom nano model classes
     "Man_With_Gun": "a person appears to be holding a gun",
     "Man_with_Knife": "a person appears to be holding a knife",
     "Theaf_Robbery": "possible robbery/theft behavior",
     "Fighting": "physical fighting between people",
+    # open-vocab YOLOE weapon classes (person-gated + temporally confirmed)
+    "gun": "a person appears to be holding a gun",
+    "pistol": "a person appears to be holding a gun",
+    "handgun": "a person appears to be holding a gun",
+    "rifle": "a person appears to be holding a rifle",
+    "knife": "a person appears to be holding a knife",
 }
 
 
