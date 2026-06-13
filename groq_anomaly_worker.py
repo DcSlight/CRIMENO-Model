@@ -184,14 +184,26 @@ def build_appearance_weapon_sentence(rec: Dict[str, Any]) -> str:
     return " ".join(lines)
 
 
+def build_vlm_sentence(rec: Dict[str, Any]) -> str:
+    """The local VLM's full-frame Q&A summary — the most action-aware source.
+    Passed through verbatim (NOT clean_caption, which would truncate it)."""
+    vlm = rec.get("vlm")
+    if not vlm:
+        return ""
+    summary = (vlm.get("summary") or "").strip()
+    return ("VLM observation: " + summary) if summary else ""
+
+
 def build_event_sentence(rec: Dict[str, Any]) -> str:
     caption = rec.get("raw", {}).get("more_detailed_caption", "")
     cleaned = clean_caption(caption)
 
+    vlm_text = build_vlm_sentence(rec)
     appearance_text = build_appearance_weapon_sentence(rec)
     tracker_text = build_tracker_sentence(rec)
 
-    parts = [p for p in (cleaned, appearance_text, tracker_text) if p]
+    # VLM behavior first (most action-aware), then scene caption, then tracker cues.
+    parts = [p for p in (vlm_text, cleaned, appearance_text, tracker_text) if p]
     if parts:
         return " ".join(parts)
 
@@ -300,7 +312,11 @@ def build_prompt(scene_description: str) -> str:
     ### 3. HOW TO USE THE INPUTS — BEHAVIOR FIRST
     - The PRIMARY question is: what are people DOING, and does it match the store's
       Allowed behaviors or the Forbidden behaviors in the business context above?
-      Base your decision mainly on the ACTIONS Florence describes vs that list.
+      Base your decision mainly on the ACTIONS described vs that list.
+    - "VLM observation:" lines come from a vision model that looked directly at the
+      frame and answered specific questions (activity, weapons, theft/forbidden
+      actions, concealed faces). Treat this as the PRIMARY behavioral evidence.
+      Florence captions are secondary scene context.
     - "WEAPON ALERT:" lines are STRONG evidence (weapons are person-gated + confirmed)
       and can justify "criminal" on their own.
     - "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
@@ -477,6 +493,7 @@ async def main_async():
     latest_business_context = ""
 
     tracker_buffer: Dict[int, Dict[str, Any]] = {}
+    vlm_buffer: Dict[int, Dict[str, Any]] = {}
 
     window_size = BASE_WINDOW_SIZE
     jump_size = 2
@@ -490,7 +507,8 @@ async def main_async():
                 raw_queue.clear()
                 event_history.clear()
                 tracker_buffer.clear()
-                print("[GROQ] Reset received — cleared raw_queue, event_history, tracker_buffer")
+                vlm_buffer.clear()
+                print("[GROQ] Reset received — cleared raw_queue, event_history, tracker_buffer, vlm_buffer")
                 continue
 
             if rec.get("type") == "business_context":
@@ -505,10 +523,29 @@ async def main_async():
                     tracker_buffer[frame_idx] = rec
                 continue
 
+            if rec.get("type") == "vlm_frame":
+                frame_idx = rec.get("frame_index")
+                if isinstance(frame_idx, int):
+                    vlm_buffer[frame_idx] = rec
+                    # Keep the buffer bounded.
+                    if len(vlm_buffer) > MAX_QUEUE_SIZE:
+                        for k in sorted(vlm_buffer)[:-MAX_QUEUE_SIZE]:
+                            vlm_buffer.pop(k, None)
+                continue
+
             frame_idx = rec.get("frame_index")
 
             if isinstance(frame_idx, int) and frame_idx in tracker_buffer:
                 rec["tracker"] = tracker_buffer[frame_idx]
+
+            # Attach the nearest VLM record (exact frame, else closest within a window).
+            if isinstance(frame_idx, int) and vlm_buffer:
+                if frame_idx in vlm_buffer:
+                    rec["vlm"] = vlm_buffer[frame_idx]
+                else:
+                    nearest = min(vlm_buffer, key=lambda k: abs(k - frame_idx))
+                    if abs(nearest - frame_idx) <= 15:
+                        rec["vlm"] = vlm_buffer[nearest]
 
             raw_queue.append(rec)
 
