@@ -137,18 +137,52 @@ def build_tracker_sentence(rec: Dict[str, Any]) -> str:
     return "YOLO tracker detected: " + "; ".join(parts) + "."
 
 
+# Semantic phrases for the tracker's robbery-focused signals. Unlike raw YOLO
+# IDs/bboxes, these are reliable evidence: weapon classes have already passed
+# person-overlap + multi-frame temporal confirmation in the tracker, and
+# appearance attributes come from the open-vocab model.
+SUSPICIOUS_CLASS_PHRASES = {
+    "Man_With_Gun": "a person appears to be holding a gun",
+    "Man_with_Knife": "a person appears to be holding a knife",
+    "Theaf_Robbery": "possible robbery/theft behavior",
+    "Fighting": "physical fighting between people",
+}
+
+
+def build_appearance_weapon_sentence(rec: Dict[str, Any]) -> str:
+    """Semantic, LLM-usable summary of robbery cues from the tracker: confirmed
+    weapons/activities and person appearance attributes (hood, mask, dark clothing)."""
+    tracker = rec.get("tracker")
+    if not tracker:
+        return ""
+
+    highlights: List[str] = []
+    for t in tracker.get("tracks", []):
+        cls = t.get("cls", "")
+        phrase = SUSPICIOUS_CLASS_PHRASES.get(cls)
+        if phrase and phrase not in highlights:
+            highlights.append(phrase)
+
+        attrs = t.get("attributes") or []
+        if attrs and cls == "person":
+            highlights.append("a person wearing " + ", ".join(attrs))
+
+    if not highlights:
+        return ""
+
+    return "Visual cues: " + "; ".join(highlights) + "."
+
+
 def build_event_sentence(rec: Dict[str, Any]) -> str:
     caption = rec.get("raw", {}).get("more_detailed_caption", "")
     cleaned = clean_caption(caption)
 
+    appearance_text = build_appearance_weapon_sentence(rec)
     tracker_text = build_tracker_sentence(rec)
 
-    if cleaned and tracker_text:
-        return f"{cleaned} {tracker_text}"
-    elif cleaned:
-        return cleaned
-    elif tracker_text:
-        return tracker_text
+    parts = [p for p in (cleaned, appearance_text, tracker_text) if p]
+    if parts:
+        return " ".join(parts)
 
     return "No significant visual change."
 
@@ -250,30 +284,40 @@ def build_prompt(scene_description: str) -> str:
 
     ### 3. HOW TO USE THE INPUTS
     - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
-    - YOLO tracker data (IDs, classes, bounding boxes) is SECONDARY and should be used ONLY to:
+    - "Visual cues:" lines ARE reliable evidence and SHOULD be used. They report
+      confirmed weapons (gun/knife — already filtered for false positives) and how
+      people look (hood, mask, dark clothing). A confirmed weapon is strong evidence
+      of criminal/dangerous activity; concealing appearance (hood + mask) is
+      strong evidence of suspicious behavior in a robbery context.
+    - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+      and should be used ONLY to:
       * understand continuity of people/objects across frames
       * detect repeated presence or movement patterns
       * identify that the same person appears in multiple frames
 
-    ### 4. PROHIBITED USE OF YOLO DATA
-    You MUST NOT use YOLO tracker data as evidence of anomaly.
+    ### 4. PROHIBITED USE OF RAW YOLO DATA
+    You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
     Specifically:
     - DO NOT use confidence scores as reasons.
     - DO NOT use bounding boxes as reasons.
     - DO NOT use "ID 1", "ID 2", etc. as key moments.
     - DO NOT treat "multiple people detected" as suspicious by itself.
+    (This prohibition does NOT apply to "Visual cues:" lines, which are allowed evidence.)
 
     ### 5. KEY MOMENTS RULES
     "key_moments" MUST:
-    - be based ONLY on semantic content from Florence (captions, OCR, behaviors)
+    - be based on semantic content from Florence (captions, OCR, behaviors) and/or
+      the "Visual cues:" lines (confirmed weapons, appearance attributes)
     - describe meaningful actions, interactions, or unusual events
-    - NOT include YOLO technical data (IDs, confidence, bbox)
+    - NOT include raw YOLO technical data (IDs, confidence, bbox)
 
     Examples of GOOD key moments:
     - "man holding phone instead of payment method"
     - "customer leaning over cash register"
     - "person reaching into backpack"
     - "individual looking around nervously"
+    - "person wearing a hood and mask"
+    - "person appears to be holding a gun"
 
     Examples of BAD key moments (FORBIDDEN):
     - "ID 1: person (confidence 0.91)"

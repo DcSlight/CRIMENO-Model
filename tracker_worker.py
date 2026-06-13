@@ -12,7 +12,7 @@ import base64
 import json
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
@@ -31,6 +31,44 @@ _reset_done_event = threading.Event()
 _first_frame_pending = threading.Event()  # set on reset; cleared after first real bbox emit
 
 ACK_TIMEOUT_S = 15  # wait up to 15s; broadcaster timeout is 20s
+
+# ---------------------------------------------------------------------------
+# Robbery-focused detection config
+# ---------------------------------------------------------------------------
+# COCO classes (from the YOLO26 object model) that are relevant to robbery /
+# surveillance. Everything else (chairs, TVs, plants...) is dropped before it
+# reaches the tracker so the downstream LLM isn't diluted with scene clutter.
+# "person" is always kept regardless of this set.
+ROBBERY_OBJECT_CLASSES = {
+    "person", "backpack", "handbag", "suitcase",
+    "knife", "cell phone", "bottle",
+}
+
+# Per-class confidence floors for the custom Suspicious_Activities model.
+# Class names confirmed from the checkpoint: Fighting, Man_With_Gun,
+# Man_with_Knife, Theaf_Robbery. The old code used a single blunt 0.93 gate to
+# suppress the man-with-gun false positives; that hurt recall. Instead we admit
+# weapon detections at a lower floor and restore precision with person-overlap
+# gating + temporal confirmation (see main loop).
+SUSPICIOUS_CLASS_THRESHOLDS = {
+    "Man_With_Gun": 0.45,
+    "Man_with_Knife": 0.45,
+    "Theaf_Robbery": 0.55,
+    "Fighting": 0.55,
+}
+DEFAULT_SUSPICIOUS_TH = 0.50
+
+# Suspicious classes that must overlap a detected person to be admitted (kills
+# floating "gun in mid-air" ghosts) and that require temporal confirmation
+# across several frames before being emitted (kills single-frame flicker).
+WEAPON_SUSPICIOUS_CLASSES = {"Man_With_Gun", "Man_with_Knife"}
+
+# Open-vocabulary appearance prompts for the YOLOE-26 model. These describe how
+# a robber typically looks; matched detections are attached as attribute tags to
+# the nearest person track rather than emitted as separate boxes.
+APPEARANCE_PROMPTS = [
+    "hood", "mask", "balaclava", "helmet", "hooded person", "dark clothing",
+]
 
 # Used by watcher thread to dispatch an immediate WS-clear into the asyncio event loop.
 _main_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -171,6 +209,22 @@ def iou_xyxy(a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]) -> floa
     return inter_area / union
 
 
+def box_overlaps_any(bbox: Tuple[int, int, int, int],
+                     others: List[Tuple[int, int, int, int]]) -> bool:
+    """True if bbox touches any box in `others` (IOU > 0) or its center sits
+    inside one of them. Used to gate weapon detections to actual people."""
+    x1, y1, x2, y2 = bbox
+    cx = (x1 + x2) / 2.0
+    cy = (y1 + y2) / 2.0
+    for o in others:
+        if iou_xyxy(bbox, o) > 0.0:
+            return True
+        ox1, oy1, ox2, oy2 = o
+        if ox1 <= cx <= ox2 and oy1 <= cy <= oy2:
+            return True
+    return False
+
+
 @dataclass
 class Track:
     track_id: int
@@ -179,6 +233,8 @@ class Track:
     conf: float
     last_seen_frame: int
     source: str = ""
+    hits: int = 1                       # consecutive matches; for temporal confirmation
+    attributes: List[str] = field(default_factory=list)  # appearance tags (hood, dark clothing...)
 
 
 def draw_tracks(frame: np.ndarray, tracks: List[Track]) -> np.ndarray:
@@ -290,7 +346,16 @@ async def main_async():
     parser.add_argument("--ack-endpoint", dest="ack_endpoint", default="tcp://127.0.0.1:5562",
                         help="ZeroMQ endpoint to send reset ack back to broadcaster (PUSH).")
     parser.add_argument("--ws_url", default="none")
-    parser.add_argument("--yolo_model", default="yolov8n.pt")
+    parser.add_argument("--yolo_model", default="yolo26s.pt",
+                        help="YOLO26 detection weights for general objects (COCO).")
+    parser.add_argument("--appearance_model", default="yoloe-26s-seg.pt",
+                        help="Open-vocabulary YOLOE-26 weights for appearance attributes (hood, mask, dark clothing).")
+    parser.add_argument("--use_appearance", type=int, default=1,
+                        help="1 = run the open-vocab appearance model and tag person tracks.")
+    parser.add_argument("--appearance_every_n", type=int, default=5,
+                        help="Run the (heavy) appearance model once every N processed frames.")
+    parser.add_argument("--weapon_confirm_frames", type=int, default=3,
+                        help="A weapon (gun/knife) track must persist this many consecutive frames before it is emitted.")
     parser.add_argument("--conf_th", type=float, default=0.35)
     parser.add_argument("--send_every_n_frames", type=int, default=1)
     parser.add_argument("--send_overlay", type=int, default=0)
@@ -306,8 +371,8 @@ async def main_async():
     if YOLO is None:
         raise RuntimeError("ultralytics not installed")
 
-    print(f"[TRACKER] Loading YOLO model: {args.yolo_model}...")
-    model_objects = YOLO("yolov8s.pt")
+    print(f"[TRACKER] Loading YOLO26 object model: {args.yolo_model}...")
+    model_objects = YOLO(args.yolo_model)
     model_suspicious = YOLO("Suspicious_Activities_nano.pt")
 
     yolo_predict_device: Optional[Any] = None
@@ -316,23 +381,47 @@ async def main_async():
     elif args.device == "cuda":
         yolo_predict_device = 0
 
+    # Open-vocabulary appearance model (hood / mask / dark clothing). Optional —
+    # it's the heaviest model, so it's throttled in the main loop.
+    model_appearance = None
+    if args.use_appearance:
+        print(f"[TRACKER] Loading YOLOE-26 appearance model: {args.appearance_model}...")
+        try:
+            model_appearance = YOLO(args.appearance_model)
+            # set_classes signature differs across YOLOE builds; try the
+            # text-embedding form first, fall back to the plain names form.
+            try:
+                model_appearance.set_classes(
+                    APPEARANCE_PROMPTS, model_appearance.get_text_pe(APPEARANCE_PROMPTS)
+                )
+            except (AttributeError, TypeError):
+                model_appearance.set_classes(APPEARANCE_PROMPTS)
+            print(f"[TRACKER] Appearance prompts set: {APPEARANCE_PROMPTS}")
+        except Exception as e:
+            print(f"[TRACKER] ⚠ Failed to load appearance model ({e}); continuing without it.")
+            model_appearance = None
+
     # Warmup
-    print("[TRACKER] Warming up model...")
+    print("[TRACKER] Warming up models...")
     dummy = np.zeros((640, 640, 3), dtype=np.uint8)
 
+    def _warmup(m):
+        if m is None:
+            return
+        if yolo_predict_device is None:
+            _ = m.predict(dummy, conf=0.5, verbose=False)
+        else:
+            _ = m.predict(dummy, conf=0.5, verbose=False, device=yolo_predict_device)
+
     print("[TRACKER] Warming up object model...")
-    if yolo_predict_device is None:
-        _ = model_objects.predict(dummy, conf=0.5, verbose=False)
-    else:
-        _ = model_objects.predict(dummy, conf=0.5, verbose=False, device=yolo_predict_device)
-
+    _warmup(model_objects)
     print("[TRACKER] Warming up suspicious model...")
-    if yolo_predict_device is None:
-        _ = model_suspicious.predict(dummy, conf=0.5, verbose=False)
-    else:
-        _ = model_suspicious.predict(dummy, conf=0.5, verbose=False, device=yolo_predict_device)
+    _warmup(model_suspicious)
+    if model_appearance is not None:
+        print("[TRACKER] Warming up appearance model...")
+        _warmup(model_appearance)
 
-    print("[TRACKER] ✓ Both models ready")
+    print("[TRACKER] ✓ Models ready")
 
 
     motion = MotionDetector() if args.use_motion_fallback else None
@@ -463,9 +552,30 @@ async def main_async():
         for d in dets_suspicious:
             d["source"] = "suspicious"
 
-        # Merge
-        dets_objects = [d for d in dets_objects if d["conf"] >= 0.6]
-        dets_suspicious = [d for d in dets_suspicious if d["conf"] >= 0.93]
+        # ---- Object model: keep only robbery-relevant classes (person always) ----
+        dets_objects = [
+            d for d in dets_objects
+            if d["conf"] >= 0.6 and (
+                d["cls_name"] == "person" or d["cls_name"] in ROBBERY_OBJECT_CLASSES
+            )
+        ]
+        person_bboxes = [d["bbox"] for d in dets_objects if d["cls_name"] == "person"]
+
+        # ---- Suspicious model: per-class floor + person gating for weapons ----
+        # Replaces the old blunt `conf >= 0.93` gate. Weapon classes are admitted
+        # at a lower floor (recall) but must overlap a detected person (precision);
+        # single-frame flicker is killed later by temporal confirmation (hits).
+        gated_suspicious = []
+        for d in dets_suspicious:
+            cls = d["cls_name"]
+            floor = SUSPICIOUS_CLASS_THRESHOLDS.get(cls, DEFAULT_SUSPICIOUS_TH)
+            if d["conf"] < floor:
+                continue
+            if cls in WEAPON_SUSPICIOUS_CLASSES and not box_overlaps_any(d["bbox"], person_bboxes):
+                continue
+            gated_suspicious.append(d)
+        dets_suspicious = gated_suspicious
+
         dets = dets_objects + dets_suspicious
 
         # Reset arrived mid-YOLO-inference — discard stale results, drain, then unblock watcher.
@@ -493,6 +603,19 @@ async def main_async():
             for bb in blobs:
                 dets.append({"bbox": bb, "cls_name": "moving_object", "conf": 1.0})
 
+        # ---- Appearance attributes (heavy model; throttled, person-gated) ----
+        appearance_dets: List[Dict[str, Any]] = []
+        if (model_appearance is not None and person_bboxes
+                and args.appearance_every_n > 0
+                and (frames_processed % args.appearance_every_n == 0)):
+            try:
+                appearance_dets = await asyncio.to_thread(
+                    run_yolo, model_appearance, frame, 0.25, yolo_predict_device
+                )
+            except Exception as e:
+                print(f"[TRACKER] Appearance inference failed: {e}")
+                appearance_dets = []
+
         used_tracks = set()
         new_tracks: List[Track] = []
 
@@ -516,6 +639,7 @@ async def main_async():
                 best_track.conf = float(d["conf"])
                 best_track.last_seen_frame = frame_idx
                 best_track.source = d.get("source", "")
+                best_track.hits += 1
                 new_tracks.append(best_track)
             else:
                 t = Track(
@@ -537,23 +661,48 @@ async def main_async():
             if t.source == "suspicious":
                 t.bbox = shrink_bbox_tuple(t.bbox, factor=0.2)
 
+        # ---- Attach appearance attributes to the nearest person track (sticky) ----
+        if appearance_dets:
+            person_tracks = [t for t in tracks if t.cls_name == "person"]
+            for ad in appearance_dets:
+                tag = ad["cls_name"]
+                best_t = None
+                best_i = 0.0
+                for t in person_tracks:
+                    i = iou_xyxy(t.bbox, ad["bbox"])
+                    if i > best_i:
+                        best_i = i
+                        best_t = t
+                if best_t is not None and best_i > 0.0 and tag not in best_t.attributes:
+                    best_t.attributes.append(tag)
+
+        # ---- Temporal confirmation gate: a weapon track is only emitted once it
+        # has persisted across `weapon_confirm_frames` consecutive frames. ----
+        emitted_tracks = [
+            t for t in tracks
+            if not (t.source == "suspicious"
+                    and t.cls_name in WEAPON_SUSPICIOUS_CLASSES
+                    and t.hits < args.weapon_confirm_frames)
+        ]
+
         # DEBUG VISUALIZATION
         if args.test == "show_image":
-            show_debug_frame(frame, tracks)
+            show_debug_frame(frame, emitted_tracks)
 
         tracks_payload = []
-        for t in tracks:
+        for t in emitted_tracks:
             x1, y1, x2, y2 = t.bbox
             tracks_payload.append({
             "track_id": t.track_id,
             "cls": t.cls_name,
             "conf": t.conf,
             "source": t.source,
+            "attributes": t.attributes,
             "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
         })
 
         # Check if any tracks are from motion detector
-        has_motion = any(t.cls_name == "moving_object" for t in tracks)
+        has_motion = any(t.cls_name == "moving_object" for t in emitted_tracks)
 
         payload = {
             "type": "tracker_frame",
@@ -565,7 +714,7 @@ async def main_async():
         }
 
         if args.send_overlay == 1:
-            overlay = draw_tracks(frame, tracks)
+            overlay = draw_tracks(frame, emitted_tracks)
             overlay_jpg = encode_jpg(overlay, args.overlay_jpeg_quality)
             payload["overlay_jpg_b64"] = base64.b64encode(overlay_jpg).decode("ascii")
 
