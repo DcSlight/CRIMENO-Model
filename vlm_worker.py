@@ -26,10 +26,16 @@ from PIL import Image
 try:
     import torch
     from transformers import AutoProcessor, PaliGemmaForConditionalGeneration
+    import transformers
+    # Quiet the per-call processor/deprecation warnings so the VLM output is readable.
+    transformers.logging.set_verbosity_error()
 except Exception:  # pragma: no cover - import guard
     torch = None
     AutoProcessor = None
     PaliGemmaForConditionalGeneration = None
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
 # Fixed robbery-focused question set asked of the full frame each cycle.
