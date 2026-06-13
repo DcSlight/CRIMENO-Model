@@ -12,12 +12,6 @@
 # This is an ADDITIVE layer: Florence (scene caption + OCR) and the tracker
 # (weapons/appearance) keep running; Groq fuses all three.
 
-import os
-# Reduce CUDA memory fragmentation (esp. Windows/WDDM + vGPU, where allocations can
-# fail with lots of free memory). MUST be set before torch initializes the CUDA
-# allocator. setdefault so a user-provided env var still wins.
-os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
-
 import argparse
 import asyncio
 import io
