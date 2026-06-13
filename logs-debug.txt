@@ -1,40 +1,39 @@
-PS C:\Users\idan.noyshul\Documents\GitHub\CRIMENO-Model> python vlm_worker.py --device cuda --every 30 --ws-url none --anomaly-endpoint tcp://127.0.0.1:5581
-[VLM] Loading google/paligemma2-3b-mix-448 on cuda:0 (torch.bfloat16)...
-`torch_dtype` is deprecated! Use `dtype` instead!
-Loading checkpoint shards: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:00<00:00, 15.52it/s]
-Using a slow image processor as `use_fast` is unset and a slow processor was saved with this model. `use_fast=True` will be the default behavior in v4.52, even if the model was saved with a slow processor. This will result in minor differences in outputs. You'll still be able to use a slow processor with `use_fast=False`.
-✅ [VLM] google/paligemma2-3b-mix-448 ready on cuda:0
-[VLM] Warming up...
-You are passing both `text` and `images` to `PaliGemmaProcessor`. The processor expects special image tokens in the text, as many tokens as there are images per each text. It is recommended to add `<image>` tokens in the very beginning of your text. For this call, we will infer how many images each text has and add special tokens.
-[VLM] ✓ Warmup complete
-🔗 [VLM] Connected to broadcaster on tcp://127.0.0.1:5560
-🔗 [VLM] Connected to anomaly worker via ZMQ PUSH on tcp://127.0.0.1:5581
-[WS] Disabled (ws_url=none)
-[VLM] Reset received — draining stale frames
-You are passing both `text` and `images` to `PaliGemmaProcessor`. The processor expects special image tokens in the text, as many tokens as there are images per each text. It is recommended to add `<image>` tokens in the very beginning of your text. For this call, we will infer how many images each text has and add special tokens.
-You are passing both `text` and `images` to `PaliGemmaProcessor`. The processor expects special image tokens in the text, as many tokens as there are images per each text. It is recommended to add `<image>` tokens in the very beginning of your text. For this call, we will infer how many images each text has and add special tokens.
-You are passing both `text` and `images` to `PaliGemmaProcessor`. The processor expects special image tokens in the text, as many tokens as there are images per each text. It is recommended to add `<image>` tokens in the very beginning of your text. For this call, we will infer how many images each text has and add special tokens.
-You are passing both `text` and `images` to `PaliGemmaProcessor`. The processor expects special image tokens in the text, as many tokens as there are images per each text. It is recommended to add `<image>` tokens in the very beginning of your text. For this call, we will infer how many images each text has and add special tokens.
-🤖 [VLM] frame 0 | Activity: theft. Weapon: no. Theft/forbidden action: running. Concealed faces: yes.
-[VLM] processed=1 last_frame=0
-You are passing both `text` and `images` to `PaliGemmaProcessor`. The processor expects special image tokens in the text, as many tokens as there are images per each text. It is recommended to add `<image>` tokens in the very beginning of your text. For this call, we will infer how many images each text has and add special tokens.
-You are passing both `text` and `images` to `PaliGemmaProcessor`. The processor expects special image tokens in the text, as many tokens as there are images per each text. It is recommended to add `<image>` tokens in the very beginning of your text. For this call, we will infer how many images each text has and add special tokens.
-You are passing both `text` and `images` to `PaliGemmaProcessor`. The processor expects special image tokens in the text, as many tokens as there are images per each text. It is recommended to add `<image>` tokens in the very beginning of your text. For this call, we will infer how many images each text has and add special tokens.
-You are passing both `text` and `images` to `PaliGemmaProcessor`. The processor expects special image tokens in the text, as many tokens as there are images per each text. It is recommended to add `<image>` tokens in the very beginning of your text. For this call, we will infer how many images each text has and add special tokens.
-🤖 [VLM] frame 30 | Activity: shopping. Weapon: no. Theft/forbidden action: running. Concealed faces: no.
-[VLM] processed=2 last_frame=30
-You are passing both `text` and `images` to `PaliGemmaProcessor`. The processor expects special image tokens in the text, as many tokens as there are images per each text. It is recommended to add `<image>` tokens in the very beginning of your text. For this call, we will infer how many images each text has and add special tokens.
-You are passing both `text` and `images` to `PaliGemmaProcessor`. The processor expects special image tokens in the text, as many tokens as there are images per each text. It is recommended to add `<image>` tokens in the very beginning of your text. For this call, we will infer how many images each text has and add special tokens.
-You are passing both `text` and `images` to `PaliGemmaProcessor`. The processor expects special image tokens in the text, as many tokens as there are images per each text. It is recommended to add `<image>` tokens in the very beginning of your text. For this call, we will infer how many images each text has and add special tokens.
-You are passing both `text` and `images` to `PaliGemmaProcessor`. The processor expects special image tokens in the text, as many tokens as there are images per each text. It is recommended to add `<image>` tokens in the very beginning of your text. For this call, we will infer how many images each text has and add special tokens.
-🤖 [VLM] frame 60 | Activity: shopping. Weapon: no. Theft/forbidden action: running. Concealed faces: no.
-[VLM] processed=3 last_frame=60
-You are passing both `text` and `images` to `PaliGemmaProcessor`. The processor expects special image tokens in the text, as many tokens as there are images per each text. It is recommended to add `<image>` tokens in the very beginning of your text. For this call, we will infer how many images each text has and add special tokens.
-You are passing both `text` and `images` to `PaliGemmaProcessor`. The processor expects special image tokens in the text, as many tokens as there are images per each text. It is recommended to add `<image>` tokens in the very beginning of your text. For this call, we will infer how many images each text has and add special tokens.
-You are passing both `text` and `images` to `PaliGemmaProcessor`. The processor expects special image tokens in the text, as many tokens as there are images per each text. It is recommended to add `<image>` tokens in the very beginning of your text. For this call, we will infer how many images each text has and add special tokens.
-You are passing both `text` and `images` to `PaliGemmaProcessor`. The processor expects special image tokens in the text, as many tokens as there are images per each text. It is recommended to add `<image>` tokens in the very beginning of your text. For this call, we will infer how many images each text has and add special tokens.
-🤖 [VLM] frame 90 | Activity: theft. Weapon: no. Theft/forbidden action: running. Concealed faces: no.
-[VLM] processed=4 last_frame=90
-You are passing both `text` and `images` to `PaliGemmaProcessor`. The processor expects special image tokens in the text, as many tokens as there are images per each text. It is recommended to add `<image>` tokens in the very beginning of your text. For this call, we will infer how many images each text has and add special tokens.
-You are passing both `text` and `images` to `PaliGemmaProcessor`. The processor expects special image tokens in the text, as many tokens as there are images per each text. It is recommended to add `<image>` tokens in the very beginning of your text. For this call, we will infer how many images each text has and add special tokens.
-You are passing both `text` and `images` to `PaliGemmaProcessor`. The processor expects special image tokens in the text, as many tokens as there are images per each text. It is recommended to add `<image>` tokens in the very beginning of your text. For this call, we will infer how many images each text has and add special tokens.
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 42.00 MiB. GPU 0 has a total capacity of 24.00 GiB of which 15.26 GiB is free. Of the allocated memory 4.17 GiB is allocated by PyTorch, and 137.53 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+
+PS C:\Users\idan.noyshul\Documents\GitHub\CRIMENO-Model> nvidia-smi
+Sat Jun 13 18:10:45 2026
++---------------------------------------------------------------------------------------+
+| NVIDIA-SMI 538.46                 Driver Version: 538.46       CUDA Version: 12.2     |
+|-----------------------------------------+----------------------+----------------------+
+| GPU  Name                     TCC/WDDM  | Bus-Id        Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |         Memory-Usage | GPU-Util  Compute M. |
+|                                         |                      |               MIG M. |
+|=========================================+======================+======================|
+|   0  GRID P40-24Q                 WDDM  | 00000000:02:00.0  On |                    0 |
+| N/A    0C    P8              N/A /  N/A |   1882MiB / 24576MiB |      2%      Default |
+|                                         |                      |                  N/A |
++-----------------------------------------+----------------------+----------------------+
+
++---------------------------------------------------------------------------------------+
+| Processes:                                                                            |
+|  GPU   GI   CI        PID   Type   Process name                            GPU Memory |
+|        ID   ID                                                             Usage      |
+|=======================================================================================|
+|    0   N/A  N/A      4352    C+G   ...oogle\Chrome\Application\chrome.exe    N/A      |
+|    0   N/A  N/A      8156    C+G   ...Programs\Microsoft VS Code\Code.exe    N/A      |
+|    0   N/A  N/A     10136    C+G   ...__8wekyb3d8bbwe\WindowsTerminal.exe    N/A      |
+|    0   N/A  N/A     10580    C+G   ...2txyewy\StartMenuExperienceHost.exe    N/A      |
+|    0   N/A  N/A     10932    C+G   C:\Windows\explorer.exe                   N/A      |
+|    0   N/A  N/A     10996    C+G   C:\Windows\System32\ShellHost.exe         N/A      |
+|    0   N/A  N/A     11232    C+G   ...cw5n1h2txyewy\CrossDeviceResume.exe    N/A      |
+|    0   N/A  N/A     11376    C+G   ...nt.CBS_cw5n1h2txyewy\SearchHost.exe    N/A      |
+|    0   N/A  N/A     12116    C+G   ...5n1h2txyewy\ShellExperienceHost.exe    N/A      |
+|    0   N/A  N/A     13180    C+G   ...s\System32\ApplicationFrameHost.exe    N/A      |
+|    0   N/A  N/A     13304    C+G   ...t.LockApp_cw5n1h2txyewy\LockApp.exe    N/A      |
+|    0   N/A  N/A     13492    C+G   ...on\149.0.4022.52\msedgewebview2.exe    N/A      |
+|    0   N/A  N/A     13840    C+G   ...8bbwe\SnippingTool\SnippingTool.exe    N/A      |
+|    0   N/A  N/A     14924    C+G   ...on\149.0.4022.62\msedgewebview2.exe    N/A      |
+|    0   N/A  N/A     16276    C+G   ..._x64__8wekyb3d8bbwe\M365Copilot.exe    N/A      |
+|    0   N/A  N/A     17312    C+G   ...esktop\app-3.5.12\GitHubDesktop.exe    N/A      |
++---------------------------------------------------------------------------------------+
+
