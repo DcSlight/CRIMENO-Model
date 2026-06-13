@@ -972,3 +972,736 @@ Current window:
 
     Respond with exactly one JSON object and nothing else.
 ====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from two sources:
+    1. Florence (semantic captions, OCR, object descriptions, behaviors, interactions)
+    2. YOLO tracker (object IDs, classes, bounding boxes, continuity across frames)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+
+    ### 3. HOW TO USE THE INPUTS
+    - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
+    - "Visual cues:" lines ARE reliable evidence and SHOULD be used. They report
+      confirmed weapons (gun/knife — already filtered for false positives) and how
+      people look (hood, mask, dark clothing). A confirmed weapon is strong evidence
+      of criminal/dangerous activity; concealing appearance (hood + mask) is
+      strong evidence of suspicious behavior in a robbery context.
+    - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+      and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF RAW YOLO DATA
+    You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    (This prohibition does NOT apply to "Visual cues:" lines, which are allowed evidence.)
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - be based on semantic content from Florence (captions, OCR, behaviors) and/or
+      the "Visual cues:" lines (confirmed weapons, appearance attributes)
+    - describe meaningful actions, interactions, or unusual events
+    - NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "man holding phone instead of payment method"
+    - "customer leaning over cash register"
+    - "person reaching into backpack"
+    - "individual looking around nervously"
+    - "person wearing a hood and mask"
+    - "person appears to be holding a gun"
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+    - "bounding box moved left"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe behavioral or contextual anomalies
+    - be based on Florence semantic content
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- There are three people in the image, two men and one woman, standing in front of the counter. The man on the left is wearing a white shirt and is sitting at a desk with a computer monitor and other items on it. The woman on the right is standing behind the counter and appears to be looking at the items on display. YOLO tracker detected: ID 1: person (confidence 0.92) at [486,100,541,236]; ID 2: person (confidence 0.91) at [113,264,191,358]; ID 3: person (confidence 0.80) at [350,133,406,223]; ID 4: person (confidence 0.69) at [457,0,470,29].
+- The image is a CCTV footage of a jewelry store. There are three people in the image, two men and one woman, standing in front of the counter. The man on the left is wearing a white shirt and is sitting at a desk with a computer monitor and other items on it. Visual cues: a person wearing dark clothing. YOLO tracker detected: ID 2: person (confidence 0.91) at [115,263,190,358]; ID 9: person (confidence 0.89) at [421,102,464,235]; ID 3: person (confidence 0.87) at [348,132,406,223]; ID 7: person (confidence 0.87) at [481,100,541,236]; ID 10: person (confidence 0.82) at [481,100,542,235].
+- The image is a CCTV footage of a jewelry store. The walls are painted in a light beige color and there is a large painting hanging on the wall. On the left side of the image, there are several glass display cases with jewelry inside. Visual cues: a person wearing dark clothing, hooded person. YOLO tracker detected: ID 2: person (confidence 0.92) at [113,264,191,358]; ID 7: person (confidence 0.91) at [482,99,541,236]; ID 9: person (confidence 0.88) at [471,94,506,204]; ID 3: person (confidence 0.87) at [348,133,404,224]; ID 11: person (confidence 0.70) at [479,0,492,27].
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from two sources:
+    1. Florence (semantic captions, OCR, object descriptions, behaviors, interactions)
+    2. YOLO tracker (object IDs, classes, bounding boxes, continuity across frames)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+
+    ### 3. HOW TO USE THE INPUTS
+    - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
+    - "Visual cues:" lines ARE reliable evidence and SHOULD be used. They report
+      confirmed weapons (gun/knife — already filtered for false positives) and how
+      people look (hood, mask, dark clothing). A confirmed weapon is strong evidence
+      of criminal/dangerous activity; concealing appearance (hood + mask) is
+      strong evidence of suspicious behavior in a robbery context.
+    - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+      and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF RAW YOLO DATA
+    You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    (This prohibition does NOT apply to "Visual cues:" lines, which are allowed evidence.)
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - be based on semantic content from Florence (captions, OCR, behaviors) and/or
+      the "Visual cues:" lines (confirmed weapons, appearance attributes)
+    - describe meaningful actions, interactions, or unusual events
+    - NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "man holding phone instead of payment method"
+    - "customer leaning over cash register"
+    - "person reaching into backpack"
+    - "individual looking around nervously"
+    - "person wearing a hood and mask"
+    - "person appears to be holding a gun"
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+    - "bounding box moved left"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe behavioral or contextual anomalies
+    - be based on Florence semantic content
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- There are three people in the image, two men and one woman, standing in front of the counter. The man on the left is wearing a white shirt and is sitting at a desk with a computer monitor and other items on it. The woman on the right is standing behind the counter and appears to be looking at the items on display. YOLO tracker detected: ID 1: person (confidence 0.92) at [486,100,541,236]; ID 2: person (confidence 0.91) at [113,264,191,358]; ID 3: person (confidence 0.80) at [350,133,406,223]; ID 4: person (confidence 0.69) at [457,0,470,29].
+- The image is a CCTV footage of a jewelry store. There are three people in the image, two men and one woman, standing in front of the counter. The man on the left is wearing a white shirt and is sitting at a desk with a computer monitor and other items on it. Visual cues: a person wearing dark clothing. YOLO tracker detected: ID 2: person (confidence 0.91) at [115,263,190,358]; ID 9: person (confidence 0.89) at [421,102,464,235]; ID 3: person (confidence 0.87) at [348,132,406,223]; ID 7: person (confidence 0.87) at [481,100,541,236]; ID 10: person (confidence 0.82) at [481,100,542,235].
+- The image is a CCTV footage of a jewelry store. The walls are painted in a light beige color and there is a large painting hanging on the wall. On the left side of the image, there are several glass display cases with jewelry inside. Visual cues: a person wearing dark clothing, hooded person. YOLO tracker detected: ID 2: person (confidence 0.92) at [113,264,191,358]; ID 7: person (confidence 0.91) at [482,99,541,236]; ID 9: person (confidence 0.88) at [471,94,506,204]; ID 3: person (confidence 0.87) at [348,133,404,224]; ID 11: person (confidence 0.70) at [479,0,492,27].
+- The image is a CCTV footage of a jewelry store. The walls are painted in a light color and there is a large painting hanging on the wall on the left side of the image. In the center of the room, there are several glass display cases with jewelry inside. Visual cues: a person wearing dark clothing, hooded person, helmet. YOLO tracker detected: ID 2: person (confidence 0.92) at [115,264,191,358]; ID 7: person (confidence 0.87) at [485,95,537,233]; ID 3: person (confidence 0.86) at [348,131,405,225].
+- The counter is made of wood and has a computer monitor, keyboard, and other items on it. There are two men standing at the counter, one wearing a white shirt and the other wearing a black shirt. The man in the white shirt is holding a pen and appears to be explaining something to the other man. Visual cues: a person wearing helmet; a person wearing dark clothing, hooded person, helmet. YOLO tracker detected: ID 2: person (confidence 0.92) at [110,271,190,359]; ID 3: person (confidence 0.90) at [347,126,403,225]; ID 7: person (confidence 0.86) at [480,95,543,222]; ID 16: person (confidence 0.60) at [465,41,490,97].
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from two sources:
+    1. Florence (semantic captions, OCR, object descriptions, behaviors, interactions)
+    2. YOLO tracker (object IDs, classes, bounding boxes, continuity across frames)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+
+    ### 3. HOW TO USE THE INPUTS
+    - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
+    - "Visual cues:" lines ARE reliable evidence and SHOULD be used. They report
+      confirmed weapons (gun/knife — already filtered for false positives) and how
+      people look (hood, mask, dark clothing). A confirmed weapon is strong evidence
+      of criminal/dangerous activity; concealing appearance (hood + mask) is
+      strong evidence of suspicious behavior in a robbery context.
+    - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+      and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF RAW YOLO DATA
+    You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    (This prohibition does NOT apply to "Visual cues:" lines, which are allowed evidence.)
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - be based on semantic content from Florence (captions, OCR, behaviors) and/or
+      the "Visual cues:" lines (confirmed weapons, appearance attributes)
+    - describe meaningful actions, interactions, or unusual events
+    - NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "man holding phone instead of payment method"
+    - "customer leaning over cash register"
+    - "person reaching into backpack"
+    - "individual looking around nervously"
+    - "person wearing a hood and mask"
+    - "person appears to be holding a gun"
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+    - "bounding box moved left"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe behavioral or contextual anomalies
+    - be based on Florence semantic content
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- There are three people in the image, two men and one woman, standing in front of the counter. The man on the left is wearing a white shirt and is sitting at a desk with a computer monitor and other items on it. The woman on the right is standing behind the counter and appears to be looking at the items on display. YOLO tracker detected: ID 1: person (confidence 0.92) at [486,100,541,236]; ID 2: person (confidence 0.91) at [113,264,191,358]; ID 3: person (confidence 0.80) at [350,133,406,223]; ID 4: person (confidence 0.69) at [457,0,470,29].
+- The image is a CCTV footage of a jewelry store. There are three people in the image, two men and one woman, standing in front of the counter. The man on the left is wearing a white shirt and is sitting at a desk with a computer monitor and other items on it. Visual cues: a person wearing dark clothing. YOLO tracker detected: ID 2: person (confidence 0.91) at [115,263,190,358]; ID 9: person (confidence 0.89) at [421,102,464,235]; ID 3: person (confidence 0.87) at [348,132,406,223]; ID 7: person (confidence 0.87) at [481,100,541,236]; ID 10: person (confidence 0.82) at [481,100,542,235].
+- The image is a CCTV footage of a jewelry store. The walls are painted in a light beige color and there is a large painting hanging on the wall. On the left side of the image, there are several glass display cases with jewelry inside. Visual cues: a person wearing dark clothing, hooded person. YOLO tracker detected: ID 2: person (confidence 0.92) at [113,264,191,358]; ID 7: person (confidence 0.91) at [482,99,541,236]; ID 9: person (confidence 0.88) at [471,94,506,204]; ID 3: person (confidence 0.87) at [348,133,404,224]; ID 11: person (confidence 0.70) at [479,0,492,27].
+- The image is a CCTV footage of a jewelry store. The walls are painted in a light color and there is a large painting hanging on the wall on the left side of the image. In the center of the room, there are several glass display cases with jewelry inside. Visual cues: a person wearing dark clothing, hooded person, helmet. YOLO tracker detected: ID 2: person (confidence 0.92) at [115,264,191,358]; ID 7: person (confidence 0.87) at [485,95,537,233]; ID 3: person (confidence 0.86) at [348,131,405,225].
+- The counter is made of wood and has a computer monitor, keyboard, and other items on it. There are two men standing at the counter, one wearing a white shirt and the other wearing a black shirt. The man in the white shirt is holding a pen and appears to be explaining something to the other man. Visual cues: a person wearing helmet; a person wearing dark clothing, hooded person, helmet. YOLO tracker detected: ID 2: person (confidence 0.92) at [110,271,190,359]; ID 3: person (confidence 0.90) at [347,126,403,225]; ID 7: person (confidence 0.86) at [480,95,543,222]; ID 16: person (confidence 0.60) at [465,41,490,97].
+- The image is a CCTV footage of a jewelry store. The walls are painted in a light beige color and there is a large painting hanging on the wall. On the left side of the image, there are several glass display cases with jewelry inside. Visual cues: a person wearing helmet; a person wearing helmet. YOLO tracker detected: ID 3: person (confidence 0.89) at [349,126,403,223]; ID 2: person (confidence 0.89) at [92,281,169,359]; ID 16: person (confidence 0.88) at [443,46,473,114].
+- On the left side of the image, there is a man sitting at a desk with a computer monitor and papers in front of him. He is wearing a white shirt and appears to be working on a piece of paper. Next to him, there are two men standing behind the desk, one wearing an orange hard hat and the other wearing a black suit. Visual cues: a person wearing helmet; a person wearing helmet, hooded person. YOLO tracker detected: ID 16: person (confidence 0.90) at [420,52,451,158]; ID 3: person (confidence 0.89) at [348,128,402,224].
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from two sources:
+    1. Florence (semantic captions, OCR, object descriptions, behaviors, interactions)
+    2. YOLO tracker (object IDs, classes, bounding boxes, continuity across frames)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+
+    ### 3. HOW TO USE THE INPUTS
+    - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
+    - "Visual cues:" lines ARE reliable evidence and SHOULD be used. They report
+      confirmed weapons (gun/knife — already filtered for false positives) and how
+      people look (hood, mask, dark clothing). A confirmed weapon is strong evidence
+      of criminal/dangerous activity; concealing appearance (hood + mask) is
+      strong evidence of suspicious behavior in a robbery context.
+    - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+      and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF RAW YOLO DATA
+    You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    (This prohibition does NOT apply to "Visual cues:" lines, which are allowed evidence.)
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - be based on semantic content from Florence (captions, OCR, behaviors) and/or
+      the "Visual cues:" lines (confirmed weapons, appearance attributes)
+    - describe meaningful actions, interactions, or unusual events
+    - NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "man holding phone instead of payment method"
+    - "customer leaning over cash register"
+    - "person reaching into backpack"
+    - "individual looking around nervously"
+    - "person wearing a hood and mask"
+    - "person appears to be holding a gun"
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+    - "bounding box moved left"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe behavioral or contextual anomalies
+    - be based on Florence semantic content
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- There are three people in the image, two men and one woman, standing in front of the counter. The man on the left is wearing a white shirt and is sitting at a desk with a computer monitor and other items on it. The woman on the right is standing behind the counter and appears to be looking at the items on display. YOLO tracker detected: ID 1: person (confidence 0.92) at [486,100,541,236]; ID 2: person (confidence 0.91) at [113,264,191,358]; ID 3: person (confidence 0.80) at [350,133,406,223]; ID 4: person (confidence 0.69) at [457,0,470,29].
+- The image is a CCTV footage of a jewelry store. There are three people in the image, two men and one woman, standing in front of the counter. The man on the left is wearing a white shirt and is sitting at a desk with a computer monitor and other items on it. Visual cues: a person wearing dark clothing. YOLO tracker detected: ID 2: person (confidence 0.91) at [115,263,190,358]; ID 9: person (confidence 0.89) at [421,102,464,235]; ID 3: person (confidence 0.87) at [348,132,406,223]; ID 7: person (confidence 0.87) at [481,100,541,236]; ID 10: person (confidence 0.82) at [481,100,542,235].
+- The image is a CCTV footage of a jewelry store. The walls are painted in a light beige color and there is a large painting hanging on the wall. On the left side of the image, there are several glass display cases with jewelry inside. Visual cues: a person wearing dark clothing, hooded person. YOLO tracker detected: ID 2: person (confidence 0.92) at [113,264,191,358]; ID 7: person (confidence 0.91) at [482,99,541,236]; ID 9: person (confidence 0.88) at [471,94,506,204]; ID 3: person (confidence 0.87) at [348,133,404,224]; ID 11: person (confidence 0.70) at [479,0,492,27].
+- The image is a CCTV footage of a jewelry store. The walls are painted in a light color and there is a large painting hanging on the wall on the left side of the image. In the center of the room, there are several glass display cases with jewelry inside. Visual cues: a person wearing dark clothing, hooded person, helmet. YOLO tracker detected: ID 2: person (confidence 0.92) at [115,264,191,358]; ID 7: person (confidence 0.87) at [485,95,537,233]; ID 3: person (confidence 0.86) at [348,131,405,225].
+- The counter is made of wood and has a computer monitor, keyboard, and other items on it. There are two men standing at the counter, one wearing a white shirt and the other wearing a black shirt. The man in the white shirt is holding a pen and appears to be explaining something to the other man. Visual cues: a person wearing helmet; a person wearing dark clothing, hooded person, helmet. YOLO tracker detected: ID 2: person (confidence 0.92) at [110,271,190,359]; ID 3: person (confidence 0.90) at [347,126,403,225]; ID 7: person (confidence 0.86) at [480,95,543,222]; ID 16: person (confidence 0.60) at [465,41,490,97].
+- The image is a CCTV footage of a jewelry store. The walls are painted in a light beige color and there is a large painting hanging on the wall. On the left side of the image, there are several glass display cases with jewelry inside. Visual cues: a person wearing helmet; a person wearing helmet. YOLO tracker detected: ID 3: person (confidence 0.89) at [349,126,403,223]; ID 2: person (confidence 0.89) at [92,281,169,359]; ID 16: person (confidence 0.88) at [443,46,473,114].
+- On the left side of the image, there is a man sitting at a desk with a computer monitor and papers in front of him. He is wearing a white shirt and appears to be working on a piece of paper. Next to him, there are two men standing behind the desk, one wearing an orange hard hat and the other wearing a black suit. Visual cues: a person wearing helmet; a person wearing helmet, hooded person. YOLO tracker detected: ID 16: person (confidence 0.90) at [420,52,451,158]; ID 3: person (confidence 0.89) at [348,128,402,224].
+- On the left side of the image, there is a man sitting at a desk with a computer monitor and papers in front of him. He appears to be working on a project. In the background, there are several glass display cases with mannequins inside. Visual cues: a person wearing helmet, hooded person; a person wearing helmet, hooded person; a person wearing helmet. YOLO tracker detected: ID 16: person (confidence 0.91) at [400,71,437,179]; ID 3: person (confidence 0.91) at [348,117,396,223]; ID 21: person (confidence 0.83) at [66,290,172,359]; ID 20: person (confidence 0.67) at [464,92,513,229].
+- The desk is filled with various items such as books, papers, and other office supplies. There are two men standing in front of the desk, one wearing an orange hard hat and the other wearing a black hard hat. The man in the hard hat is holding a clipboard and appears to be explaining something to the other man. Visual cues: a person wearing helmet, hooded person; a person wearing helmet, hooded person; a person wearing helmet, hooded person. YOLO tracker detected: ID 16: person (confidence 0.90) at [386,78,435,199]; ID 3: person (confidence 0.89) at [348,120,395,222]; ID 20: person (confidence 0.73) at [457,96,513,238].
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from two sources:
+    1. Florence (semantic captions, OCR, object descriptions, behaviors, interactions)
+    2. YOLO tracker (object IDs, classes, bounding boxes, continuity across frames)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+
+    ### 3. HOW TO USE THE INPUTS
+    - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
+    - "Visual cues:" lines ARE reliable evidence and SHOULD be used. They report
+      confirmed weapons (gun/knife — already filtered for false positives) and how
+      people look (hood, mask, dark clothing). A confirmed weapon is strong evidence
+      of criminal/dangerous activity; concealing appearance (hood + mask) is
+      strong evidence of suspicious behavior in a robbery context.
+    - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+      and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF RAW YOLO DATA
+    You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    (This prohibition does NOT apply to "Visual cues:" lines, which are allowed evidence.)
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - be based on semantic content from Florence (captions, OCR, behaviors) and/or
+      the "Visual cues:" lines (confirmed weapons, appearance attributes)
+    - describe meaningful actions, interactions, or unusual events
+    - NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "man holding phone instead of payment method"
+    - "customer leaning over cash register"
+    - "person reaching into backpack"
+    - "individual looking around nervously"
+    - "person wearing a hood and mask"
+    - "person appears to be holding a gun"
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+    - "bounding box moved left"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe behavioral or contextual anomalies
+    - be based on Florence semantic content
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- The image is a CCTV footage of a jewelry store. There are three people in the image, two men and one woman, standing in front of the counter. The man on the left is wearing a white shirt and is sitting at a desk with a computer monitor and other items on it. Visual cues: a person wearing dark clothing. YOLO tracker detected: ID 2: person (confidence 0.91) at [115,263,190,358]; ID 9: person (confidence 0.89) at [421,102,464,235]; ID 3: person (confidence 0.87) at [348,132,406,223]; ID 7: person (confidence 0.87) at [481,100,541,236]; ID 10: person (confidence 0.82) at [481,100,542,235].
+- The image is a CCTV footage of a jewelry store. The walls are painted in a light beige color and there is a large painting hanging on the wall. On the left side of the image, there are several glass display cases with jewelry inside. Visual cues: a person wearing dark clothing, hooded person. YOLO tracker detected: ID 2: person (confidence 0.92) at [113,264,191,358]; ID 7: person (confidence 0.91) at [482,99,541,236]; ID 9: person (confidence 0.88) at [471,94,506,204]; ID 3: person (confidence 0.87) at [348,133,404,224]; ID 11: person (confidence 0.70) at [479,0,492,27].
+- The image is a CCTV footage of a jewelry store. The walls are painted in a light color and there is a large painting hanging on the wall on the left side of the image. In the center of the room, there are several glass display cases with jewelry inside. Visual cues: a person wearing dark clothing, hooded person, helmet. YOLO tracker detected: ID 2: person (confidence 0.92) at [115,264,191,358]; ID 7: person (confidence 0.87) at [485,95,537,233]; ID 3: person (confidence 0.86) at [348,131,405,225].
+- The counter is made of wood and has a computer monitor, keyboard, and other items on it. There are two men standing at the counter, one wearing a white shirt and the other wearing a black shirt. The man in the white shirt is holding a pen and appears to be explaining something to the other man. Visual cues: a person wearing helmet; a person wearing dark clothing, hooded person, helmet. YOLO tracker detected: ID 2: person (confidence 0.92) at [110,271,190,359]; ID 3: person (confidence 0.90) at [347,126,403,225]; ID 7: person (confidence 0.86) at [480,95,543,222]; ID 16: person (confidence 0.60) at [465,41,490,97].
+- The image is a CCTV footage of a jewelry store. The walls are painted in a light beige color and there is a large painting hanging on the wall. On the left side of the image, there are several glass display cases with jewelry inside. Visual cues: a person wearing helmet; a person wearing helmet. YOLO tracker detected: ID 3: person (confidence 0.89) at [349,126,403,223]; ID 2: person (confidence 0.89) at [92,281,169,359]; ID 16: person (confidence 0.88) at [443,46,473,114].
+- On the left side of the image, there is a man sitting at a desk with a computer monitor and papers in front of him. He is wearing a white shirt and appears to be working on a piece of paper. Next to him, there are two men standing behind the desk, one wearing an orange hard hat and the other wearing a black suit. Visual cues: a person wearing helmet; a person wearing helmet, hooded person. YOLO tracker detected: ID 16: person (confidence 0.90) at [420,52,451,158]; ID 3: person (confidence 0.89) at [348,128,402,224].
+- On the left side of the image, there is a man sitting at a desk with a computer monitor and papers in front of him. He appears to be working on a project. In the background, there are several glass display cases with mannequins inside. Visual cues: a person wearing helmet, hooded person; a person wearing helmet, hooded person; a person wearing helmet. YOLO tracker detected: ID 16: person (confidence 0.91) at [400,71,437,179]; ID 3: person (confidence 0.91) at [348,117,396,223]; ID 21: person (confidence 0.83) at [66,290,172,359]; ID 20: person (confidence 0.67) at [464,92,513,229].
+- The desk is filled with various items such as books, papers, and other office supplies. There are two men standing in front of the desk, one wearing an orange hard hat and the other wearing a black hard hat. The man in the hard hat is holding a clipboard and appears to be explaining something to the other man. Visual cues: a person wearing helmet, hooded person; a person wearing helmet, hooded person; a person wearing helmet, hooded person. YOLO tracker detected: ID 16: person (confidence 0.90) at [386,78,435,199]; ID 3: person (confidence 0.89) at [348,120,395,222]; ID 20: person (confidence 0.73) at [457,96,513,238].
+- The desk is filled with various items such as books, papers, and other office supplies. There are two men standing at the desk, one wearing an orange hard hat and the other wearing a black hard hat. The man in the hard hat is holding a clipboard and appears to be explaining something to the other man. Visual cues: a person wearing helmet, hooded person; a person wearing helmet, hooded person. YOLO tracker detected: ID 3: person (confidence 0.88) at [349,127,396,222]; ID 16: person (confidence 0.78) at [353,89,406,159].
+- On the desk, there are various items such as papers, books, and other office supplies. There are two men in the image, one wearing an orange hard hat and the other wearing a black hard hat. They appear to be working on a computer or other electronic device. Visual cues: a person wearing helmet. YOLO tracker detected: ID 25: person (confidence 0.74) at [71,283,164,359]; ID 24: person (confidence 0.71) at [336,97,386,202].
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from two sources:
+    1. Florence (semantic captions, OCR, object descriptions, behaviors, interactions)
+    2. YOLO tracker (object IDs, classes, bounding boxes, continuity across frames)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+
+    ### 3. HOW TO USE THE INPUTS
+    - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
+    - "Visual cues:" lines ARE reliable evidence and SHOULD be used. They report
+      confirmed weapons (gun/knife — already filtered for false positives) and how
+      people look (hood, mask, dark clothing). A confirmed weapon is strong evidence
+      of criminal/dangerous activity; concealing appearance (hood + mask) is
+      strong evidence of suspicious behavior in a robbery context.
+    - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+      and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF RAW YOLO DATA
+    You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    (This prohibition does NOT apply to "Visual cues:" lines, which are allowed evidence.)
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - be based on semantic content from Florence (captions, OCR, behaviors) and/or
+      the "Visual cues:" lines (confirmed weapons, appearance attributes)
+    - describe meaningful actions, interactions, or unusual events
+    - NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "man holding phone instead of payment method"
+    - "customer leaning over cash register"
+    - "person reaching into backpack"
+    - "individual looking around nervously"
+    - "person wearing a hood and mask"
+    - "person appears to be holding a gun"
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+    - "bounding box moved left"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe behavioral or contextual anomalies
+    - be based on Florence semantic content
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- The image is a CCTV footage of a jewelry store. The walls are painted in a light color and there is a large painting hanging on the wall on the left side of the image. In the center of the room, there are several glass display cases with jewelry inside. Visual cues: a person wearing dark clothing, hooded person, helmet. YOLO tracker detected: ID 2: person (confidence 0.92) at [115,264,191,358]; ID 7: person (confidence 0.87) at [485,95,537,233]; ID 3: person (confidence 0.86) at [348,131,405,225].
+- The counter is made of wood and has a computer monitor, keyboard, and other items on it. There are two men standing at the counter, one wearing a white shirt and the other wearing a black shirt. The man in the white shirt is holding a pen and appears to be explaining something to the other man. Visual cues: a person wearing helmet; a person wearing dark clothing, hooded person, helmet. YOLO tracker detected: ID 2: person (confidence 0.92) at [110,271,190,359]; ID 3: person (confidence 0.90) at [347,126,403,225]; ID 7: person (confidence 0.86) at [480,95,543,222]; ID 16: person (confidence 0.60) at [465,41,490,97].
+- The image is a CCTV footage of a jewelry store. The walls are painted in a light beige color and there is a large painting hanging on the wall. On the left side of the image, there are several glass display cases with jewelry inside. Visual cues: a person wearing helmet; a person wearing helmet. YOLO tracker detected: ID 3: person (confidence 0.89) at [349,126,403,223]; ID 2: person (confidence 0.89) at [92,281,169,359]; ID 16: person (confidence 0.88) at [443,46,473,114].
+- On the left side of the image, there is a man sitting at a desk with a computer monitor and papers in front of him. He is wearing a white shirt and appears to be working on a piece of paper. Next to him, there are two men standing behind the desk, one wearing an orange hard hat and the other wearing a black suit. Visual cues: a person wearing helmet; a person wearing helmet, hooded person. YOLO tracker detected: ID 16: person (confidence 0.90) at [420,52,451,158]; ID 3: person (confidence 0.89) at [348,128,402,224].
+- On the left side of the image, there is a man sitting at a desk with a computer monitor and papers in front of him. He appears to be working on a project. In the background, there are several glass display cases with mannequins inside. Visual cues: a person wearing helmet, hooded person; a person wearing helmet, hooded person; a person wearing helmet. YOLO tracker detected: ID 16: person (confidence 0.91) at [400,71,437,179]; ID 3: person (confidence 0.91) at [348,117,396,223]; ID 21: person (confidence 0.83) at [66,290,172,359]; ID 20: person (confidence 0.67) at [464,92,513,229].
+- The desk is filled with various items such as books, papers, and other office supplies. There are two men standing in front of the desk, one wearing an orange hard hat and the other wearing a black hard hat. The man in the hard hat is holding a clipboard and appears to be explaining something to the other man. Visual cues: a person wearing helmet, hooded person; a person wearing helmet, hooded person; a person wearing helmet, hooded person. YOLO tracker detected: ID 16: person (confidence 0.90) at [386,78,435,199]; ID 3: person (confidence 0.89) at [348,120,395,222]; ID 20: person (confidence 0.73) at [457,96,513,238].
+- The desk is filled with various items such as books, papers, and other office supplies. There are two men standing at the desk, one wearing an orange hard hat and the other wearing a black hard hat. The man in the hard hat is holding a clipboard and appears to be explaining something to the other man. Visual cues: a person wearing helmet, hooded person; a person wearing helmet, hooded person. YOLO tracker detected: ID 3: person (confidence 0.88) at [349,127,396,222]; ID 16: person (confidence 0.78) at [353,89,406,159].
+- On the desk, there are various items such as papers, books, and other office supplies. There are two men in the image, one wearing an orange hard hat and the other wearing a black hard hat. They appear to be working on a computer or other electronic device. Visual cues: a person wearing helmet. YOLO tracker detected: ID 25: person (confidence 0.74) at [71,283,164,359]; ID 24: person (confidence 0.71) at [336,97,386,202].
+- The desk is filled with various items such as books, papers, and other office supplies. There are two men standing at the desk, one wearing an orange hard hat and the other wearing a blue hard hat. The man in the hard hat is looking at a computer screen and appears to be working on a project. Visual cues: a person wearing helmet; a person wearing helmet, hooded person. YOLO tracker detected: ID 26: person (confidence 0.73) at [330,95,367,197]; ID 24: person (confidence 0.70) at [354,126,396,222].
+- The image is a CCTV footage of a jewelry store. The walls are painted in a light beige color and there is a large painting hanging on the wall on the left side of the image. In the center of the room, there are two men standing in front of a counter with various jewelry items on display. Visual cues: a person wearing helmet; a person wearing helmet, hooded person. YOLO tracker detected: ID 28: person (confidence 0.78) at [320,102,370,197]; ID 24: person (confidence 0.75) at [357,114,417,227].
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from two sources:
+    1. Florence (semantic captions, OCR, object descriptions, behaviors, interactions)
+    2. YOLO tracker (object IDs, classes, bounding boxes, continuity across frames)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+
+    ### 3. HOW TO USE THE INPUTS
+    - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
+    - "Visual cues:" lines ARE reliable evidence and SHOULD be used. They report
+      confirmed weapons (gun/knife — already filtered for false positives) and how
+      people look (hood, mask, dark clothing). A confirmed weapon is strong evidence
+      of criminal/dangerous activity; concealing appearance (hood + mask) is
+      strong evidence of suspicious behavior in a robbery context.
+    - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+      and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF RAW YOLO DATA
+    You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    (This prohibition does NOT apply to "Visual cues:" lines, which are allowed evidence.)
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - be based on semantic content from Florence (captions, OCR, behaviors) and/or
+      the "Visual cues:" lines (confirmed weapons, appearance attributes)
+    - describe meaningful actions, interactions, or unusual events
+    - NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "man holding phone instead of payment method"
+    - "customer leaning over cash register"
+    - "person reaching into backpack"
+    - "individual looking around nervously"
+    - "person wearing a hood and mask"
+    - "person appears to be holding a gun"
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+    - "bounding box moved left"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe behavioral or contextual anomalies
+    - be based on Florence semantic content
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- The image is a CCTV footage of a jewelry store. The walls are painted in a light beige color and there is a large painting hanging on the wall. On the left side of the image, there are several glass display cases with jewelry inside. Visual cues: a person wearing helmet; a person wearing helmet. YOLO tracker detected: ID 3: person (confidence 0.89) at [349,126,403,223]; ID 2: person (confidence 0.89) at [92,281,169,359]; ID 16: person (confidence 0.88) at [443,46,473,114].
+- On the left side of the image, there is a man sitting at a desk with a computer monitor and papers in front of him. He is wearing a white shirt and appears to be working on a piece of paper. Next to him, there are two men standing behind the desk, one wearing an orange hard hat and the other wearing a black suit. Visual cues: a person wearing helmet; a person wearing helmet, hooded person. YOLO tracker detected: ID 16: person (confidence 0.90) at [420,52,451,158]; ID 3: person (confidence 0.89) at [348,128,402,224].
+- On the left side of the image, there is a man sitting at a desk with a computer monitor and papers in front of him. He appears to be working on a project. In the background, there are several glass display cases with mannequins inside. Visual cues: a person wearing helmet, hooded person; a person wearing helmet, hooded person; a person wearing helmet. YOLO tracker detected: ID 16: person (confidence 0.91) at [400,71,437,179]; ID 3: person (confidence 0.91) at [348,117,396,223]; ID 21: person (confidence 0.83) at [66,290,172,359]; ID 20: person (confidence 0.67) at [464,92,513,229].
+- The desk is filled with various items such as books, papers, and other office supplies. There are two men standing in front of the desk, one wearing an orange hard hat and the other wearing a black hard hat. The man in the hard hat is holding a clipboard and appears to be explaining something to the other man. Visual cues: a person wearing helmet, hooded person; a person wearing helmet, hooded person; a person wearing helmet, hooded person. YOLO tracker detected: ID 16: person (confidence 0.90) at [386,78,435,199]; ID 3: person (confidence 0.89) at [348,120,395,222]; ID 20: person (confidence 0.73) at [457,96,513,238].
+- The desk is filled with various items such as books, papers, and other office supplies. There are two men standing at the desk, one wearing an orange hard hat and the other wearing a black hard hat. The man in the hard hat is holding a clipboard and appears to be explaining something to the other man. Visual cues: a person wearing helmet, hooded person; a person wearing helmet, hooded person. YOLO tracker detected: ID 3: person (confidence 0.88) at [349,127,396,222]; ID 16: person (confidence 0.78) at [353,89,406,159].
+- On the desk, there are various items such as papers, books, and other office supplies. There are two men in the image, one wearing an orange hard hat and the other wearing a black hard hat. They appear to be working on a computer or other electronic device. Visual cues: a person wearing helmet. YOLO tracker detected: ID 25: person (confidence 0.74) at [71,283,164,359]; ID 24: person (confidence 0.71) at [336,97,386,202].
+- The desk is filled with various items such as books, papers, and other office supplies. There are two men standing at the desk, one wearing an orange hard hat and the other wearing a blue hard hat. The man in the hard hat is looking at a computer screen and appears to be working on a project. Visual cues: a person wearing helmet; a person wearing helmet, hooded person. YOLO tracker detected: ID 26: person (confidence 0.73) at [330,95,367,197]; ID 24: person (confidence 0.70) at [354,126,396,222].
+- The image is a CCTV footage of a jewelry store. The walls are painted in a light beige color and there is a large painting hanging on the wall on the left side of the image. In the center of the room, there are two men standing in front of a counter with various jewelry items on display. Visual cues: a person wearing helmet; a person wearing helmet, hooded person. YOLO tracker detected: ID 28: person (confidence 0.78) at [320,102,370,197]; ID 24: person (confidence 0.75) at [357,114,417,227].
+- There are three people in the image, two men and one woman, standing in front of the counter. The man on the left is wearing a blue shirt and a baseball cap, while the man in the middle is wearing an orange shirt and black pants. The woman on the right is standing behind the counter and appears to be looking at the items on display. Visual cues: a person wearing helmet, hooded person; a person wearing helmet. YOLO tracker detected: ID 24: person (confidence 0.91) at [381,100,432,220]; ID 28: person (confidence 0.89) at [262,106,304,180].
+- The image is a CCTV footage of a jewelry store. The display case is filled with various jewelry items such as necklaces, earrings, and bracelets. There are three men standing in front of the display case, one of them is wearing a blue shirt and the other two are wearing white shirts. Visual cues: a person wearing helmet, hooded person; a person wearing hooded person. YOLO tracker detected: ID 24: person (confidence 0.91) at [382,89,426,227]; ID 30: person (confidence 0.62) at [197,130,247,259].
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
