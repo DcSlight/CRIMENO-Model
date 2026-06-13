@@ -1,11 +1,211 @@
-: 0.36244556307792664, 'source': 'suspicious', 'bbox': {'x1': 38, 'y1': 54, 'x2': 287, 'y2': 185}}], 'motion_detected': False}
-[TRACKER] Sending to Qwen: {'type': 'tracker_frame', 'frame_index': 470, 'video_time_ms': 15666, 'frame_size': {'w': 320, 'h': 240}, 'tracks': [{'track_id': 3, 'cls': 'Man_with_Knife', 'conf': 0.8110489845275879, 'source': 'suspicious', 'bbox': {'x1': 35, 'y1': 54, 'x2': 289, 'y2': 185}}], 'motion_detected': False}
-[TRACKER] processed=195 last_frame=470 tracks=1
-[TRACKER/reset-watcher] Reset received — forwarding to Groq, waiting for pipeline to clear
-[TRACKER] Sent UI clear payload on reset
-[TRACKER] Drained 16 stale frames after reset (post-inference)
-[TRACKER] Reset happened mid-inference — discarding stale results
-[TRACKER/reset-watcher] Ack sent to broadcaster
-[TRACKER] First frame received (idx=497)
-[TRACKER] Sending to Qwen: {'type': 'tracker_frame', 'frame_index': 500, 'video_time_ms': 16666, 'frame_size': {'w': 320, 'h': 240}, 'tracks': [{'track_id': 1, 'cls': 'person', 'conf': 0.6818814873695374, 'source': 'objects', 'bbox': {'x1': 154, 'y1': 44, 'x2': 219, 'y2': 111}}, {'track_id': 2, 'cls': 'Man_with_Knife', 'conf': 0.8026968240737915, 'source': 'suspicious', 'bbox': {'x1': 34, 'y1': 54, 'x2': 289, 'y2': 185}}], 'motion_detected': False}
-[TRACKER] Sending to Qwen: {'type': 'tracker_frame', 'frame_index': 510, 'video_time_ms': 17000, 'frame_size': {'w': 320, 'h': 240}, 'tracks': [{'track_id': 2, 'cls': 'Man_with_Knife', 'conf': 0.8041930794715881, 'source': 'suspicious', 'bbox': {'x1': 32, 'y1': 53, 'x2': 289, 'y2': 185}}], 'motion_detected': False}
+----------------------------- GROQ OUTPUT ----------------------------------
+
+
+PS C:\Users\idan.noyshul\Documents\GitHub\CRIMENO-Model> python groq_anomaly_worker.py --ws_url ws://127.0.0.1:3000/ws/groq
+🔗 Groq worker bound on tcp://127.0.0.1:5581
+[INFO] Initializing Groq client. ZMQ receiver is already bound.
+✅ Groq client initialized
+[WS] Connected: ws://127.0.0.1:3000/ws/groq
+[GROQ] Reset received — cleared raw_queue, event_history, tracker_buffer
+[GROQ] Reset received — cleared raw_queue, event_history, tracker_buffer
+[CTX] Received business context: Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+[DEBUG] New event: The image is a CCTV footage of a jewelry store. The walls are painted in a light beige color and there is a large painting hanging on the wall. On the left side of the image, there are several glass display cases with jewelry inside. Visual cues: a person wearing dark clothing, hooded person. YOLO tracker detected: ID 2: person (confidence 0.92) at [113,264,191,358]; ID 7: person (confidence 0.91) at [482,99,541,236]; ID 9: person (confidence 0.88) at [471,94,506,204]; ID 3: person (confidence 0.87) at [348,133,404,224]; ID 11: person (confidence 0.70) at [479,0,492,27].
+[DEBUG] No last event, treating as significant change.
+[DEBUG] Significant change detected → SEND to Groq.
+[CTX] Injecting business context into prompt:
+Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+
+==================== Anomaly decision ====================
+Frames 0–60
+{
+  "anomaly_score": 0.7,
+  "label": "suspicious",
+  "reason": "Person wearing dark clothing and hood",
+  "key_moments": [
+    "person wearing dark clothing",
+    "hooded person"
+  ]
+}
+=========================================================
+
+[WS] Sent anomaly result to NestJS
+[DEBUG] New event: The counter is made of wood and has a computer monitor, keyboard, and other items on it. There are two men standing at the counter, one wearing a white shirt and the other wearing a black shirt. The man in the white shirt is holding a pen and appears to be explaining something to the other man. Visual cues: a person wearing helmet; a person wearing dark clothing, hooded person, helmet. YOLO tracker detected: ID 2: person (confidence 0.92) at [110,271,190,359]; ID 3: person (confidence 0.90) at [347,126,403,225]; ID 7: person (confidence 0.86) at [480,95,543,222]; ID 16: person (confidence 0.60) at [465,41,490,97].
+[DEBUG] Similarity to last event: 0.260
+[DEBUG] Significant change detected → SEND to Groq.
+[CTX] Injecting business context into prompt:
+Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+
+==================== Anomaly decision ====================
+Frames 60–120
+{
+  "anomaly_score": 0.7,
+  "label": "suspicious",
+  "reason": "Hooded person with dark clothing",
+  "key_moments": [
+    "person wearing dark clothing",
+    "hooded person",
+    "person wearing helmet"
+  ]
+}
+=========================================================
+
+[WS] Sent anomaly result to NestJS
+[DEBUG] New event: On the left side of the image, there is a man sitting at a desk with a computer monitor and papers in front of him. He is wearing a white shirt and appears to be working on a piece of paper. Next to him, there are two men standing behind the desk, one wearing an orange hard hat and the other wearing a black suit. Visual cues: a person wearing helmet; a person wearing helmet, hooded person. YOLO tracker detected: ID 16: person (confidence 0.90) at [420,52,451,158]; ID 3: person (confidence 0.89) at [348,128,402,224].
+[DEBUG] Similarity to last event: 0.398
+[DEBUG] Significant change detected → SEND to Groq.
+[CTX] Injecting business context into prompt:
+Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+
+==================== Anomaly decision ====================
+Frames 120–180
+{
+  "anomaly_score": 0.7,
+  "label": "suspicious",
+  "reason": "Hooded person with helmet",
+  "key_moments": [
+    "person wearing dark clothing",
+    "hooded person",
+    "person wearing helmet"
+  ]
+}
+=========================================================
+
+[WS] Sent anomaly result to NestJS
+[DEBUG] New event: The desk is filled with various items such as books, papers, and other office supplies. There are two men standing in front of the desk, one wearing an orange hard hat and the other wearing a black hard hat. The man in the hard hat is holding a clipboard and appears to be explaining something to the other man. Visual cues: a person wearing helmet, hooded person; a person wearing helmet, hooded person; a person wearing helmet, hooded person. YOLO tracker detected: ID 16: person (confidence 0.90) at [386,78,435,199]; ID 3: person (confidence 0.89) at [348,120,395,222]; ID 20: person (confidence 0.73) at [457,96,513,238].
+[DEBUG] Similarity to last event: 0.500
+[DEBUG] Significant change detected → SEND to Groq.
+[CTX] Injecting business context into prompt:
+Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+
+==================== Anomaly decision ====================
+Frames 180–240
+{
+  "anomaly_score": 0.7,
+  "label": "suspicious",
+  "reason": "Multiple people wearing helmets and hoods",
+  "key_moments": [
+    "person wearing dark clothing",
+    "hooded person",
+    "person wearing helmet"
+  ]
+}
+=========================================================
+
+[WS] Sent anomaly result to NestJS
+[DEBUG] New event: On the desk, there are various items such as papers, books, and other office supplies. There are two men in the image, one wearing an orange hard hat and the other wearing a black hard hat. They appear to be working on a computer or other electronic device. Visual cues: a person wearing helmet. YOLO tracker detected: ID 25: person (confidence 0.74) at [71,283,164,359]; ID 24: person (confidence 0.71) at [336,97,386,202].
+[DEBUG] Similarity to last event: 0.463
+[DEBUG] Significant change detected → SEND to Groq.
+[CTX] Injecting business context into prompt:
+Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+
+==================== Anomaly decision ====================
+Frames 240–300
+{
+  "anomaly_score": 0.9,
+  "label": "criminal",
+  "reason": "Multiple people wearing helmets and hoods",
+  "key_moments": [
+    "person wearing helmet",
+    "person wearing dark clothing, hooded person",
+    "multiple people wearing helmets and hoods"
+  ]
+}
+=========================================================
+
+[WS] Sent anomaly result to NestJS
+[DEBUG] New event: The image is a CCTV footage of a jewelry store. The walls are painted in a light beige color and there is a large painting hanging on the wall on the left side of the image. In the center of the room, there are two men standing in front of a counter with various jewelry items on display. Visual cues: a person wearing helmet; a person wearing helmet, hooded person. YOLO tracker detected: ID 28: person (confidence 0.78) at [320,102,370,197]; ID 24: person (confidence 0.75) at [357,114,417,227].
+[DEBUG] Similarity to last event: 0.250
+[DEBUG] Significant change detected → SEND to Groq.
+[CTX] Injecting business context into prompt:
+Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+
+==================== Anomaly decision ====================
+Frames 300–360
+{
+  "anomaly_score": 0.7,
+  "label": "suspicious",
+  "reason": "Multiple people wearing helmets and hoods",
+  "key_moments": [
+    "person wearing helmet and hood",
+    "multiple people wearing helmets",
+    "individuals wearing dark clothing"
+  ]
+}
+=========================================================
+
+[WS] Sent anomaly result to NestJS
+[DEBUG] New event: The image is a CCTV footage of a jewelry store. The display case is filled with various jewelry items such as necklaces, earrings, and bracelets. There are three men standing in front of the display case, one of them is wearing a blue shirt and the other two are wearing white shirts. Visual cues: a person wearing helmet, hooded person; a person wearing hooded person. YOLO tracker detected: ID 24: person (confidence 0.91) at [382,89,426,227]; ID 30: person (confidence 0.62) at [197,130,247,259].
+[DEBUG] Similarity to last event: 0.425
+[DEBUG] Significant change detected → SEND to Groq.
+[CTX] Injecting business context into prompt:
+Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+
+==================== Anomaly decision ====================
+Frames 360–420
+{
+  "anomaly_score": 0.7,
+  "label": "suspicious",
+  "reason": "Multiple people wearing helmets",
+  "key_moments": [
+    "person wearing helmet",
+    "person wearing helmet and hood",
+    "multiple people in hard hats near display cases"
+  ]
+}
+=========================================================
