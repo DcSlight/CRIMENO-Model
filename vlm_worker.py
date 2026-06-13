@@ -39,13 +39,20 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 
 # Fixed robbery-focused question set asked of the full frame each cycle.
-# Keep questions short and yes/no-ish so the VLM answers are terse and parseable.
+# PaliGemma-friendly: ONE free-form "describe" (its strongest mode) + atomic yes/no
+# cues. Never list multiple distinct actions with "or" in one question — PaliGemma
+# echoes the last option instead of reasoning (the old "...or running?" always
+# answered "running"). yes/no questions may join near-synonyms (one concept) safely.
 QUESTIONS: List[tuple] = [
-    ("activity", "What is happening in this store right now?"),
-    ("weapon", "Is anyone holding a weapon? If yes, what weapon?"),
-    ("theft", "Is anyone taking items, reaching over the counter, forcing a display case, or running?"),
-    ("concealed", "Is anyone's face covered by a mask or balaclava?"),
+    ("actions", "Describe what each person is doing."),
+    ("gun", "Is anyone holding a gun?"),
+    ("counter", "Is a person reaching over the counter or into a display case?"),
+    ("handsup", "Does anyone have their hands raised in the air?"),
+    ("mask", "Is anyone's face covered by a mask, hood, or helmet?"),
 ]
+
+# The describe question gets room; yes/no answers are capped short to stay terse + fast.
+SHORT_ANSWER_TOKENS = 12
 
 
 def now_unix_ms() -> int:
@@ -88,11 +95,15 @@ def ask_vlm(model, processor, device, dtype, image: Image.Image, question: str,
     return processor.decode(generated, skip_special_tokens=True).strip()
 
 
-def analyze_frame(model, processor, device, dtype, image: Image.Image) -> Dict[str, str]:
+def analyze_frame(model, processor, device, dtype, image: Image.Image,
+                  max_new_tokens: int = 64) -> Dict[str, str]:
     answers: Dict[str, str] = {}
     for key, q in QUESTIONS:
+        # Free-form describe gets the full budget; yes/no cues stay short.
+        tokens = max_new_tokens if key == "actions" else SHORT_ANSWER_TOKENS
         try:
-            answers[key] = ask_vlm(model, processor, device, dtype, image, q)
+            answers[key] = ask_vlm(model, processor, device, dtype, image, q,
+                                   max_new_tokens=tokens)
         except Exception as e:
             answers[key] = f"[ERROR] {e}"
     return answers
@@ -100,10 +111,11 @@ def analyze_frame(model, processor, device, dtype, image: Image.Image) -> Dict[s
 
 def build_summary(answers: Dict[str, str]) -> str:
     return (
-        f"Activity: {answers.get('activity', '-')}. "
-        f"Weapon: {answers.get('weapon', '-')}. "
-        f"Theft/forbidden action: {answers.get('theft', '-')}. "
-        f"Concealed faces: {answers.get('concealed', '-')}."
+        f"People's actions: {answers.get('actions', '-')}. "
+        f"Gun visible: {answers.get('gun', '-')}. "
+        f"Reaching over counter/display case: {answers.get('counter', '-')}. "
+        f"Hands raised (possible victim): {answers.get('handsup', '-')}. "
+        f"Face concealed: {answers.get('mask', '-')}."
     )
 
 
@@ -156,7 +168,8 @@ async def main_async():
     parser.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
     parser.add_argument("--process_every_n_frames", "--every", dest="process_every_n_frames",
                         type=int, default=30, help="Analyze one frame every N frames.")
-    parser.add_argument("--max_new_tokens", type=int, default=48)
+    parser.add_argument("--max_new_tokens", type=int, default=64,
+                        help="Token budget for the free-form 'describe' answer; yes/no cues are capped short.")
     parser.add_argument("--test", default="none")
     args = parser.parse_args()
 
@@ -234,7 +247,7 @@ async def main_async():
 
             # Heavy VLM inference off the event loop so WS stays responsive.
             answers = await asyncio.to_thread(
-                analyze_frame, model, processor, device, dtype, image
+                analyze_frame, model, processor, device, dtype, image, args.max_new_tokens
             )
             summary = build_summary(answers)
 
