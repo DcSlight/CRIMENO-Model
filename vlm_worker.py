@@ -196,13 +196,19 @@ def _sanitize(d: Dict) -> Dict[str, str]:
     return result
 
 
+def _clean(v: str) -> str:
+    """Strip trailing punctuation/whitespace so build_summary can append its own separator cleanly.
+    Prevents double-dots when Qwen's free-text fields already end with a period."""
+    return str(v).strip().rstrip(". ").strip()
+
+
 def build_summary(qa: Dict[str, str]) -> str:
     """Flatten the structured QA dict into the single-line summary consumed by build_vlm_sentence."""
     return (
-        f"Scene: {qa.get('description', '-')}. "
-        f"People: {qa.get('people_actions', '-')}. "
-        f"Appearance: {qa.get('appearance', '-')}. "
-        f"Weapon: {qa.get('weapon', 'none')}. "
+        f"Scene: {_clean(qa.get('description', '-'))}. "
+        f"People: {_clean(qa.get('people_actions', '-'))}. "
+        f"Appearance: {_clean(qa.get('appearance', '-'))}. "
+        f"Weapon: {_clean(qa.get('weapon', 'none'))}. "
         f"Gun visible: {qa.get('gun', 'no')}. "
         f"Knife visible: {qa.get('knife', 'no')}. "
         f"Reaching over counter: {qa.get('reaching_counter', 'no')}. "
