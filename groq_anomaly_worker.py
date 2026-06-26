@@ -17,7 +17,6 @@ load_dotenv()
 GROQ_MODEL_NAME = "llama-3.3-70b-versatile"
 ZMQ_ENDPOINT = "tcp://127.0.0.1:5581"
 
-BASE_WINDOW_SIZE = 3
 MAX_QUEUE_SIZE = 30
 MAX_EVENT_HISTORY = 10
 
@@ -195,15 +194,12 @@ def build_vlm_sentence(rec: Dict[str, Any]) -> str:
 
 
 def build_event_sentence(rec: Dict[str, Any]) -> str:
-    caption = rec.get("raw", {}).get("more_detailed_caption", "")
-    cleaned = clean_caption(caption)
-
     vlm_text = build_vlm_sentence(rec)
     appearance_text = build_appearance_weapon_sentence(rec)
     tracker_text = build_tracker_sentence(rec)
 
-    # VLM behavior first (most action-aware), then scene caption, then tracker cues.
-    parts = [p for p in (vlm_text, cleaned, appearance_text, tracker_text) if p]
+    # VLM behavior first (most action-aware), then tracker/appearance cues.
+    parts = [p for p in (vlm_text, appearance_text, tracker_text) if p]
     if parts:
         return " ".join(parts)
 
@@ -282,8 +278,8 @@ def build_prompt(scene_description: str) -> str:
 
     You receive short textual descriptions of what happens in a surveillance video over time.
     These descriptions come from two sources:
-    1. Florence (semantic captions, OCR, object descriptions, behaviors, interactions)
-    2. YOLO tracker (object IDs, classes, bounding boxes, continuity across frames)
+    1. VLM observation (full-frame behavioral Q&A: actions, weapons, theft cues, concealment)
+    2. YOLO tracker (object IDs, classes, bounding boxes, weapon alerts, continuity across frames)
 
     Your task is to determine whether the described situation represents:
     - normal everyday behavior,
@@ -316,7 +312,6 @@ def build_prompt(scene_description: str) -> str:
     - "VLM observation:" lines come from a vision model that looked directly at the
       frame and answered specific questions (activity, weapons, theft/forbidden
       actions, concealed faces). Treat this as the PRIMARY behavioral evidence.
-      Florence captions are secondary scene context.
     - "WEAPON ALERT:" lines are STRONG evidence (weapons are person-gated + confirmed)
       and can justify "criminal" on their own.
     - "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
@@ -340,7 +335,7 @@ def build_prompt(scene_description: str) -> str:
 
     ### 5. KEY MOMENTS RULES
     "key_moments" MUST:
-    - describe ACTIONS / behaviors first (what people do), based on Florence and the
+    - describe ACTIONS / behaviors first (what people do), based on VLM observations and the
       store's forbidden-behaviors list; a confirmed weapon is also a valid key moment
     - mention appearance only as a MODIFIER of an action, never on its own
     - NOT include raw YOLO technical data (IDs, confidence, bbox)
@@ -361,7 +356,7 @@ def build_prompt(scene_description: str) -> str:
     ### 6. REASON FIELD RULES
     The "reason" MUST:
     - describe the behavioral/contextual anomaly (the ACTION), or the weapon
-    - be based on Florence semantic content (and the forbidden-behaviors list)
+    - be based on VLM observation content (and the forbidden-behaviors list)
     - NOT be about appearance alone (e.g. "person wearing a hood" is NOT acceptable)
     - NOT mention YOLO IDs, confidence, or bounding boxes
     - be short and human‑interpretable
@@ -475,7 +470,11 @@ async def main_async():
     parser.add_argument("--groq-model", "--groq_model", dest="groq_model", default=GROQ_MODEL_NAME,
                         help="Groq model to use for anomaly detection.")
     parser.add_argument("--zmq-endpoint", default=ZMQ_ENDPOINT,
-                        help="ZMQ PULL endpoint to receive frames from Florence/Tracker.")
+                        help="ZMQ PULL endpoint to receive frames from Tracker/VLM.")
+    parser.add_argument("--decision-frames", dest="decision_frames", type=int, default=60,
+                        help="Number of video frames per Groq decision window.")
+    parser.add_argument("--tracker-every", dest="tracker_every", type=int, default=5,
+                        help="Must match tracker's --send_every_n_frames; used to size the decision window.")
     args = parser.parse_args()
 
     context = zmq.Context()
@@ -492,11 +491,10 @@ async def main_async():
     event_history: List[str] = []
     latest_business_context = ""
 
-    tracker_buffer: Dict[int, Dict[str, Any]] = {}
     vlm_buffer: Dict[int, Dict[str, Any]] = {}
 
-    window_size = BASE_WINDOW_SIZE
-    jump_size = 2
+    window_size = max(1, args.decision_frames // args.tracker_every)  # e.g. 60 // 5 = 12
+    jump_size = window_size  # non-overlapping windows
 
     try:
         while True:
@@ -506,21 +504,14 @@ async def main_async():
             if rec.get("type") == "reset":
                 raw_queue.clear()
                 event_history.clear()
-                tracker_buffer.clear()
                 vlm_buffer.clear()
-                print("[GROQ] Reset received — cleared raw_queue, event_history, tracker_buffer, vlm_buffer")
+                print("[GROQ] Reset received — cleared raw_queue, event_history, vlm_buffer")
                 continue
 
             if rec.get("type") == "business_context":
                 context_body = rec.get("context")
                 latest_business_context = normalize_business_context(context_body)
                 print("[CTX] Received business context: " + latest_business_context)
-                continue
-
-            if rec.get("type") == "tracker_frame":
-                frame_idx = rec.get("frame_index")
-                if isinstance(frame_idx, int):
-                    tracker_buffer[frame_idx] = rec
                 continue
 
             if rec.get("type") == "vlm_frame":
@@ -533,12 +524,19 @@ async def main_async():
                             vlm_buffer.pop(k, None)
                 continue
 
+            if rec.get("type") == "florence_frame":
+                # Florence is disabled — ignore its messages.
+                continue
+
+            if rec.get("type") != "tracker_frame":
+                # Unknown message type — ignore.
+                continue
+
+            # --- Tracker anchor: every tracker_frame advances the decision window ---
             frame_idx = rec.get("frame_index")
 
-            if isinstance(frame_idx, int) and frame_idx in tracker_buffer:
-                rec["tracker"] = tracker_buffer[frame_idx]
-
-            # Attach the nearest VLM record (exact frame, else closest within a window).
+            # Attach the nearest VLM record (exact frame, else closest within 15 frames).
+            # VLM fires sparsely (every ~60 frames); tracker fires every 5 frames.
             if isinstance(frame_idx, int) and vlm_buffer:
                 if frame_idx in vlm_buffer:
                     rec["vlm"] = vlm_buffer[frame_idx]
@@ -546,6 +544,10 @@ async def main_async():
                     nearest = min(vlm_buffer, key=lambda k: abs(k - frame_idx))
                     if abs(nearest - frame_idx) <= 15:
                         rec["vlm"] = vlm_buffer[nearest]
+
+            # build_tracker_sentence/build_appearance_weapon_sentence read rec["tracker"];
+            # point it at self since the anchor record IS the tracker frame.
+            rec["tracker"] = rec
 
             raw_queue.append(rec)
 

@@ -167,7 +167,7 @@ async def main_async():
                         help="Local VLM weights (PaliGemma 2 mix). Use -896 for more small-figure detail.")
     parser.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
     parser.add_argument("--process_every_n_frames", "--every", dest="process_every_n_frames",
-                        type=int, default=30, help="Analyze one frame every N frames.")
+                        type=int, default=60, help="Analyze one frame every N frames.")
     parser.add_argument("--max_new_tokens", type=int, default=64,
                         help="Token budget for the free-form 'describe' answer; yes/no cues are capped short.")
     parser.add_argument("--test", default="none")
