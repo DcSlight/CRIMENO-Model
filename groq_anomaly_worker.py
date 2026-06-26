@@ -22,6 +22,12 @@ MAX_EVENT_HISTORY = 10
 
 CONTEXT_LOG_FILE = "groq_context_log.txt"
 
+# Cue keys that come from the VLM's structured QA dict (vlm_worker.py → rec["qa"]).
+# HARD_SIGNAL_KEYS: if ANY of these is "yes", the frame is ALWAYS sent to Groq —
+# a weapon/aggression cue must never be silently dropped by the change-detector.
+BINARY_CUE_KEYS  = ["gun", "knife", "reaching_counter", "hands_up", "face_concealed", "aggression"]
+HARD_SIGNAL_KEYS = ["gun", "knife", "hands_up", "aggression"]
+
 
 # ============================================================
 # Load Groq client
@@ -504,16 +510,28 @@ async def main_async():
     # Groq fires at most once per --decision-frames video frames regardless of VLM speed.
     last_decision_frame: Optional[int] = None
 
+    # Last set of binary cues seen (for cue-based change-detection).
+    last_cues: Optional[Dict[str, bool]] = None
+
     try:
         while True:
-            msg = await asyncio.to_thread(socket.recv)
-            rec = json.loads(msg.decode("utf-8"))
+            # Per-message crash guard: a bad message / transient API error logs + continues,
+            # so it cannot kill the worker. KeyboardInterrupt is re-raised to allow clean exit.
+            try:
+                msg = await asyncio.to_thread(socket.recv)
+                rec = json.loads(msg.decode("utf-8"))
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                print(f"[ERROR] Failed to receive/decode message: {exc}")
+                continue
 
             if rec.get("type") == "reset":
                 event_history.clear()
                 tracker_buffer.clear()
                 last_decision_frame = None
-                print("[GROQ] Reset received — cleared event_history, tracker_buffer, last_decision_frame")
+                last_cues = None
+                print("[GROQ] Reset received — cleared event_history, tracker_buffer, last_decision_frame, last_cues")
                 continue
 
             if rec.get("type") == "business_context":
@@ -563,22 +581,32 @@ async def main_async():
             new_event = build_event_sentence(rec)
             print(f"[DEBUG] New event (VLM frame {frame_idx}): {new_event}")
 
-            last_event = event_history[-1] if event_history else None
-            if last_event:
-                sim = simple_similarity(new_event, last_event)
-                print(f"[DEBUG] Similarity to last event: {sim:.3f}")
+            # ---- Cue-based safe change-detection ----
+            # Read structured yes/no cues from the VLM record's "qa" field.
+            # HARD SIGNALS (gun/knife/hands-up/aggression): ALWAYS send — never skip.
+            # Any cue flip vs. last decision: send (something changed).
+            # Identical benign cues only: skip (no new information, cost saved).
+            qa = rec.get("qa") or {}
+            cues = {k: str(qa.get(k, "")).strip().lower().startswith("y")
+                    for k in BINARY_CUE_KEYS}
+            hard_now    = any(cues[k] for k in HARD_SIGNAL_KEYS)
+            cues_changed = (last_cues is None) or (cues != last_cues)
+            print(f"[DEBUG] Cues: {cues} | hard={hard_now} | changed={cues_changed}")
 
+            # Scene-reset bookkeeping: major textual divergence clears old history.
+            if event_history:
+                sim = simple_similarity(new_event, event_history[-1])
                 if sim < 0.20:
-                    print("[DEBUG] Scene reset triggered → clearing event history.")
+                    print("[DEBUG] Scene reset (textual divergence) → clearing event history.")
                     event_history = []
-            else:
-                print("[DEBUG] No last event, treating as significant change.")
 
-            if last_event and simple_similarity(new_event, last_event) >= 0.90:
-                print("[DEBUG] No significant change → SKIP sending to Groq.")
+            if not hard_now and not cues_changed:
+                print("[DEBUG] All cues benign + unchanged → SKIP sending to Groq.")
                 continue
 
-            print("[DEBUG] Significant change detected → SEND to Groq.")
+            last_cues = cues
+            print(f"[DEBUG] Sending to Groq (hard={hard_now}, changed={cues_changed}).")
+            # -----------------------------------------
 
             if all(simple_similarity(new_event, old) < 0.90 for old in event_history):
                 event_history.append(new_event)
@@ -608,7 +636,15 @@ async def main_async():
                 f.write(prompt)
                 f.write("\n====================================================\n")
 
-            result = await asyncio.to_thread(call_groq_for_anomaly, client, args.groq_model, prompt)
+            # Groq API call — wrapped so a transient network/API error logs and skips
+            # this frame rather than crashing the worker.
+            try:
+                result = await asyncio.to_thread(call_groq_for_anomaly, client, args.groq_model, prompt)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                print(f"[ERROR] Groq API call failed (frame {frame_idx}): {exc}")
+                continue
 
             label = result.get("label", "")
             score = float(result.get("anomaly_score", 0.0))
