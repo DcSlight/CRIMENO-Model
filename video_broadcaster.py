@@ -126,7 +126,7 @@ def main():
                 pub_socket.send_multipart([b"reset"])
                 print("[CONTROL] Sent reset — waiting for worker acks...")
 
-                expected_acks = {"florence", "tracker"}
+                expected_acks = {"tracker"}
                 received_acks = set()
                 deadline = time.time() + WORKER_ACK_TIMEOUT_S
                 while received_acks < expected_acks and time.time() < deadline:

@@ -1,121 +1,214 @@
 # vlm_worker.py
 # Full-frame Vision-Language reasoning layer for the CRIMENO pipeline.
 # - Subscribes to the broadcaster PUB stream (topic: "frame")
-# - Sends each (throttled) full frame to a LOCAL VLM (PaliGemma 2) and asks a
-#   fixed set of robbery-focused questions (behavior + weapons + concealment)
+# - Sends each (throttled) full frame to a LOCAL VLM (Qwen2.5-VL-Instruct) with a single
+#   structured-JSON call that returns scene description + weapon/behavior cues
 # - PUSHes a compact "vlm_frame" record to the Groq anomaly worker (port 5581)
 # - Optionally forwards the same record to NestJS over WebSocket
 #
-# Runs fully locally — no API key. One-time: `huggingface-cli login` and accept
-# the (free) PaliGemma license on the model page.
+# Runs fully locally — no API key needed.
+# One-time install:
+#   pip install "transformers>=4.49" accelerate
+#   (torch and pillow are already installed from the tracker/previous VLM)
 #
-# This is an ADDITIVE layer: Florence (scene caption + OCR) and the tracker
-# (weapons/appearance) keep running; Groq fuses all three.
+# Model options:
+#   --vlm_model Qwen/Qwen2.5-VL-3B-Instruct   (~8 GB VRAM, recommended)
+#   --vlm_model Qwen/Qwen2.5-VL-7B-Instruct   (~16 GB VRAM, higher quality)
 
 import argparse
 import asyncio
 import io
 import json
-import threading
+import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import zmq
 from PIL import Image
 
 try:
     import torch
-    from transformers import AutoProcessor, PaliGemmaForConditionalGeneration
+    from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
     import transformers
-    # Quiet the per-call processor/deprecation warnings so the VLM output is readable.
     transformers.logging.set_verbosity_error()
-except Exception:  # pragma: no cover - import guard
+except Exception:  # pragma: no cover
     torch = None
+    Qwen2_5_VLForConditionalGeneration = None
     AutoProcessor = None
-    PaliGemmaForConditionalGeneration = None
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
-# Fixed robbery-focused question set asked of the full frame each cycle.
-# PaliGemma-friendly: ONE free-form "describe" (its strongest mode) + atomic yes/no
-# cues. Never list multiple distinct actions with "or" in one question — PaliGemma
-# echoes the last option instead of reasoning (the old "...or running?" always
-# answered "running"). yes/no questions may join near-synonyms (one concept) safely.
-QUESTIONS: List[tuple] = [
-    ("actions", "Describe what each person is doing."),
-    ("gun", "Is anyone holding a gun?"),
-    ("counter", "Is a person reaching over the counter or into a display case?"),
-    ("handsup", "Does anyone have their hands raised in the air?"),
-    ("mask", "Is anyone's face covered by a mask, hood, or helmet?"),
-]
+# ============================================================
+# Structured analysis prompt
+# ============================================================
 
-# The describe question gets room; yes/no answers are capped short to stay terse + fast.
-SHORT_ANSWER_TOKENS = 12
+ANALYSIS_INSTRUCTION = """You are a surveillance camera analyst. Analyze this security camera frame from a store.
+Return ONLY a valid JSON object with these exact keys — no extra text before or after:
+
+{
+  "description": "1-2 sentence factual description of the scene",
+  "people_actions": "what each visible person is doing",
+  "appearance": "what each person is wearing (clothing, headwear, face covering)",
+  "weapon": "describe any visible weapon (gun, knife, etc.) or 'none'",
+  "gun": "yes or no",
+  "knife": "yes or no",
+  "reaching_counter": "yes or no — is anyone reaching over the counter or into a display case",
+  "hands_up": "yes or no — does anyone have hands raised (possible victim or surrender pose)",
+  "face_concealed": "yes or no — is anyone's face covered by a mask, hood, or helmet",
+  "aggression": "yes or no — is anyone being physically aggressive or threatening"
+}
+
+Rules:
+- Base every answer ONLY on what is clearly visible in the frame.
+- Answer "no" for binary fields if you are uncertain.
+- Do NOT guess, hallucinate, or invent details.
+- Return ONLY the JSON object with no other text."""
 
 
 def now_unix_ms() -> int:
     return int(time.time() * 1000)
 
 
-# -------------------------
+# ============================================================
 # VLM loading + inference
-# -------------------------
+# ============================================================
+
 def load_vlm(model_id: str, device_str: str):
-    if PaliGemmaForConditionalGeneration is None:
-        raise RuntimeError("transformers/torch not installed (need PaliGemma support)")
+    if Qwen2_5_VLForConditionalGeneration is None:
+        raise RuntimeError(
+            "Qwen2.5-VL requires transformers>=4.49 and accelerate. "
+            "Run: pip install \"transformers>=4.49\" accelerate"
+        )
 
     use_cuda = device_str == "cuda" and torch.cuda.is_available()
     dtype = torch.bfloat16 if use_cuda else torch.float32
     device = "cuda:0" if use_cuda else "cpu"
 
     print(f"[VLM] Loading {model_id} on {device} ({dtype})...")
-    model = PaliGemmaForConditionalGeneration.from_pretrained(
-        model_id, torch_dtype=dtype
-    ).to(device).eval()
+    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+        model_id,
+        torch_dtype=dtype,
+        device_map=device,
+    ).eval()
     processor = AutoProcessor.from_pretrained(model_id)
     print(f"✅ [VLM] {model_id} ready on {device}")
     return model, processor, device, dtype
 
 
-def ask_vlm(model, processor, device, dtype, image: Image.Image, question: str,
-            max_new_tokens: int = 48) -> str:
-    """Ask PaliGemma one question about the image; return only the generated answer.
-    PaliGemma VQA convention: prompt = 'answer en <question>' (the processor adds the
-    image tokens). Verify against the model card if you change checkpoints."""
-    prompt = f"answer en {question}"
-    inputs = processor(text=prompt, images=image, return_tensors="pt").to(device)
-    if "pixel_values" in inputs and dtype is not None:
-        inputs["pixel_values"] = inputs["pixel_values"].to(dtype)
-    input_len = inputs["input_ids"].shape[-1]
-    with torch.inference_mode():
-        out = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
-    generated = out[0][input_len:]
-    return processor.decode(generated, skip_special_tokens=True).strip()
-
-
 def analyze_frame(model, processor, device, dtype, image: Image.Image,
-                  max_new_tokens: int = 64) -> Dict[str, str]:
-    answers: Dict[str, str] = {}
-    for key, q in QUESTIONS:
-        # Free-form describe gets the full budget; yes/no cues stay short.
-        tokens = max_new_tokens if key == "actions" else SHORT_ANSWER_TOKENS
+                  max_new_tokens: int = 256) -> Dict[str, str]:
+    """Single Qwen2.5-VL call → returns structured dict.
+    On parse failure returns a safe default dict (no crash, no junk cues)."""
+
+    # Build the chat message with the image. For single PIL images the processor
+    # can handle them directly without qwen-vl-utils.
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "image"},
+                {"type": "text", "text": ANALYSIS_INSTRUCTION},
+            ],
+        }
+    ]
+
+    text = processor.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True
+    )
+
+    inputs = processor(
+        text=[text],
+        images=[image],
+        return_tensors="pt",
+        padding=True,
+    ).to(device)
+
+    input_len = inputs["input_ids"].shape[-1]
+
+    with torch.inference_mode():
+        out = model.generate(
+            **inputs,
+            max_new_tokens=max_new_tokens,
+            do_sample=False,
+        )
+
+    generated = out[0][input_len:]
+    raw_text = processor.decode(generated, skip_special_tokens=True).strip()
+
+    return _parse_vlm_output(raw_text)
+
+
+def _parse_vlm_output(text: str) -> Dict[str, str]:
+    """Strip markdown fences and parse the JSON. Returns a safe fallback on failure."""
+    # Strip ```json ... ``` fences
+    cleaned = re.sub(r"```json", "", text, flags=re.IGNORECASE)
+    cleaned = cleaned.replace("```", "").strip()
+
+    # Try full parse
+    try:
+        parsed = json.loads(cleaned)
+        if isinstance(parsed, dict):
+            return _sanitize(parsed)
+    except Exception:
+        pass
+
+    # Try extracting the first {...} block
+    match = re.search(r"\{.*?\}", cleaned, flags=re.DOTALL)
+    if match:
         try:
-            answers[key] = ask_vlm(model, processor, device, dtype, image, q,
-                                   max_new_tokens=tokens)
-        except Exception as e:
-            answers[key] = f"[ERROR] {e}"
-    return answers
+            parsed = json.loads(match.group())
+            if isinstance(parsed, dict):
+                return _sanitize(parsed)
+        except Exception:
+            pass
+
+    # Parse failure — safe fallback (raw text in description, all cues default to "no")
+    print(f"[VLM] ⚠️ JSON parse failed. Raw output: {text[:200]!r}")
+    return {
+        "description": text[:300] if text and not text.lower().startswith("sorry") else "Scene analysis unavailable.",
+        "people_actions": "-",
+        "appearance": "-",
+        "weapon": "none",
+        "gun": "no",
+        "knife": "no",
+        "reaching_counter": "no",
+        "hands_up": "no",
+        "face_concealed": "no",
+        "aggression": "no",
+    }
 
 
-def build_summary(answers: Dict[str, str]) -> str:
+def _sanitize(d: Dict) -> Dict[str, str]:
+    """Ensure all values are strings and no 'Sorry...' junk is treated as a yes cue."""
+    result = {}
+    binary_keys = {"gun", "knife", "reaching_counter", "hands_up", "face_concealed", "aggression"}
+    for k, v in d.items():
+        s = str(v).strip()
+        # If a binary cue is a refusal/error phrase, default to "no"
+        if k in binary_keys and any(
+            s.lower().startswith(p)
+            for p in ("sorry", "unanswerable", "i cannot", "i can't", "i am not")
+        ):
+            s = "no"
+        result[k] = s
+    return result
+
+
+def build_summary(qa: Dict[str, str]) -> str:
+    """Flatten the structured QA dict into the single-line summary consumed by build_vlm_sentence."""
     return (
-        f"People's actions: {answers.get('actions', '-')}. "
-        f"Gun visible: {answers.get('gun', '-')}. "
-        f"Reaching over counter/display case: {answers.get('counter', '-')}. "
-        f"Hands raised (possible victim): {answers.get('handsup', '-')}. "
-        f"Face concealed: {answers.get('mask', '-')}."
+        f"Scene: {qa.get('description', '-')}. "
+        f"People: {qa.get('people_actions', '-')}. "
+        f"Appearance: {qa.get('appearance', '-')}. "
+        f"Weapon: {qa.get('weapon', 'none')}. "
+        f"Gun visible: {qa.get('gun', 'no')}. "
+        f"Knife visible: {qa.get('knife', 'no')}. "
+        f"Reaching over counter: {qa.get('reaching_counter', 'no')}. "
+        f"Hands raised (possible victim): {qa.get('hands_up', 'no')}. "
+        f"Face concealed: {qa.get('face_concealed', 'no')}. "
+        f"Aggressive: {qa.get('aggression', 'no')}."
     )
 
 
@@ -123,9 +216,10 @@ def pil_from_jpg(jpg_bytes: bytes) -> Image.Image:
     return Image.open(io.BytesIO(jpg_bytes)).convert("RGB")
 
 
-# -------------------------
-# WebSocket sender (mirrors florence_worker)
-# -------------------------
+# ============================================================
+# WebSocket helpers
+# ============================================================
+
 async def ws_connect_loop(ws_url: str):
     import websockets
 
@@ -150,9 +244,10 @@ async def ws_send_json(ws, payload: Dict[str, Any]):
         await ws.send(json.dumps(payload, ensure_ascii=False))
 
 
-# -------------------------
+# ============================================================
 # Main loop
-# -------------------------
+# ============================================================
+
 async def main_async():
     parser = argparse.ArgumentParser()
     parser.add_argument("--video-endpoint", "--video_endpoint", dest="video_endpoint",
@@ -160,16 +255,16 @@ async def main_async():
                         help="ZeroMQ endpoint to receive video frames (SUB).")
     parser.add_argument("--anomaly-endpoint", "--anomaly_endpoint", dest="anomaly_endpoint",
                         default="tcp://127.0.0.1:5580",
-                        help="ZeroMQ PUSH endpoint of the Groq/Qwen anomaly worker.")
+                        help="ZeroMQ PUSH endpoint of the Groq anomaly worker.")
     parser.add_argument("--ws-url", "--ws_url", dest="ws_url", default="none",
                         help="WebSocket URL for forwarding VLM records (or 'none').")
-    parser.add_argument("--vlm_model", default="google/paligemma2-3b-mix-448",
-                        help="Local VLM weights (PaliGemma 2 mix). Use -896 for more small-figure detail.")
+    parser.add_argument("--vlm_model", default="Qwen/Qwen2.5-VL-3B-Instruct",
+                        help="Qwen2.5-VL model weights. 3B ~8GB VRAM, 7B ~16GB VRAM.")
     parser.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
     parser.add_argument("--process_every_n_frames", "--every", dest="process_every_n_frames",
-                        type=int, default=30, help="Analyze one frame every N frames.")
-    parser.add_argument("--max_new_tokens", type=int, default=64,
-                        help="Token budget for the free-form 'describe' answer; yes/no cues are capped short.")
+                        type=int, default=60, help="Analyze one frame every N frames.")
+    parser.add_argument("--max_new_tokens", type=int, default=256,
+                        help="Token budget for the structured JSON response.")
     parser.add_argument("--test", default="none")
     args = parser.parse_args()
 
@@ -178,14 +273,12 @@ async def main_async():
     print("[VLM] Warming up...")
     _dummy = Image.new("RGB", (448, 448), color=(128, 128, 128))
     try:
-        _ = ask_vlm(model, processor, device, dtype, _dummy, "What is happening?", max_new_tokens=8)
+        _ = analyze_frame(model, processor, device, dtype, _dummy, max_new_tokens=16)
     except Exception as e:
         print(f"[VLM] Warmup failed (continuing): {e}")
     print("[VLM] ✓ Warmup complete")
 
-    # ZeroMQ — input (video frames). We also subscribe to "reset" so we can drain
-    # stale frames on a video switch. No ack/first_frame handshake: the broadcaster
-    # only waits for florence+tracker, and Groq clears our buffer when they reset.
+    # ZeroMQ — subscribe to frames + reset signals.
     context = zmq.Context()
     sub = context.socket(zmq.SUB)
     sub.connect(args.video_endpoint)
@@ -246,16 +339,16 @@ async def main_async():
             image = pil_from_jpg(jpg_bytes)
 
             # Heavy VLM inference off the event loop so WS stays responsive.
-            answers = await asyncio.to_thread(
+            qa = await asyncio.to_thread(
                 analyze_frame, model, processor, device, dtype, image, args.max_new_tokens
             )
-            summary = build_summary(answers)
+            summary = build_summary(qa)
 
             record = {
                 "type": "vlm_frame",
                 "frame_index": frame_idx,
                 "video_time_ms": video_time_ms,
-                "qa": answers,
+                "qa": qa,
                 "summary": summary,
                 "meta": {"generated_at_unix_ms": now_unix_ms(), "model": args.vlm_model},
             }
