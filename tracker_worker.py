@@ -12,7 +12,7 @@ import base64
 import json
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
@@ -31,6 +31,64 @@ _reset_done_event = threading.Event()
 _first_frame_pending = threading.Event()  # set on reset; cleared after first real bbox emit
 
 ACK_TIMEOUT_S = 15  # wait up to 15s; broadcaster timeout is 20s
+
+# ---------------------------------------------------------------------------
+# Robbery-focused detection config
+# ---------------------------------------------------------------------------
+# COCO classes (from the YOLO26 object model) that are relevant to robbery /
+# surveillance. Everything else (chairs, TVs, plants...) is dropped before it
+# reaches the tracker so the downstream LLM isn't diluted with scene clutter.
+# "person" is always kept regardless of this set.
+ROBBERY_OBJECT_CLASSES = {
+    "person", "backpack", "handbag", "suitcase",
+    "knife", "cell phone", "bottle",
+}
+
+# Per-class confidence floors for the custom Suspicious_Activities model.
+# Class names confirmed from the checkpoint: Fighting, Man_With_Gun,
+# Man_with_Knife, Theaf_Robbery. The old code used a single blunt 0.93 gate to
+# suppress the man-with-gun false positives; that hurt recall. Instead we admit
+# weapon detections at a lower floor and restore precision with person-overlap
+# gating + temporal confirmation (see main loop).
+SUSPICIOUS_CLASS_THRESHOLDS = {
+    "Man_With_Gun": 0.45,
+    "Man_with_Knife": 0.80,   # knife class is weak/FP-prone on this model — keep it strict
+    "Theaf_Robbery": 0.55,
+    "Fighting": 0.55,
+}
+DEFAULT_SUSPICIOUS_TH = 0.50
+
+# Suspicious classes (from the custom nano model) that must overlap a detected
+# person to be admitted (kills floating "gun in mid-air" ghosts) and that require
+# temporal confirmation across several frames before being emitted.
+WEAPON_SUSPICIOUS_CLASSES = {"Man_With_Gun", "Man_with_Knife"}
+
+# Open-vocabulary appearance prompts for the YOLOE-26 model. Concealment-focused
+# cues only — "helmet" and the loose "hooded person" were removed because YOLOE
+# fired them on construction hard hats / baseball caps / almost every head,
+# flooding the anomaly prompt with false positives. Matched detections are
+# attached as confirmed attribute tags to the nearest person track.
+APPEARANCE_PROMPTS = [
+    "hood", "ski mask", "balaclava", "face mask", "dark clothing",
+]
+
+# Open-vocabulary WEAPON prompts for the same YOLOE-26 model. No training needed:
+# the model detects these by text. Weapon hits are person-gated + temporally
+# confirmed exactly like the nano weapon classes (they replace them).
+WEAPON_PROMPTS = ["gun", "pistol", "handgun", "rifle", "knife"]
+
+# Everything the YOLOE open-vocab model is asked to find in a single pass.
+YOLOE_PROMPTS = APPEARANCE_PROMPTS + WEAPON_PROMPTS
+
+# All class names that count as a "weapon" for emit-gating, across both sources
+# (custom nano model + open-vocab). Used by is_weapon_track().
+ALL_WEAPON_CLASSES = WEAPON_SUSPICIOUS_CLASSES | set(WEAPON_PROMPTS)
+
+
+def is_weapon_track(t: "Track") -> bool:
+    """True if this track is a weapon detection (nano or open-vocab) subject to
+    person-gating + temporal confirmation before it may be emitted."""
+    return t.source in ("suspicious", "weapon") and t.cls_name in ALL_WEAPON_CLASSES
 
 # Used by watcher thread to dispatch an immediate WS-clear into the asyncio event loop.
 _main_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -72,8 +130,16 @@ def _reset_watcher(sub_endpoint: str, anomaly_endpoint: str, ack_endpoint: str) 
         print("[TRACKER/reset-watcher] Ack sent to broadcaster")
 
 
-def show_debug_frame(frame, tracks, window_name="DEBUG"):
+def show_debug_frame(frame, tracks, window_name="DEBUG", raw_yoloe=None):
     debug = frame.copy()
+
+    # Raw open-vocab YOLOE detections (pre-gating), drawn thin + YELLOW underneath
+    # the confirmed tracks so you can see what the prompts actually fire on.
+    for d in (raw_yoloe or []):
+        rx1, ry1, rx2, ry2 = d["bbox"]
+        cv2.rectangle(debug, (rx1, ry1), (rx2, ry2), (0, 255, 255), 1)
+        cv2.putText(debug, f"{d['cls_name']} {d['conf']:.2f}", (rx1, max(0, ry1 - 5)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
     for t in tracks:
         # Extract fields from Track object
@@ -81,17 +147,20 @@ def show_debug_frame(frame, tracks, window_name="DEBUG"):
         conf = t.conf
         x1, y1, x2, y2 = t.bbox
 
-        # Color by source (not by class name)
-        if hasattr(t, "source") and t.source == "suspicious":
-            color = (0, 0, 255)   # RED for suspicious model
+        # Color by source
+        if getattr(t, "source", "") in ("suspicious", "weapon"):
+            color = (0, 0, 255)   # RED for weapon detections
         else:
             color = (0, 255, 0)   # GREEN for regular YOLO objects
 
         # Draw bounding box
         cv2.rectangle(debug, (x1, y1), (x2, y2), color, 2)
 
-        # Draw label
+        # Draw label (include appearance attributes if any)
         label = f"{cls} {conf:.2f}"
+        attrs = getattr(t, "attributes", None)
+        if attrs:
+            label += " [" + ",".join(attrs) + "]"
         cv2.putText(debug, label, (x1, max(0, y1 - 5)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
@@ -171,6 +240,22 @@ def iou_xyxy(a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]) -> floa
     return inter_area / union
 
 
+def box_overlaps_any(bbox: Tuple[int, int, int, int],
+                     others: List[Tuple[int, int, int, int]]) -> bool:
+    """True if bbox touches any box in `others` (IOU > 0) or its center sits
+    inside one of them. Used to gate weapon detections to actual people."""
+    x1, y1, x2, y2 = bbox
+    cx = (x1 + x2) / 2.0
+    cy = (y1 + y2) / 2.0
+    for o in others:
+        if iou_xyxy(bbox, o) > 0.0:
+            return True
+        ox1, oy1, ox2, oy2 = o
+        if ox1 <= cx <= ox2 and oy1 <= cy <= oy2:
+            return True
+    return False
+
+
 @dataclass
 class Track:
     track_id: int
@@ -179,6 +264,9 @@ class Track:
     conf: float
     last_seen_frame: int
     source: str = ""
+    hits: int = 1                       # consecutive matches; for temporal confirmation
+    attributes: List[str] = field(default_factory=list)  # confirmed appearance tags (hood, dark clothing...)
+    attr_counts: Dict[str, int] = field(default_factory=dict)  # per-tag sightings, for confirmation
 
 
 def draw_tracks(frame: np.ndarray, tracks: List[Track]) -> np.ndarray:
@@ -290,7 +378,37 @@ async def main_async():
     parser.add_argument("--ack-endpoint", dest="ack_endpoint", default="tcp://127.0.0.1:5562",
                         help="ZeroMQ endpoint to send reset ack back to broadcaster (PUSH).")
     parser.add_argument("--ws_url", default="none")
-    parser.add_argument("--yolo_model", default="yolov8n.pt")
+    parser.add_argument("--yolo_model", default="yolo26s.pt",
+                        help="YOLO26 detection weights for general objects (COCO).")
+    parser.add_argument("--appearance_model", default="yoloe-26s-seg.pt",
+                        help="Open-vocabulary YOLOE-26 weights. Detects both appearance "
+                             "(hood, mask, dark clothing) AND weapons (gun, knife) by text prompt.")
+    parser.add_argument("--use_appearance", type=int, default=1,
+                        help="1 = run the open-vocab YOLOE model (appearance tags + weapon detection).")
+    parser.add_argument("--appearance_every_n", type=int, default=1,
+                        help="Run the (heavy) YOLOE model once every N processed frames. Default 1 "
+                             "(every frame) so weapon temporal confirmation works; raise to save GPU "
+                             "but weapons will then confirm more slowly.")
+    parser.add_argument("--openvocab_weapon_conf", type=float, default=0.30,
+                        help="Confidence floor for open-vocab weapon detections (gun/knife). Open-vocab "
+                             "confidences run lower than a trained head — raise if FPs, lower if misses.")
+    parser.add_argument("--appearance_conf", type=float, default=0.45,
+                        help="Confidence floor for open-vocab appearance tags (hood/mask/dark clothing). "
+                             "Raise if appearance tags are noisy.")
+    parser.add_argument("--appearance_confirm", type=int, default=2,
+                        help="An appearance tag must be seen this many frames on a person before it sticks "
+                             "(kills single-frame false tags).")
+    parser.add_argument("--appearance_as_boxes", type=int, default=0,
+                        help="1 = also emit each confirmed appearance detection as its own on-screen box "
+                             "(source='appearance') so it's visible in the UI for verification.")
+    parser.add_argument("--weapon_confirm_frames", type=int, default=3,
+                        help="A weapon (gun/knife) track must persist this many consecutive frames before it is emitted.")
+    parser.add_argument("--use_suspicious", type=int, default=1,
+                        help="1 = also load the custom nano suspicious model (Fighting/Theaf_Robbery). "
+                             "0 = skip it entirely and run only yolo26 + open-vocab YOLOE.")
+    parser.add_argument("--disable_suspicious", default="Man_With_Gun,Man_with_Knife",
+                        help="Comma-separated nano suspicious classes to ignore. Defaults to the weapon "
+                             "classes since open-vocab YOLOE now detects weapons better. Pass '' to re-enable.")
     parser.add_argument("--conf_th", type=float, default=0.35)
     parser.add_argument("--send_every_n_frames", type=int, default=1)
     parser.add_argument("--send_overlay", type=int, default=0)
@@ -306,9 +424,19 @@ async def main_async():
     if YOLO is None:
         raise RuntimeError("ultralytics not installed")
 
-    print(f"[TRACKER] Loading YOLO model: {args.yolo_model}...")
-    model_objects = YOLO("yolov8s.pt")
-    model_suspicious = YOLO("Suspicious_Activities_nano.pt")
+    disabled_suspicious = {c.strip() for c in args.disable_suspicious.split(",") if c.strip()}
+    if disabled_suspicious:
+        print(f"[TRACKER] Disabled suspicious classes: {sorted(disabled_suspicious)}")
+
+    print(f"[TRACKER] Loading YOLO26 object model: {args.yolo_model}...")
+    model_objects = YOLO(args.yolo_model)
+
+    model_suspicious = None
+    if args.use_suspicious:
+        print("[TRACKER] Loading custom suspicious model: Suspicious_Activities_nano.pt...")
+        model_suspicious = YOLO("Suspicious_Activities_nano.pt")
+    else:
+        print("[TRACKER] Suspicious nano model disabled (--use_suspicious 0)")
 
     yolo_predict_device: Optional[Any] = None
     if args.device == "cpu":
@@ -316,23 +444,48 @@ async def main_async():
     elif args.device == "cuda":
         yolo_predict_device = 0
 
+    # Open-vocabulary YOLOE-26 model: detects BOTH appearance (hood/mask/dark
+    # clothing) and weapons (gun/knife) by text prompt — no training needed.
+    model_appearance = None
+    if args.use_appearance:
+        print(f"[TRACKER] Loading YOLOE-26 open-vocab model: {args.appearance_model}...")
+        try:
+            model_appearance = YOLO(args.appearance_model)
+            # set_classes signature differs across YOLOE builds; try the
+            # text-embedding form first, fall back to the plain names form.
+            try:
+                model_appearance.set_classes(
+                    YOLOE_PROMPTS, model_appearance.get_text_pe(YOLOE_PROMPTS)
+                )
+            except (AttributeError, TypeError):
+                model_appearance.set_classes(YOLOE_PROMPTS)
+            print(f"[TRACKER] Open-vocab prompts set: {YOLOE_PROMPTS}")
+        except Exception as e:
+            print(f"[TRACKER] ⚠ Failed to load open-vocab model ({e}); continuing without it.")
+            model_appearance = None
+
     # Warmup
-    print("[TRACKER] Warming up model...")
+    print("[TRACKER] Warming up models...")
     dummy = np.zeros((640, 640, 3), dtype=np.uint8)
 
+    def _warmup(m):
+        if m is None:
+            return
+        if yolo_predict_device is None:
+            _ = m.predict(dummy, conf=0.5, verbose=False)
+        else:
+            _ = m.predict(dummy, conf=0.5, verbose=False, device=yolo_predict_device)
+
     print("[TRACKER] Warming up object model...")
-    if yolo_predict_device is None:
-        _ = model_objects.predict(dummy, conf=0.5, verbose=False)
-    else:
-        _ = model_objects.predict(dummy, conf=0.5, verbose=False, device=yolo_predict_device)
+    _warmup(model_objects)
+    if model_suspicious is not None:
+        print("[TRACKER] Warming up suspicious model...")
+        _warmup(model_suspicious)
+    if model_appearance is not None:
+        print("[TRACKER] Warming up open-vocab model...")
+        _warmup(model_appearance)
 
-    print("[TRACKER] Warming up suspicious model...")
-    if yolo_predict_device is None:
-        _ = model_suspicious.predict(dummy, conf=0.5, verbose=False)
-    else:
-        _ = model_suspicious.predict(dummy, conf=0.5, verbose=False, device=yolo_predict_device)
-
-    print("[TRACKER] ✓ Both models ready")
+    print("[TRACKER] ✓ Models ready")
 
 
     motion = MotionDetector() if args.use_motion_fallback else None
@@ -459,13 +612,38 @@ async def main_async():
         for d in dets_objects:
             d["source"] = "objects"
 
-        dets_suspicious = await asyncio.to_thread(run_yolo, model_suspicious, frame, args.conf_th, yolo_predict_device)
-        for d in dets_suspicious:
-            d["source"] = "suspicious"
+        dets_suspicious = []
+        if model_suspicious is not None:
+            dets_suspicious = await asyncio.to_thread(run_yolo, model_suspicious, frame, args.conf_th, yolo_predict_device)
+            for d in dets_suspicious:
+                d["source"] = "suspicious"
 
-        # Merge
-        dets_objects = [d for d in dets_objects if d["conf"] >= 0.6]
-        dets_suspicious = [d for d in dets_suspicious if d["conf"] >= 0.93]
+        # ---- Object model: keep only robbery-relevant classes (person always) ----
+        dets_objects = [
+            d for d in dets_objects
+            if d["conf"] >= 0.6 and (
+                d["cls_name"] == "person" or d["cls_name"] in ROBBERY_OBJECT_CLASSES
+            )
+        ]
+        person_bboxes = [d["bbox"] for d in dets_objects if d["cls_name"] == "person"]
+
+        # ---- Suspicious model: per-class floor + person gating for weapons ----
+        # Replaces the old blunt `conf >= 0.93` gate. Weapon classes are admitted
+        # at a lower floor (recall) but must overlap a detected person (precision);
+        # single-frame flicker is killed later by temporal confirmation (hits).
+        gated_suspicious = []
+        for d in dets_suspicious:
+            cls = d["cls_name"]
+            if cls in disabled_suspicious:
+                continue
+            floor = SUSPICIOUS_CLASS_THRESHOLDS.get(cls, DEFAULT_SUSPICIOUS_TH)
+            if d["conf"] < floor:
+                continue
+            if cls in WEAPON_SUSPICIOUS_CLASSES and not box_overlaps_any(d["bbox"], person_bboxes):
+                continue
+            gated_suspicious.append(d)
+        dets_suspicious = gated_suspicious
+
         dets = dets_objects + dets_suspicious
 
         # Reset arrived mid-YOLO-inference — discard stale results, drain, then unblock watcher.
@@ -493,6 +671,43 @@ async def main_async():
             for bb in blobs:
                 dets.append({"bbox": bb, "cls_name": "moving_object", "conf": 1.0})
 
+        # ---- Open-vocab YOLOE pass: appearance tags + weapon detection ----
+        # One inference, two uses. Appearance prompts → person attribute tags;
+        # weapon prompts → weapon detections that go through the same person-gate
+        # + temporal confirmation as the (now-retired) nano weapon classes.
+        appearance_dets: List[Dict[str, Any]] = []
+        weapon_dets: List[Dict[str, Any]] = []
+        yoloe_dets: List[Dict[str, Any]] = []
+        if (model_appearance is not None and person_bboxes
+                and args.appearance_every_n > 0
+                and (frames_processed % args.appearance_every_n == 0)):
+            try:
+                # Run at a low floor to capture both categories; filter per-category below.
+                yoloe_dets = await asyncio.to_thread(
+                    run_yolo, model_appearance, frame, 0.20, yolo_predict_device
+                )
+            except Exception as e:
+                print(f"[TRACKER] Open-vocab inference failed: {e}")
+                yoloe_dets = []
+
+            for d in yoloe_dets:
+                cls = d["cls_name"]
+                if cls in WEAPON_PROMPTS:
+                    # Person-gate + conf floor; temporal confirmation happens later via hits.
+                    if d["conf"] < args.openvocab_weapon_conf:
+                        continue
+                    if not box_overlaps_any(d["bbox"], person_bboxes):
+                        continue
+                    d["source"] = "weapon"
+                    weapon_dets.append(d)
+                elif cls in APPEARANCE_PROMPTS:
+                    if d["conf"] < args.appearance_conf:
+                        continue
+                    appearance_dets.append(d)
+
+            # Open-vocab weapons join the detection set so they get tracked + confirmed.
+            dets = dets + weapon_dets
+
         used_tracks = set()
         new_tracks: List[Track] = []
 
@@ -516,6 +731,7 @@ async def main_async():
                 best_track.conf = float(d["conf"])
                 best_track.last_seen_frame = frame_idx
                 best_track.source = d.get("source", "")
+                best_track.hits += 1
                 new_tracks.append(best_track)
             else:
                 t = Track(
@@ -537,23 +753,75 @@ async def main_async():
             if t.source == "suspicious":
                 t.bbox = shrink_bbox_tuple(t.bbox, factor=0.2)
 
+        # ---- Attach appearance attributes to the nearest person track ----
+        # A tag only "sticks" after it has been seen on the same track for
+        # `appearance_confirm` frames — kills single-frame false tags (e.g. a
+        # baseball cap briefly read as a hood).
+        confirmed_appearance_boxes: List[Dict[str, Any]] = []
+        if appearance_dets:
+            person_tracks = [t for t in tracks if t.cls_name == "person"]
+            for ad in appearance_dets:
+                tag = ad["cls_name"]
+                best_t = None
+                best_i = 0.0
+                for t in person_tracks:
+                    i = iou_xyxy(t.bbox, ad["bbox"])
+                    if i > best_i:
+                        best_i = i
+                        best_t = t
+                if best_t is None or best_i <= 0.0:
+                    continue
+                best_t.attr_counts[tag] = best_t.attr_counts.get(tag, 0) + 1
+                if best_t.attr_counts[tag] >= args.appearance_confirm:
+                    if tag not in best_t.attributes:
+                        best_t.attributes.append(tag)
+                    # Record the (confirmed) detection box for optional UI emit.
+                    confirmed_appearance_boxes.append({"bbox": ad["bbox"], "tag": tag, "conf": ad["conf"]})
+
+        # ---- Temporal confirmation gate: a weapon track (nano OR open-vocab) is
+        # only emitted once it has persisted `weapon_confirm_frames` frames. ----
+        emitted_tracks = [
+            t for t in tracks
+            if not (is_weapon_track(t) and t.hits < args.weapon_confirm_frames)
+        ]
+
         # DEBUG VISUALIZATION
         if args.test == "show_image":
-            show_debug_frame(frame, tracks)
+            # Raw open-vocab YOLOE detections (pre-gating) so you can SEE what the
+            # model finds and tune prompts — drawn under the confirmed tracks.
+            if yoloe_dets:
+                names = [f"{d['cls_name']} {d['conf']:.2f}" for d in yoloe_dets]
+                print(f"[TRACKER/YOLOE] frame {frame_idx} raw hits: {names}")
+            show_debug_frame(frame, emitted_tracks, raw_yoloe=yoloe_dets)
 
         tracks_payload = []
-        for t in tracks:
+        for t in emitted_tracks:
             x1, y1, x2, y2 = t.bbox
             tracks_payload.append({
             "track_id": t.track_id,
             "cls": t.cls_name,
             "conf": t.conf,
             "source": t.source,
+            "attributes": t.attributes,
             "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
         })
 
+        # Optionally emit confirmed appearance detections as their own boxes so
+        # they're visible in the UI for verification (off by default).
+        if args.appearance_as_boxes and confirmed_appearance_boxes:
+            for i, ab in enumerate(confirmed_appearance_boxes):
+                ax1, ay1, ax2, ay2 = ab["bbox"]
+                tracks_payload.append({
+                    "track_id": 90000 + i,
+                    "cls": ab["tag"],
+                    "conf": ab["conf"],
+                    "source": "appearance",
+                    "attributes": [],
+                    "bbox": {"x1": ax1, "y1": ay1, "x2": ax2, "y2": ay2},
+                })
+
         # Check if any tracks are from motion detector
-        has_motion = any(t.cls_name == "moving_object" for t in tracks)
+        has_motion = any(t.cls_name == "moving_object" for t in emitted_tracks)
 
         payload = {
             "type": "tracker_frame",
@@ -565,7 +833,7 @@ async def main_async():
         }
 
         if args.send_overlay == 1:
-            overlay = draw_tracks(frame, tracks)
+            overlay = draw_tracks(frame, emitted_tracks)
             overlay_jpg = encode_jpg(overlay, args.overlay_jpeg_quality)
             payload["overlay_jpg_b64"] = base64.b64encode(overlay_jpg).decode("ascii")
 

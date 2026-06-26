@@ -137,18 +137,75 @@ def build_tracker_sentence(rec: Dict[str, Any]) -> str:
     return "YOLO tracker detected: " + "; ".join(parts) + "."
 
 
+# Semantic phrases for the tracker's robbery-focused signals. Unlike raw YOLO
+# IDs/bboxes, these are reliable evidence: weapon classes have already passed
+# person-overlap + multi-frame temporal confirmation in the tracker, and
+# appearance attributes come from the open-vocab model.
+SUSPICIOUS_CLASS_PHRASES = {
+    # custom nano model classes
+    "Man_With_Gun": "a person appears to be holding a gun",
+    "Man_with_Knife": "a person appears to be holding a knife",
+    "Theaf_Robbery": "possible robbery/theft behavior",
+    "Fighting": "physical fighting between people",
+    # open-vocab YOLOE weapon classes (person-gated + temporally confirmed)
+    "gun": "a person appears to be holding a gun",
+    "pistol": "a person appears to be holding a gun",
+    "handgun": "a person appears to be holding a gun",
+    "rifle": "a person appears to be holding a rifle",
+    "knife": "a person appears to be holding a knife",
+}
+
+
+def build_appearance_weapon_sentence(rec: Dict[str, Any]) -> str:
+    """Two clearly-separated lines from the tracker so the LLM can weight them
+    differently: confirmed WEAPONS (strong evidence) vs APPEARANCE (context only)."""
+    tracker = rec.get("tracker")
+    if not tracker:
+        return ""
+
+    weapons: List[str] = []
+    appearance: List[str] = []
+    for t in tracker.get("tracks", []):
+        cls = t.get("cls", "")
+        phrase = SUSPICIOUS_CLASS_PHRASES.get(cls)
+        if phrase and phrase not in weapons:
+            weapons.append(phrase)
+
+        attrs = t.get("attributes") or []
+        if attrs and cls == "person":
+            appearance.append("person wearing " + ", ".join(attrs))
+
+    lines: List[str] = []
+    if weapons:
+        lines.append("WEAPON ALERT: " + "; ".join(weapons) + ".")
+    if appearance:
+        lines.append("Appearance (context only, NOT proof of crime): " + "; ".join(appearance) + ".")
+
+    return " ".join(lines)
+
+
+def build_vlm_sentence(rec: Dict[str, Any]) -> str:
+    """The local VLM's full-frame Q&A summary — the most action-aware source.
+    Passed through verbatim (NOT clean_caption, which would truncate it)."""
+    vlm = rec.get("vlm")
+    if not vlm:
+        return ""
+    summary = (vlm.get("summary") or "").strip()
+    return ("VLM observation: " + summary) if summary else ""
+
+
 def build_event_sentence(rec: Dict[str, Any]) -> str:
     caption = rec.get("raw", {}).get("more_detailed_caption", "")
     cleaned = clean_caption(caption)
 
+    vlm_text = build_vlm_sentence(rec)
+    appearance_text = build_appearance_weapon_sentence(rec)
     tracker_text = build_tracker_sentence(rec)
 
-    if cleaned and tracker_text:
-        return f"{cleaned} {tracker_text}"
-    elif cleaned:
-        return cleaned
-    elif tracker_text:
-        return tracker_text
+    # VLM behavior first (most action-aware), then scene caption, then tracker cues.
+    parts = [p for p in (vlm_text, cleaned, appearance_text, tracker_text) if p]
+    if parts:
+        return " ".join(parts)
 
     return "No significant visual change."
 
@@ -247,43 +304,65 @@ def build_prompt(scene_description: str) -> str:
     - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
     - If label == "criminal"   → anomaly_score MUST be >= 0.8
     - The score MUST always match the label category.
+    - "criminal" REQUIRES one of: a WEAPON ALERT, or a clearly described forbidden
+      ACTION (e.g. theft / taking items, forcing a display case, physical aggression,
+      reaching behind the counter, leaving without payment). Appearance ALONE
+      (clothing, hood, mask, hat) can NEVER be "criminal".
 
-    ### 3. HOW TO USE THE INPUTS
-    - Florence text is the PRIMARY source for understanding actions, behaviors, and context.
-    - YOLO tracker data (IDs, classes, bounding boxes) is SECONDARY and should be used ONLY to:
+    ### 3. HOW TO USE THE INPUTS — BEHAVIOR FIRST
+    - The PRIMARY question is: what are people DOING, and does it match the store's
+      Allowed behaviors or the Forbidden behaviors in the business context above?
+      Base your decision mainly on the ACTIONS described vs that list.
+    - "VLM observation:" lines come from a vision model that looked directly at the
+      frame and answered specific questions (activity, weapons, theft/forbidden
+      actions, concealed faces). Treat this as the PRIMARY behavioral evidence.
+      Florence captions are secondary scene context.
+    - "WEAPON ALERT:" lines are STRONG evidence (weapons are person-gated + confirmed)
+      and can justify "criminal" on their own.
+    - "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
+      hoods, masks and hats are frequently benign (hard hats, fashion, weather).
+      Appearance may RAISE concern only when combined with suspicious behavior. It
+      MUST NOT be the sole reason and MUST NOT push the label above "suspicious".
+    - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+      and should be used ONLY to:
       * understand continuity of people/objects across frames
       * detect repeated presence or movement patterns
       * identify that the same person appears in multiple frames
 
-    ### 4. PROHIBITED USE OF YOLO DATA
-    You MUST NOT use YOLO tracker data as evidence of anomaly.
+    ### 4. PROHIBITED USE OF RAW YOLO DATA
+    You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
     Specifically:
     - DO NOT use confidence scores as reasons.
     - DO NOT use bounding boxes as reasons.
     - DO NOT use "ID 1", "ID 2", etc. as key moments.
     - DO NOT treat "multiple people detected" as suspicious by itself.
+    (This prohibition does NOT apply to WEAPON ALERT / Appearance lines.)
 
     ### 5. KEY MOMENTS RULES
     "key_moments" MUST:
-    - be based ONLY on semantic content from Florence (captions, OCR, behaviors)
-    - describe meaningful actions, interactions, or unusual events
-    - NOT include YOLO technical data (IDs, confidence, bbox)
+    - describe ACTIONS / behaviors first (what people do), based on Florence and the
+      store's forbidden-behaviors list; a confirmed weapon is also a valid key moment
+    - mention appearance only as a MODIFIER of an action, never on its own
+    - NOT include raw YOLO technical data (IDs, confidence, bbox)
 
     Examples of GOOD key moments:
-    - "man holding phone instead of payment method"
-    - "customer leaning over cash register"
-    - "person reaching into backpack"
-    - "individual looking around nervously"
+    - "person reaching behind the cashier counter"
+    - "customer leaning over a display case and taking an item"
+    - "individual hiding jewelry inside their jacket"
+    - "person appears to be holding a gun"
+    - "hooded person forcing open a display case"   (appearance + action)
 
     Examples of BAD key moments (FORBIDDEN):
+    - "person wearing a hood"          (appearance with no action)
+    - "multiple people wearing hats"   (appearance with no action)
     - "ID 1: person (confidence 0.91)"
     - "three people detected"
-    - "bounding box moved left"
 
     ### 6. REASON FIELD RULES
     The "reason" MUST:
-    - describe behavioral or contextual anomalies
-    - be based on Florence semantic content
+    - describe the behavioral/contextual anomaly (the ACTION), or the weapon
+    - be based on Florence semantic content (and the forbidden-behaviors list)
+    - NOT be about appearance alone (e.g. "person wearing a hood" is NOT acceptable)
     - NOT mention YOLO IDs, confidence, or bounding boxes
     - be short and human‑interpretable
 
@@ -414,6 +493,7 @@ async def main_async():
     latest_business_context = ""
 
     tracker_buffer: Dict[int, Dict[str, Any]] = {}
+    vlm_buffer: Dict[int, Dict[str, Any]] = {}
 
     window_size = BASE_WINDOW_SIZE
     jump_size = 2
@@ -427,7 +507,8 @@ async def main_async():
                 raw_queue.clear()
                 event_history.clear()
                 tracker_buffer.clear()
-                print("[GROQ] Reset received — cleared raw_queue, event_history, tracker_buffer")
+                vlm_buffer.clear()
+                print("[GROQ] Reset received — cleared raw_queue, event_history, tracker_buffer, vlm_buffer")
                 continue
 
             if rec.get("type") == "business_context":
@@ -442,10 +523,29 @@ async def main_async():
                     tracker_buffer[frame_idx] = rec
                 continue
 
+            if rec.get("type") == "vlm_frame":
+                frame_idx = rec.get("frame_index")
+                if isinstance(frame_idx, int):
+                    vlm_buffer[frame_idx] = rec
+                    # Keep the buffer bounded.
+                    if len(vlm_buffer) > MAX_QUEUE_SIZE:
+                        for k in sorted(vlm_buffer)[:-MAX_QUEUE_SIZE]:
+                            vlm_buffer.pop(k, None)
+                continue
+
             frame_idx = rec.get("frame_index")
 
             if isinstance(frame_idx, int) and frame_idx in tracker_buffer:
                 rec["tracker"] = tracker_buffer[frame_idx]
+
+            # Attach the nearest VLM record (exact frame, else closest within a window).
+            if isinstance(frame_idx, int) and vlm_buffer:
+                if frame_idx in vlm_buffer:
+                    rec["vlm"] = vlm_buffer[frame_idx]
+                else:
+                    nearest = min(vlm_buffer, key=lambda k: abs(k - frame_idx))
+                    if abs(nearest - frame_idx) <= 15:
+                        rec["vlm"] = vlm_buffer[nearest]
 
             raw_queue.append(rec)
 
