@@ -300,20 +300,27 @@ def build_prompt(scene_description: str) -> str:
     - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
     - If label == "criminal"   → anomaly_score MUST be >= 0.8
     - The score MUST always match the label category.
-    - "criminal" REQUIRES one of: a WEAPON ALERT, or a clearly described forbidden
-      ACTION (e.g. theft / taking items, forcing a display case, physical aggression,
-      reaching behind the counter, leaving without payment). Appearance ALONE
-      (clothing, hood, mask, hat) can NEVER be "criminal".
+    - "criminal" REQUIRES one of:
+        a) a WEAPON ALERT from the tracker (strong, person-gated confirmation), OR
+        b) a VLM observation that explicitly states a weapon is visible/held (e.g.
+           "Gun visible: yes", "Weapon described: person holding a pistol"), OR
+        c) a clearly described forbidden ACTION (e.g. theft / taking items, forcing a
+           display case, physical aggression, reaching behind the counter, leaving
+           without payment).
+      Appearance ALONE (clothing, hood, mask, hat) can NEVER be "criminal".
 
     ### 3. HOW TO USE THE INPUTS — BEHAVIOR FIRST
     - The PRIMARY question is: what are people DOING, and does it match the store's
       Allowed behaviors or the Forbidden behaviors in the business context above?
       Base your decision mainly on the ACTIONS described vs that list.
     - "VLM observation:" lines come from a vision model that looked directly at the
-      frame and answered specific questions (activity, weapons, theft/forbidden
-      actions, concealed faces). Treat this as the PRIMARY behavioral evidence.
-    - "WEAPON ALERT:" lines are STRONG evidence (weapons are person-gated + confirmed)
-      and can justify "criminal" on their own.
+      full video frame and answered specific questions (actions, appearance, weapons,
+      theft/forbidden actions, posture, aggression, concealed faces). This is the
+      PRIMARY behavioral evidence. A VLM weapon answer (e.g. "Gun visible: yes" or
+      a weapon description like "person holding a pistol") is STRONG evidence and
+      can justify "criminal" on its own, just like a WEAPON ALERT.
+    - "WEAPON ALERT:" lines from the tracker are STRONG evidence (weapons are
+      person-gated + temporally confirmed) and can justify "criminal" on their own.
     - "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
       hoods, masks and hats are frequently benign (hard hats, fashion, weather).
       Appearance may RAISE concern only when combined with suspicious behavior. It
@@ -487,14 +494,15 @@ async def main_async():
 
     ws = await ws_connect_loop(args.ws_url)
 
-    raw_queue: List[Dict[str, Any]] = []
     event_history: List[str] = []
     latest_business_context = ""
 
-    vlm_buffer: Dict[int, Dict[str, Any]] = {}
+    # Tracker is the fast side buffer; VLM is the decision anchor.
+    tracker_buffer: Dict[int, Dict[str, Any]] = {}
 
-    window_size = max(1, args.decision_frames // args.tracker_every)  # e.g. 60 // 5 = 12
-    jump_size = window_size  # non-overlapping windows
+    # Throttle clock: video frame index of the last Groq decision.
+    # Groq fires at most once per --decision-frames video frames regardless of VLM speed.
+    last_decision_frame: Optional[int] = None
 
     try:
         while True:
@@ -502,10 +510,10 @@ async def main_async():
             rec = json.loads(msg.decode("utf-8"))
 
             if rec.get("type") == "reset":
-                raw_queue.clear()
                 event_history.clear()
-                vlm_buffer.clear()
-                print("[GROQ] Reset received — cleared raw_queue, event_history, vlm_buffer")
+                tracker_buffer.clear()
+                last_decision_frame = None
+                print("[GROQ] Reset received — cleared event_history, tracker_buffer, last_decision_frame")
                 continue
 
             if rec.get("type") == "business_context":
@@ -514,60 +522,46 @@ async def main_async():
                 print("[CTX] Received business context: " + latest_business_context)
                 continue
 
-            if rec.get("type") == "vlm_frame":
+            if rec.get("type") == "tracker_frame":
+                # Tracker is the side buffer. Store every tracker frame keyed by frame index.
                 frame_idx = rec.get("frame_index")
                 if isinstance(frame_idx, int):
-                    vlm_buffer[frame_idx] = rec
-                    # Keep the buffer bounded.
-                    if len(vlm_buffer) > MAX_QUEUE_SIZE:
-                        for k in sorted(vlm_buffer)[:-MAX_QUEUE_SIZE]:
-                            vlm_buffer.pop(k, None)
+                    tracker_buffer[frame_idx] = rec
+                    if len(tracker_buffer) > MAX_QUEUE_SIZE:
+                        for k in sorted(tracker_buffer)[:-MAX_QUEUE_SIZE]:
+                            tracker_buffer.pop(k, None)
                 continue
 
-            if rec.get("type") == "florence_frame":
-                # Florence is disabled — ignore its messages.
+            if rec.get("type") != "vlm_frame":
+                # florence_frame and any unknown types — ignore.
                 continue
 
-            if rec.get("type") != "tracker_frame":
-                # Unknown message type — ignore.
-                continue
-
-            # --- Tracker anchor: every tracker_frame advances the decision window ---
+            # --- VLM anchor: each vlm_frame is a candidate Groq decision point ---
             frame_idx = rec.get("frame_index")
 
-            # Attach the nearest VLM record (exact frame, else closest within 15 frames).
-            # VLM fires sparsely (every ~60 frames); tracker fires every 5 frames.
-            if isinstance(frame_idx, int) and vlm_buffer:
-                if frame_idx in vlm_buffer:
-                    rec["vlm"] = vlm_buffer[frame_idx]
-                else:
-                    nearest = min(vlm_buffer, key=lambda k: abs(k - frame_idx))
-                    if abs(nearest - frame_idx) <= 15:
-                        rec["vlm"] = vlm_buffer[nearest]
-
-            # build_tracker_sentence/build_appearance_weapon_sentence read rec["tracker"];
-            # point it at self since the anchor record IS the tracker frame.
-            rec["tracker"] = rec
-
-            raw_queue.append(rec)
-
-            if len(raw_queue) > MAX_QUEUE_SIZE:
-                drop_count = len(raw_queue) - MAX_QUEUE_SIZE
-                raw_queue = raw_queue[drop_count:]
-                print(f"⚠️ Dropping {drop_count} old records to avoid backlog.")
-
-            if len(raw_queue) < window_size:
+            # Throttle: fire Groq at most once per --decision-frames video frames.
+            # This decouples cost from VLM velocity — running VLM faster never raises API spend.
+            if (last_decision_frame is not None and isinstance(frame_idx, int)
+                    and frame_idx - last_decision_frame < args.decision_frames):
                 continue
 
-            current_window = raw_queue[:window_size]
+            # Advance the throttle clock now (before the similarity skip) so even a
+            # skipped Groq call counts against the budget — avoids burst on scene change.
+            if isinstance(frame_idx, int):
+                last_decision_frame = frame_idx
 
-            current_window_events = []
-            for r in current_window:
-                ev = build_event_sentence(r)
-                current_window_events.append(ev)
+            # Attach the nearest tracker record. Tracker is dense (every 5 frames),
+            # so the nearest is almost always within --tracker-every * 3 frames.
+            if isinstance(frame_idx, int) and tracker_buffer:
+                nearest = min(tracker_buffer, key=lambda k: abs(k - frame_idx))
+                if abs(nearest - frame_idx) <= args.tracker_every * 3:
+                    rec["tracker"] = tracker_buffer[nearest]
 
-            new_event = current_window_events[-1]
-            print(f"[DEBUG] New event: {new_event}")
+            # Self-reference so build_vlm_sentence reads rec["vlm"]["summary"].
+            rec["vlm"] = rec
+
+            new_event = build_event_sentence(rec)
+            print(f"[DEBUG] New event (VLM frame {frame_idx}): {new_event}")
 
             last_event = event_history[-1] if event_history else None
             if last_event:
@@ -582,14 +576,12 @@ async def main_async():
 
             if last_event and simple_similarity(new_event, last_event) >= 0.90:
                 print("[DEBUG] No significant change → SKIP sending to Groq.")
-                raw_queue = raw_queue[jump_size:]
                 continue
 
             print("[DEBUG] Significant change detected → SEND to Groq.")
 
-            for ev in current_window_events:
-                if all(simple_similarity(ev, old) < 0.90 for old in event_history):
-                    event_history.append(ev)
+            if all(simple_similarity(new_event, old) < 0.90 for old in event_history):
+                event_history.append(new_event)
 
             if len(event_history) > MAX_EVENT_HISTORY:
                 event_history = event_history[-MAX_EVENT_HISTORY:]
@@ -601,7 +593,7 @@ async def main_async():
 
             scene_description = build_scene_description(
                 event_history,
-                current_window_events,
+                [new_event],
                 latest_business_context,
             )
 
@@ -630,19 +622,16 @@ async def main_async():
 
             result["anomaly_score"] = score
 
-            frame_start = current_window[0].get("frame_index")
-            frame_end = current_window[-1].get("frame_index")
-
             print("\n==================== Anomaly decision ====================")
-            print(f"Frames {frame_start}–{frame_end}")
+            print(f"VLM frame {frame_idx}")
             print(json.dumps(result, ensure_ascii=False, indent=2))
             print("=========================================================\n")
 
             anomaly_payload = {
                 "type": "groq_anomaly",
                 "frame_range": {
-                    "start": frame_start,
-                    "end": frame_end,
+                    "start": frame_idx,
+                    "end": frame_idx,
                 },
                 "result": {
                     "anomaly_score": result["anomaly_score"],
@@ -658,8 +647,6 @@ async def main_async():
             except Exception as e:
                 print(f"[WS] Send failed: {e}. Reconnecting...")
                 ws = await ws_connect_loop(args.ws_url)
-
-            raw_queue = raw_queue[jump_size:]
 
     except KeyboardInterrupt:
         print("\n[INFO] Stopped by user (Groq anomaly worker).")

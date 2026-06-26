@@ -38,20 +38,32 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
-# Fixed robbery-focused question set asked of the full frame each cycle.
-# PaliGemma-friendly: ONE free-form "describe" (its strongest mode) + atomic yes/no
-# cues. Never list multiple distinct actions with "or" in one question — PaliGemma
-# echoes the last option instead of reasoning (the old "...or running?" always
-# answered "running"). yes/no questions may join near-synonyms (one concept) safely.
+# Robbery-focused question set asked of the full frame each cycle.
+# PaliGemma rules observed throughout:
+#   - "Describe..." questions (free-form) are its strongest mode; use for rich evidence.
+#   - Atomic yes/no cues for hard signals.
+#   - Never list "A or B" in one question — PaliGemma echoes the last option.
+#   - One concept per question.
 QUESTIONS: List[tuple] = [
-    ("actions", "Describe what each person is doing."),
-    ("gun", "Is anyone holding a gun?"),
-    ("counter", "Is a person reaching over the counter or into a display case?"),
-    ("handsup", "Does anyone have their hands raised in the air?"),
-    ("mask", "Is anyone's face covered by a mask, hood, or helmet?"),
+    # --- Descriptive (free-form): full token budget, rich behavioral evidence ---
+    ("actions",     "Describe in detail what each person is doing."),
+    ("appearance",  "Describe what each person is wearing, including any hood, mask, or hat."),
+    ("weapon_desc", "Describe any weapon, gun, or knife that is visible."),
+    ("interaction", "Describe how the people are interacting with each other."),
+    ("posture",     "Describe the body language and posture of the people."),
+    # --- Binary cues: short answer budget, hard robbery signals ---
+    ("gun",         "Is anyone holding a gun?"),
+    ("knife",       "Is anyone holding a knife?"),
+    ("counter",     "Is a person reaching over the counter or into a display case?"),
+    ("handsup",     "Does anyone have their hands raised in the air?"),
+    ("mask",        "Is anyone's face covered by a mask, hood, or helmet?"),
+    ("aggression",  "Is anyone being physically aggressive or threatening?"),
 ]
 
-# The describe question gets room; yes/no answers are capped short to stay terse + fast.
+# Keys whose answers need the full token budget (free-form describe).
+DESCRIPTIVE_KEYS = {"actions", "appearance", "weapon_desc", "interaction", "posture"}
+
+# Binary yes/no cues are capped short to stay terse and fast.
 SHORT_ANSWER_TOKENS = 12
 
 
@@ -99,8 +111,9 @@ def analyze_frame(model, processor, device, dtype, image: Image.Image,
                   max_new_tokens: int = 64) -> Dict[str, str]:
     answers: Dict[str, str] = {}
     for key, q in QUESTIONS:
-        # Free-form describe gets the full budget; yes/no cues stay short.
-        tokens = max_new_tokens if key == "actions" else SHORT_ANSWER_TOKENS
+        # Descriptive free-form questions get the full token budget;
+        # binary yes/no cues stay short to keep inference fast.
+        tokens = max_new_tokens if key in DESCRIPTIVE_KEYS else SHORT_ANSWER_TOKENS
         try:
             answers[key] = ask_vlm(model, processor, device, dtype, image, q,
                                    max_new_tokens=tokens)
@@ -110,12 +123,19 @@ def analyze_frame(model, processor, device, dtype, image: Image.Image,
 
 
 def build_summary(answers: Dict[str, str]) -> str:
+    # Descriptive (rich evidence) first, then binary cues.
     return (
-        f"People's actions: {answers.get('actions', '-')}. "
+        f"Actions: {answers.get('actions', '-')}. "
+        f"Appearance: {answers.get('appearance', '-')}. "
+        f"Weapon described: {answers.get('weapon_desc', '-')}. "
+        f"Interaction: {answers.get('interaction', '-')}. "
+        f"Posture: {answers.get('posture', '-')}. "
         f"Gun visible: {answers.get('gun', '-')}. "
+        f"Knife visible: {answers.get('knife', '-')}. "
         f"Reaching over counter/display case: {answers.get('counter', '-')}. "
         f"Hands raised (possible victim): {answers.get('handsup', '-')}. "
-        f"Face concealed: {answers.get('mask', '-')}."
+        f"Face concealed: {answers.get('mask', '-')}. "
+        f"Aggressive: {answers.get('aggression', '-')}."
     )
 
 
