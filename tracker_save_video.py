@@ -54,8 +54,8 @@ def run_yolo_on_video(
 
 if __name__ == "__main__":
     run_yolo_on_video(
-        video_path="jewerly_store_short.mp4",
-        output_path="jewerly_store_with_bbox.mp4",
-        model_path="yolo26n.pt",
-        conf=0.25,
+        video_path="videos/jewerly_store_short.mp4",
+        output_path="videos/jewerly_store_with_bbox.mp4",
+        model_path="tracker/yolo26n.pt",
+        conf=0.65,
     )
