@@ -1,6 +1,6 @@
 # CRIMENO — Criminal Activity Detection ML Pipeline
 
-> **Component deep-dives:** [Groq anomaly worker](groq/README.md)
+> **Component deep-dives:** [Groq anomaly worker](groq/README.md) · [VLM worker](vlm/README.md) · [Tracker](tracker/README.md)
 
 ---
 
