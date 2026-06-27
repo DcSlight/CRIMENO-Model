@@ -191,12 +191,19 @@ def build_appearance_weapon_sentence(rec: Dict[str, Any]) -> str:
 
 def build_vlm_sentence(rec: Dict[str, Any]) -> str:
     """The local VLM's full-frame Q&A summary — the most action-aware source.
-    Passed through verbatim (NOT clean_caption, which would truncate it)."""
+    Prepends the Qwen scene description as a distinct labeled line so Groq
+    always sees the narrative context clearly, followed by the full summary."""
     vlm = rec.get("vlm")
     if not vlm:
         return ""
     summary = (vlm.get("summary") or "").strip()
-    return ("VLM observation: " + summary) if summary else ""
+    if not summary:
+        return ""
+    # Surface the scene narrative description as its own explicit line.
+    scene_desc = (vlm.get("qa") or {}).get("description", "").strip()
+    if scene_desc:
+        return f"Scene description: {scene_desc}\nVLM observation: {summary}"
+    return "VLM observation: " + summary
 
 
 def build_event_sentence(rec: Dict[str, Any]) -> str:
@@ -310,10 +317,15 @@ def build_prompt(scene_description: str) -> str:
         a) a WEAPON ALERT from the tracker (strong, person-gated confirmation), OR
         b) a VLM observation that explicitly states a weapon is visible/held (e.g.
            "Gun visible: yes", "Weapon described: person holding a pistol"), OR
-        c) a clearly described forbidden ACTION (e.g. theft / taking items, forcing a
-           display case, physical aggression, reaching behind the counter, leaving
-           without payment).
+        c) a clearly described forbidden ACTION (e.g. theft / taking items, forcing
+           a display case open, physical aggression, leaving without payment,
+           hiding jewelry inside clothing or bags).
       Appearance ALONE (clothing, hood, mask, hat) can NEVER be "criminal".
+    - IMPORTANT — reaching over the counter or into a display case ("Reaching over
+      counter: yes") is SUSPICIOUS ONLY (score 0.3–0.7). It MUST NOT be scored as
+      "criminal" unless it is combined with a weapon, confirmed theft (taking/hiding
+      items), or physical aggression. A customer leaning over or gesturing near a
+      counter during normal interaction does NOT meet the criminal threshold.
 
     ### 3. HOW TO USE THE INPUTS — BEHAVIOR FIRST
     - The PRIMARY question is: what are people DOING, and does it match the store's

@@ -1665,3 +1665,1355 @@ Current window:
 
     Respond with exactly one JSON object and nothing else.
 ====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from two sources:
+    1. VLM observation (full-frame behavioral Q&A: actions, weapons, theft cues, concealment)
+    2. YOLO tracker (object IDs, classes, bounding boxes, weapon alerts, continuity across frames)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+    - "criminal" REQUIRES one of:
+        a) a WEAPON ALERT from the tracker (strong, person-gated confirmation), OR
+        b) a VLM observation that explicitly states a weapon is visible/held (e.g.
+           "Gun visible: yes", "Weapon described: person holding a pistol"), OR
+        c) a clearly described forbidden ACTION (e.g. theft / taking items, forcing a
+           display case, physical aggression, reaching behind the counter, leaving
+           without payment).
+      Appearance ALONE (clothing, hood, mask, hat) can NEVER be "criminal".
+
+    ### 3. HOW TO USE THE INPUTS — BEHAVIOR FIRST
+    - The PRIMARY question is: what are people DOING, and does it match the store's
+      Allowed behaviors or the Forbidden behaviors in the business context above?
+      Base your decision mainly on the ACTIONS described vs that list.
+    - "VLM observation:" lines come from a vision model that looked directly at the
+      full video frame and answered specific questions (actions, appearance, weapons,
+      theft/forbidden actions, posture, aggression, concealed faces). This is the
+      PRIMARY behavioral evidence. A VLM weapon answer (e.g. "Gun visible: yes" or
+      a weapon description like "person holding a pistol") is STRONG evidence and
+      can justify "criminal" on its own, just like a WEAPON ALERT.
+    - "WEAPON ALERT:" lines from the tracker are STRONG evidence (weapons are
+      person-gated + temporally confirmed) and can justify "criminal" on their own.
+    - "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
+      hoods, masks and hats are frequently benign (hard hats, fashion, weather).
+      Appearance may RAISE concern only when combined with suspicious behavior. It
+      MUST NOT be the sole reason and MUST NOT push the label above "suspicious".
+    - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+      and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF RAW YOLO DATA
+    You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    (This prohibition does NOT apply to WEAPON ALERT / Appearance lines.)
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - describe ACTIONS / behaviors first (what people do), based on VLM observations and the
+      store's forbidden-behaviors list; a confirmed weapon is also a valid key moment
+    - mention appearance only as a MODIFIER of an action, never on its own
+    - NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "person reaching behind the cashier counter"
+    - "customer leaning over a display case and taking an item"
+    - "individual hiding jewelry inside their jacket"
+    - "person appears to be holding a gun"
+    - "hooded person forcing open a display case"   (appearance + action)
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "person wearing a hood"          (appearance with no action)
+    - "multiple people wearing hats"   (appearance with no action)
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe the behavioral/contextual anomaly (the ACTION), or the weapon
+    - be based on VLM observation content (and the forbidden-behaviors list)
+    - NOT be about appearance alone (e.g. "person wearing a hood" is NOT acceptable)
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- VLM observation: Scene: A security camera captures a moment inside a jewelry store where a customer interacts with an employee at the counter.. People: The customer is standing near the counter, possibly making a purchase or inquiry. The employee is seated behind the counter, engaged in conversation with the customer.. Appearance: The customer is wearing a white shirt and a red cap. The employee is dressed in a gray shirt and black pants.. Weapon: none. Gun visible: no. Knife visible: no. Reaching over counter: yes. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from two sources:
+    1. VLM observation (full-frame behavioral Q&A: actions, weapons, theft cues, concealment)
+    2. YOLO tracker (object IDs, classes, bounding boxes, weapon alerts, continuity across frames)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+    - "criminal" REQUIRES one of:
+        a) a WEAPON ALERT from the tracker (strong, person-gated confirmation), OR
+        b) a VLM observation that explicitly states a weapon is visible/held (e.g.
+           "Gun visible: yes", "Weapon described: person holding a pistol"), OR
+        c) a clearly described forbidden ACTION (e.g. theft / taking items, forcing a
+           display case, physical aggression, reaching behind the counter, leaving
+           without payment).
+      Appearance ALONE (clothing, hood, mask, hat) can NEVER be "criminal".
+
+    ### 3. HOW TO USE THE INPUTS — BEHAVIOR FIRST
+    - The PRIMARY question is: what are people DOING, and does it match the store's
+      Allowed behaviors or the Forbidden behaviors in the business context above?
+      Base your decision mainly on the ACTIONS described vs that list.
+    - "VLM observation:" lines come from a vision model that looked directly at the
+      full video frame and answered specific questions (actions, appearance, weapons,
+      theft/forbidden actions, posture, aggression, concealed faces). This is the
+      PRIMARY behavioral evidence. A VLM weapon answer (e.g. "Gun visible: yes" or
+      a weapon description like "person holding a pistol") is STRONG evidence and
+      can justify "criminal" on its own, just like a WEAPON ALERT.
+    - "WEAPON ALERT:" lines from the tracker are STRONG evidence (weapons are
+      person-gated + temporally confirmed) and can justify "criminal" on their own.
+    - "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
+      hoods, masks and hats are frequently benign (hard hats, fashion, weather).
+      Appearance may RAISE concern only when combined with suspicious behavior. It
+      MUST NOT be the sole reason and MUST NOT push the label above "suspicious".
+    - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+      and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF RAW YOLO DATA
+    You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    (This prohibition does NOT apply to WEAPON ALERT / Appearance lines.)
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - describe ACTIONS / behaviors first (what people do), based on VLM observations and the
+      store's forbidden-behaviors list; a confirmed weapon is also a valid key moment
+    - mention appearance only as a MODIFIER of an action, never on its own
+    - NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "person reaching behind the cashier counter"
+    - "customer leaning over a display case and taking an item"
+    - "individual hiding jewelry inside their jacket"
+    - "person appears to be holding a gun"
+    - "hooded person forcing open a display case"   (appearance + action)
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "person wearing a hood"          (appearance with no action)
+    - "multiple people wearing hats"   (appearance with no action)
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe the behavioral/contextual anomaly (the ACTION), or the weapon
+    - be based on VLM observation content (and the forbidden-behaviors list)
+    - NOT be about appearance alone (e.g. "person wearing a hood" is NOT acceptable)
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- VLM observation: Scene: A security camera captures a moment inside a jewelry store where a customer interacts with an employee at the counter.. People: The customer is standing near the counter, possibly making a purchase or inquiry. The employee is seated behind the counter, engaged in conversation with the customer.. Appearance: The customer is wearing a white shirt and a red cap. The employee is dressed in a gray shirt and black pants.. Weapon: none. Gun visible: no. Knife visible: no. Reaching over counter: yes. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+- VLM observation: Scene: A security camera captures a scene inside a jewelry store where two individuals are interacting at the counter.. People: The person on the left is seated at a desk, working on a laptop and holding a cup. The person on the right is standing near the counter, gesturing with their hands as if explaining something.. Appearance: The person on the left is wearing a white shirt and has short hair. The person on the right is wearing a white shirt and an orange hat.. Weapon: none. Gun visible: no. Knife visible: no. Reaching over counter: no. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from two sources:
+    1. VLM observation (full-frame behavioral Q&A: actions, weapons, theft cues, concealment)
+    2. YOLO tracker (object IDs, classes, bounding boxes, weapon alerts, continuity across frames)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+    - "criminal" REQUIRES one of:
+        a) a WEAPON ALERT from the tracker (strong, person-gated confirmation), OR
+        b) a VLM observation that explicitly states a weapon is visible/held (e.g.
+           "Gun visible: yes", "Weapon described: person holding a pistol"), OR
+        c) a clearly described forbidden ACTION (e.g. theft / taking items, forcing
+           a display case open, physical aggression, leaving without payment,
+           hiding jewelry inside clothing or bags).
+      Appearance ALONE (clothing, hood, mask, hat) can NEVER be "criminal".
+    - IMPORTANT — reaching over the counter or into a display case ("Reaching over
+      counter: yes") is SUSPICIOUS ONLY (score 0.3–0.7). It MUST NOT be scored as
+      "criminal" unless it is combined with a weapon, confirmed theft (taking/hiding
+      items), or physical aggression. A customer leaning over or gesturing near a
+      counter during normal interaction does NOT meet the criminal threshold.
+
+    ### 3. HOW TO USE THE INPUTS — BEHAVIOR FIRST
+    - The PRIMARY question is: what are people DOING, and does it match the store's
+      Allowed behaviors or the Forbidden behaviors in the business context above?
+      Base your decision mainly on the ACTIONS described vs that list.
+    - "VLM observation:" lines come from a vision model that looked directly at the
+      full video frame and answered specific questions (actions, appearance, weapons,
+      theft/forbidden actions, posture, aggression, concealed faces). This is the
+      PRIMARY behavioral evidence. A VLM weapon answer (e.g. "Gun visible: yes" or
+      a weapon description like "person holding a pistol") is STRONG evidence and
+      can justify "criminal" on its own, just like a WEAPON ALERT.
+    - "WEAPON ALERT:" lines from the tracker are STRONG evidence (weapons are
+      person-gated + temporally confirmed) and can justify "criminal" on their own.
+    - "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
+      hoods, masks and hats are frequently benign (hard hats, fashion, weather).
+      Appearance may RAISE concern only when combined with suspicious behavior. It
+      MUST NOT be the sole reason and MUST NOT push the label above "suspicious".
+    - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+      and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF RAW YOLO DATA
+    You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    (This prohibition does NOT apply to WEAPON ALERT / Appearance lines.)
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - describe ACTIONS / behaviors first (what people do), based on VLM observations and the
+      store's forbidden-behaviors list; a confirmed weapon is also a valid key moment
+    - mention appearance only as a MODIFIER of an action, never on its own
+    - NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "person reaching behind the cashier counter"
+    - "customer leaning over a display case and taking an item"
+    - "individual hiding jewelry inside their jacket"
+    - "person appears to be holding a gun"
+    - "hooded person forcing open a display case"   (appearance + action)
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "person wearing a hood"          (appearance with no action)
+    - "multiple people wearing hats"   (appearance with no action)
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe the behavioral/contextual anomaly (the ACTION), or the weapon
+    - be based on VLM observation content (and the forbidden-behaviors list)
+    - NOT be about appearance alone (e.g. "person wearing a hood" is NOT acceptable)
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- Scene description: A security camera captures a moment inside a gun store where an individual is seen bending down near the counter.
+VLM observation: Scene: A security camera captures a moment inside a gun store where an individual is seen bending down near the counter. People: The individual appears to be interacting with something on the floor near the counter. Appearance: The individual is wearing dark clothing and a hat. Weapon: None. Gun visible: no. Knife visible: no. Reaching over counter: no. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from two sources:
+    1. VLM observation (full-frame behavioral Q&A: actions, weapons, theft cues, concealment)
+    2. YOLO tracker (object IDs, classes, bounding boxes, weapon alerts, continuity across frames)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+    - "criminal" REQUIRES one of:
+        a) a WEAPON ALERT from the tracker (strong, person-gated confirmation), OR
+        b) a VLM observation that explicitly states a weapon is visible/held (e.g.
+           "Gun visible: yes", "Weapon described: person holding a pistol"), OR
+        c) a clearly described forbidden ACTION (e.g. theft / taking items, forcing
+           a display case open, physical aggression, leaving without payment,
+           hiding jewelry inside clothing or bags).
+      Appearance ALONE (clothing, hood, mask, hat) can NEVER be "criminal".
+    - IMPORTANT — reaching over the counter or into a display case ("Reaching over
+      counter: yes") is SUSPICIOUS ONLY (score 0.3–0.7). It MUST NOT be scored as
+      "criminal" unless it is combined with a weapon, confirmed theft (taking/hiding
+      items), or physical aggression. A customer leaning over or gesturing near a
+      counter during normal interaction does NOT meet the criminal threshold.
+
+    ### 3. HOW TO USE THE INPUTS — BEHAVIOR FIRST
+    - The PRIMARY question is: what are people DOING, and does it match the store's
+      Allowed behaviors or the Forbidden behaviors in the business context above?
+      Base your decision mainly on the ACTIONS described vs that list.
+    - "VLM observation:" lines come from a vision model that looked directly at the
+      full video frame and answered specific questions (actions, appearance, weapons,
+      theft/forbidden actions, posture, aggression, concealed faces). This is the
+      PRIMARY behavioral evidence. A VLM weapon answer (e.g. "Gun visible: yes" or
+      a weapon description like "person holding a pistol") is STRONG evidence and
+      can justify "criminal" on its own, just like a WEAPON ALERT.
+    - "WEAPON ALERT:" lines from the tracker are STRONG evidence (weapons are
+      person-gated + temporally confirmed) and can justify "criminal" on their own.
+    - "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
+      hoods, masks and hats are frequently benign (hard hats, fashion, weather).
+      Appearance may RAISE concern only when combined with suspicious behavior. It
+      MUST NOT be the sole reason and MUST NOT push the label above "suspicious".
+    - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+      and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF RAW YOLO DATA
+    You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    (This prohibition does NOT apply to WEAPON ALERT / Appearance lines.)
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - describe ACTIONS / behaviors first (what people do), based on VLM observations and the
+      store's forbidden-behaviors list; a confirmed weapon is also a valid key moment
+    - mention appearance only as a MODIFIER of an action, never on its own
+    - NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "person reaching behind the cashier counter"
+    - "customer leaning over a display case and taking an item"
+    - "individual hiding jewelry inside their jacket"
+    - "person appears to be holding a gun"
+    - "hooded person forcing open a display case"   (appearance + action)
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "person wearing a hood"          (appearance with no action)
+    - "multiple people wearing hats"   (appearance with no action)
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe the behavioral/contextual anomaly (the ACTION), or the weapon
+    - be based on VLM observation content (and the forbidden-behaviors list)
+    - NOT be about appearance alone (e.g. "person wearing a hood" is NOT acceptable)
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- Scene description: A security camera captures a moment inside a gun store where an individual is seen bending down near the counter.
+VLM observation: Scene: A security camera captures a moment inside a gun store where an individual is seen bending down near the counter. People: The individual appears to be interacting with something on the floor near the counter. Appearance: The individual is wearing dark clothing and a hat. Weapon: None. Gun visible: no. Knife visible: no. Reaching over counter: no. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+- Scene description: A person is seen walking through a gun store aisle, approaching a counter.
+VLM observation: Scene: A person is seen walking through a gun store aisle, approaching a counter. People: The person is walking through the gun store aisle and then approaches the counter. Appearance: The person is wearing a dark jacket and pants. Weapon: None. Gun visible: no. Knife visible: no. Reaching over counter: yes. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from two sources:
+    1. VLM observation (full-frame behavioral Q&A: actions, weapons, theft cues, concealment)
+    2. YOLO tracker (object IDs, classes, bounding boxes, weapon alerts, continuity across frames)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+    - "criminal" REQUIRES one of:
+        a) a WEAPON ALERT from the tracker (strong, person-gated confirmation), OR
+        b) a VLM observation that explicitly states a weapon is visible/held (e.g.
+           "Gun visible: yes", "Weapon described: person holding a pistol"), OR
+        c) a clearly described forbidden ACTION (e.g. theft / taking items, forcing
+           a display case open, physical aggression, leaving without payment,
+           hiding jewelry inside clothing or bags).
+      Appearance ALONE (clothing, hood, mask, hat) can NEVER be "criminal".
+    - IMPORTANT — reaching over the counter or into a display case ("Reaching over
+      counter: yes") is SUSPICIOUS ONLY (score 0.3–0.7). It MUST NOT be scored as
+      "criminal" unless it is combined with a weapon, confirmed theft (taking/hiding
+      items), or physical aggression. A customer leaning over or gesturing near a
+      counter during normal interaction does NOT meet the criminal threshold.
+
+    ### 3. HOW TO USE THE INPUTS — BEHAVIOR FIRST
+    - The PRIMARY question is: what are people DOING, and does it match the store's
+      Allowed behaviors or the Forbidden behaviors in the business context above?
+      Base your decision mainly on the ACTIONS described vs that list.
+    - "VLM observation:" lines come from a vision model that looked directly at the
+      full video frame and answered specific questions (actions, appearance, weapons,
+      theft/forbidden actions, posture, aggression, concealed faces). This is the
+      PRIMARY behavioral evidence. A VLM weapon answer (e.g. "Gun visible: yes" or
+      a weapon description like "person holding a pistol") is STRONG evidence and
+      can justify "criminal" on its own, just like a WEAPON ALERT.
+    - "WEAPON ALERT:" lines from the tracker are STRONG evidence (weapons are
+      person-gated + temporally confirmed) and can justify "criminal" on their own.
+    - "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
+      hoods, masks and hats are frequently benign (hard hats, fashion, weather).
+      Appearance may RAISE concern only when combined with suspicious behavior. It
+      MUST NOT be the sole reason and MUST NOT push the label above "suspicious".
+    - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+      and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF RAW YOLO DATA
+    You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    (This prohibition does NOT apply to WEAPON ALERT / Appearance lines.)
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - describe ACTIONS / behaviors first (what people do), based on VLM observations and the
+      store's forbidden-behaviors list; a confirmed weapon is also a valid key moment
+    - mention appearance only as a MODIFIER of an action, never on its own
+    - NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "person reaching behind the cashier counter"
+    - "customer leaning over a display case and taking an item"
+    - "individual hiding jewelry inside their jacket"
+    - "person appears to be holding a gun"
+    - "hooded person forcing open a display case"   (appearance + action)
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "person wearing a hood"          (appearance with no action)
+    - "multiple people wearing hats"   (appearance with no action)
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe the behavioral/contextual anomaly (the ACTION), or the weapon
+    - be based on VLM observation content (and the forbidden-behaviors list)
+    - NOT be about appearance alone (e.g. "person wearing a hood" is NOT acceptable)
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- Scene description: A surveillance video captures two individuals in a gun store, one approaching the counter while the other stands near the display cases.
+VLM observation: Scene: A surveillance video captures two individuals in a gun store, one approaching the counter while the other stands near the display cases. People: The individual approaching the counter appears to be interacting with the cashier, possibly making a purchase or inquiry. The second individual remains stationary, observing the interaction. Appearance: Both individuals are dressed in dark clothing. The person at the counter has their back turned, and the other individual is facing the counter. Weapon: none. Gun visible: no. Knife visible: no. Reaching over counter: yes. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from two sources:
+    1. VLM observation (full-frame behavioral Q&A: actions, weapons, theft cues, concealment)
+    2. YOLO tracker (object IDs, classes, bounding boxes, weapon alerts, continuity across frames)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+    - "criminal" REQUIRES one of:
+        a) a WEAPON ALERT from the tracker (strong, person-gated confirmation), OR
+        b) a VLM observation that explicitly states a weapon is visible/held (e.g.
+           "Gun visible: yes", "Weapon described: person holding a pistol"), OR
+        c) a clearly described forbidden ACTION (e.g. theft / taking items, forcing
+           a display case open, physical aggression, leaving without payment,
+           hiding jewelry inside clothing or bags).
+      Appearance ALONE (clothing, hood, mask, hat) can NEVER be "criminal".
+    - IMPORTANT — reaching over the counter or into a display case ("Reaching over
+      counter: yes") is SUSPICIOUS ONLY (score 0.3–0.7). It MUST NOT be scored as
+      "criminal" unless it is combined with a weapon, confirmed theft (taking/hiding
+      items), or physical aggression. A customer leaning over or gesturing near a
+      counter during normal interaction does NOT meet the criminal threshold.
+
+    ### 3. HOW TO USE THE INPUTS — BEHAVIOR FIRST
+    - The PRIMARY question is: what are people DOING, and does it match the store's
+      Allowed behaviors or the Forbidden behaviors in the business context above?
+      Base your decision mainly on the ACTIONS described vs that list.
+    - "VLM observation:" lines come from a vision model that looked directly at the
+      full video frame and answered specific questions (actions, appearance, weapons,
+      theft/forbidden actions, posture, aggression, concealed faces). This is the
+      PRIMARY behavioral evidence. A VLM weapon answer (e.g. "Gun visible: yes" or
+      a weapon description like "person holding a pistol") is STRONG evidence and
+      can justify "criminal" on its own, just like a WEAPON ALERT.
+    - "WEAPON ALERT:" lines from the tracker are STRONG evidence (weapons are
+      person-gated + temporally confirmed) and can justify "criminal" on their own.
+    - "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
+      hoods, masks and hats are frequently benign (hard hats, fashion, weather).
+      Appearance may RAISE concern only when combined with suspicious behavior. It
+      MUST NOT be the sole reason and MUST NOT push the label above "suspicious".
+    - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+      and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF RAW YOLO DATA
+    You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    (This prohibition does NOT apply to WEAPON ALERT / Appearance lines.)
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - describe ACTIONS / behaviors first (what people do), based on VLM observations and the
+      store's forbidden-behaviors list; a confirmed weapon is also a valid key moment
+    - mention appearance only as a MODIFIER of an action, never on its own
+    - NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "person reaching behind the cashier counter"
+    - "customer leaning over a display case and taking an item"
+    - "individual hiding jewelry inside their jacket"
+    - "person appears to be holding a gun"
+    - "hooded person forcing open a display case"   (appearance + action)
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "person wearing a hood"          (appearance with no action)
+    - "multiple people wearing hats"   (appearance with no action)
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe the behavioral/contextual anomaly (the ACTION), or the weapon
+    - be based on VLM observation content (and the forbidden-behaviors list)
+    - NOT be about appearance alone (e.g. "person wearing a hood" is NOT acceptable)
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- Scene description: A surveillance video captures two individuals in a gun store, one approaching the counter while the other stands near the display cases.
+VLM observation: Scene: A surveillance video captures two individuals in a gun store, one approaching the counter while the other stands near the display cases. People: The individual approaching the counter appears to be interacting with the cashier, possibly making a purchase or inquiry. The second individual remains stationary, observing the interaction. Appearance: Both individuals are dressed in dark clothing. The person at the counter has their back turned, and the other individual is facing the counter. Weapon: none. Gun visible: no. Knife visible: no. Reaching over counter: yes. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+- Scene description: A person is walking through a gun store, passing by various firearms displayed on the walls and shelves.
+VLM observation: Scene: A person is walking through a gun store, passing by various firearms displayed on the walls and shelves. People: The person is walking towards the back of the store, passing by a counter and a display case. Appearance: The person is wearing a dark jacket and a hat. Weapon: none. Gun visible: no. Knife visible: no. Reaching over counter: no. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from two sources:
+    1. VLM observation (full-frame behavioral Q&A: actions, weapons, theft cues, concealment)
+    2. YOLO tracker (object IDs, classes, bounding boxes, weapon alerts, continuity across frames)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+    - "criminal" REQUIRES one of:
+        a) a WEAPON ALERT from the tracker (strong, person-gated confirmation), OR
+        b) a VLM observation that explicitly states a weapon is visible/held (e.g.
+           "Gun visible: yes", "Weapon described: person holding a pistol"), OR
+        c) a clearly described forbidden ACTION (e.g. theft / taking items, forcing
+           a display case open, physical aggression, leaving without payment,
+           hiding jewelry inside clothing or bags).
+      Appearance ALONE (clothing, hood, mask, hat) can NEVER be "criminal".
+    - IMPORTANT — reaching over the counter or into a display case ("Reaching over
+      counter: yes") is SUSPICIOUS ONLY (score 0.3–0.7). It MUST NOT be scored as
+      "criminal" unless it is combined with a weapon, confirmed theft (taking/hiding
+      items), or physical aggression. A customer leaning over or gesturing near a
+      counter during normal interaction does NOT meet the criminal threshold.
+
+    ### 3. HOW TO USE THE INPUTS — BEHAVIOR FIRST
+    - The PRIMARY question is: what are people DOING, and does it match the store's
+      Allowed behaviors or the Forbidden behaviors in the business context above?
+      Base your decision mainly on the ACTIONS described vs that list.
+    - "VLM observation:" lines come from a vision model that looked directly at the
+      full video frame and answered specific questions (actions, appearance, weapons,
+      theft/forbidden actions, posture, aggression, concealed faces). This is the
+      PRIMARY behavioral evidence. A VLM weapon answer (e.g. "Gun visible: yes" or
+      a weapon description like "person holding a pistol") is STRONG evidence and
+      can justify "criminal" on its own, just like a WEAPON ALERT.
+    - "WEAPON ALERT:" lines from the tracker are STRONG evidence (weapons are
+      person-gated + temporally confirmed) and can justify "criminal" on their own.
+    - "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
+      hoods, masks and hats are frequently benign (hard hats, fashion, weather).
+      Appearance may RAISE concern only when combined with suspicious behavior. It
+      MUST NOT be the sole reason and MUST NOT push the label above "suspicious".
+    - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+      and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF RAW YOLO DATA
+    You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    (This prohibition does NOT apply to WEAPON ALERT / Appearance lines.)
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - describe ACTIONS / behaviors first (what people do), based on VLM observations and the
+      store's forbidden-behaviors list; a confirmed weapon is also a valid key moment
+    - mention appearance only as a MODIFIER of an action, never on its own
+    - NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "person reaching behind the cashier counter"
+    - "customer leaning over a display case and taking an item"
+    - "individual hiding jewelry inside their jacket"
+    - "person appears to be holding a gun"
+    - "hooded person forcing open a display case"   (appearance + action)
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "person wearing a hood"          (appearance with no action)
+    - "multiple people wearing hats"   (appearance with no action)
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe the behavioral/contextual anomaly (the ACTION), or the weapon
+    - be based on VLM observation content (and the forbidden-behaviors list)
+    - NOT be about appearance alone (e.g. "person wearing a hood" is NOT acceptable)
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- Scene description: A security camera captures a moment inside a jewelry store where a customer interacts with an employee at the counter.
+VLM observation: Scene: A security camera captures a moment inside a jewelry store where a customer interacts with an employee at the counter. People: The customer is standing near the counter, possibly making a purchase or inquiry. The employee is seated behind the counter, engaged in conversation with the customer. Appearance: The customer is wearing a white shirt and a red cap. The employee is dressed in a gray shirt and black pants. Weapon: none. Gun visible: no. Knife visible: no. Reaching over counter: yes. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from two sources:
+    1. VLM observation (full-frame behavioral Q&A: actions, weapons, theft cues, concealment)
+    2. YOLO tracker (object IDs, classes, bounding boxes, weapon alerts, continuity across frames)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+    - "criminal" REQUIRES one of:
+        a) a WEAPON ALERT from the tracker (strong, person-gated confirmation), OR
+        b) a VLM observation that explicitly states a weapon is visible/held (e.g.
+           "Gun visible: yes", "Weapon described: person holding a pistol"), OR
+        c) a clearly described forbidden ACTION (e.g. theft / taking items, forcing
+           a display case open, physical aggression, leaving without payment,
+           hiding jewelry inside clothing or bags).
+      Appearance ALONE (clothing, hood, mask, hat) can NEVER be "criminal".
+    - IMPORTANT — reaching over the counter or into a display case ("Reaching over
+      counter: yes") is SUSPICIOUS ONLY (score 0.3–0.7). It MUST NOT be scored as
+      "criminal" unless it is combined with a weapon, confirmed theft (taking/hiding
+      items), or physical aggression. A customer leaning over or gesturing near a
+      counter during normal interaction does NOT meet the criminal threshold.
+
+    ### 3. HOW TO USE THE INPUTS — BEHAVIOR FIRST
+    - The PRIMARY question is: what are people DOING, and does it match the store's
+      Allowed behaviors or the Forbidden behaviors in the business context above?
+      Base your decision mainly on the ACTIONS described vs that list.
+    - "VLM observation:" lines come from a vision model that looked directly at the
+      full video frame and answered specific questions (actions, appearance, weapons,
+      theft/forbidden actions, posture, aggression, concealed faces). This is the
+      PRIMARY behavioral evidence. A VLM weapon answer (e.g. "Gun visible: yes" or
+      a weapon description like "person holding a pistol") is STRONG evidence and
+      can justify "criminal" on its own, just like a WEAPON ALERT.
+    - "WEAPON ALERT:" lines from the tracker are STRONG evidence (weapons are
+      person-gated + temporally confirmed) and can justify "criminal" on their own.
+    - "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
+      hoods, masks and hats are frequently benign (hard hats, fashion, weather).
+      Appearance may RAISE concern only when combined with suspicious behavior. It
+      MUST NOT be the sole reason and MUST NOT push the label above "suspicious".
+    - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+      and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF RAW YOLO DATA
+    You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    (This prohibition does NOT apply to WEAPON ALERT / Appearance lines.)
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - describe ACTIONS / behaviors first (what people do), based on VLM observations and the
+      store's forbidden-behaviors list; a confirmed weapon is also a valid key moment
+    - mention appearance only as a MODIFIER of an action, never on its own
+    - NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "person reaching behind the cashier counter"
+    - "customer leaning over a display case and taking an item"
+    - "individual hiding jewelry inside their jacket"
+    - "person appears to be holding a gun"
+    - "hooded person forcing open a display case"   (appearance + action)
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "person wearing a hood"          (appearance with no action)
+    - "multiple people wearing hats"   (appearance with no action)
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe the behavioral/contextual anomaly (the ACTION), or the weapon
+    - be based on VLM observation content (and the forbidden-behaviors list)
+    - NOT be about appearance alone (e.g. "person wearing a hood" is NOT acceptable)
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- Scene description: A security camera captures a moment inside a jewelry store where a customer interacts with an employee at the counter.
+VLM observation: Scene: A security camera captures a moment inside a jewelry store where a customer interacts with an employee at the counter. People: The customer is standing near the counter, possibly making a purchase or inquiry. The employee is seated behind the counter, engaged in conversation with the customer. Appearance: The customer is wearing a white shirt and a red cap. The employee is dressed in a gray shirt and black pants. Weapon: none. Gun visible: no. Knife visible: no. Reaching over counter: yes. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+- Scene description: A security camera captures a scene inside a jewelry store where two individuals are interacting at the counter.
+VLM observation: Scene: A security camera captures a scene inside a jewelry store where two individuals are interacting at the counter. People: The person on the left is seated at a desk, working on a laptop and holding a cup. The person on the right is standing near the counter, gesturing with their hands as if explaining something. Appearance: The person on the left is wearing a white shirt and has short hair. The person on the right is wearing a white shirt and an orange hat. Weapon: none. Gun visible: no. Knife visible: no. Reaching over counter: no. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from two sources:
+    1. VLM observation (full-frame behavioral Q&A: actions, weapons, theft cues, concealment)
+    2. YOLO tracker (object IDs, classes, bounding boxes, weapon alerts, continuity across frames)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+    - "criminal" REQUIRES one of:
+        a) a WEAPON ALERT from the tracker (strong, person-gated confirmation), OR
+        b) a VLM observation that explicitly states a weapon is visible/held (e.g.
+           "Gun visible: yes", "Weapon described: person holding a pistol"), OR
+        c) a clearly described forbidden ACTION (e.g. theft / taking items, forcing
+           a display case open, physical aggression, leaving without payment,
+           hiding jewelry inside clothing or bags).
+      Appearance ALONE (clothing, hood, mask, hat) can NEVER be "criminal".
+    - IMPORTANT — reaching over the counter or into a display case ("Reaching over
+      counter: yes") is SUSPICIOUS ONLY (score 0.3–0.7). It MUST NOT be scored as
+      "criminal" unless it is combined with a weapon, confirmed theft (taking/hiding
+      items), or physical aggression. A customer leaning over or gesturing near a
+      counter during normal interaction does NOT meet the criminal threshold.
+
+    ### 3. HOW TO USE THE INPUTS — BEHAVIOR FIRST
+    - The PRIMARY question is: what are people DOING, and does it match the store's
+      Allowed behaviors or the Forbidden behaviors in the business context above?
+      Base your decision mainly on the ACTIONS described vs that list.
+    - "VLM observation:" lines come from a vision model that looked directly at the
+      full video frame and answered specific questions (actions, appearance, weapons,
+      theft/forbidden actions, posture, aggression, concealed faces). This is the
+      PRIMARY behavioral evidence. A VLM weapon answer (e.g. "Gun visible: yes" or
+      a weapon description like "person holding a pistol") is STRONG evidence and
+      can justify "criminal" on its own, just like a WEAPON ALERT.
+    - "WEAPON ALERT:" lines from the tracker are STRONG evidence (weapons are
+      person-gated + temporally confirmed) and can justify "criminal" on their own.
+    - "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
+      hoods, masks and hats are frequently benign (hard hats, fashion, weather).
+      Appearance may RAISE concern only when combined with suspicious behavior. It
+      MUST NOT be the sole reason and MUST NOT push the label above "suspicious".
+    - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+      and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF RAW YOLO DATA
+    You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    (This prohibition does NOT apply to WEAPON ALERT / Appearance lines.)
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - describe ACTIONS / behaviors first (what people do), based on VLM observations and the
+      store's forbidden-behaviors list; a confirmed weapon is also a valid key moment
+    - mention appearance only as a MODIFIER of an action, never on its own
+    - NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "person reaching behind the cashier counter"
+    - "customer leaning over a display case and taking an item"
+    - "individual hiding jewelry inside their jacket"
+    - "person appears to be holding a gun"
+    - "hooded person forcing open a display case"   (appearance + action)
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "person wearing a hood"          (appearance with no action)
+    - "multiple people wearing hats"   (appearance with no action)
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe the behavioral/contextual anomaly (the ACTION), or the weapon
+    - be based on VLM observation content (and the forbidden-behaviors list)
+    - NOT be about appearance alone (e.g. "person wearing a hood" is NOT acceptable)
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- Scene description: A security camera captures a moment inside a jewelry store where a customer interacts with an employee at the counter.
+VLM observation: Scene: A security camera captures a moment inside a jewelry store where a customer interacts with an employee at the counter. People: The customer is standing near the counter, possibly making a purchase or inquiry. The employee is seated behind the counter, engaged in conversation with the customer. Appearance: The customer is wearing a white shirt and a red cap. The employee is dressed in a gray shirt and black pants. Weapon: none. Gun visible: no. Knife visible: no. Reaching over counter: yes. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+- Scene description: A security camera captures a scene inside a jewelry store where two individuals are interacting at the counter.
+VLM observation: Scene: A security camera captures a scene inside a jewelry store where two individuals are interacting at the counter. People: The person on the left is seated at a desk, working on a laptop and holding a cup. The person on the right is standing near the counter, gesturing with their hands as if explaining something. Appearance: The person on the left is wearing a white shirt and has short hair. The person on the right is wearing a white shirt and an orange hat. Weapon: none. Gun visible: no. Knife visible: no. Reaching over counter: no. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+VLM observation: Scene: A security camera captures a moment inside a jewelry store where a customer interacts with an employee at the counter. People: The customer is gesturing with their hands while talking to the employee, who is standing behind the counter. The employee appears to be listening and responding. Appearance: The customer is wearing a black outfit and a hat. The employee is dressed in a white shirt and black pants. Weapon: none. Gun visible: no. Knife visible: no. Reaching over counter: yes. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from two sources:
+    1. VLM observation (full-frame behavioral Q&A: actions, weapons, theft cues, concealment)
+    2. YOLO tracker (object IDs, classes, bounding boxes, weapon alerts, continuity across frames)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+    - "criminal" REQUIRES one of:
+        a) a WEAPON ALERT from the tracker (strong, person-gated confirmation), OR
+        b) a VLM observation that explicitly states a weapon is visible/held (e.g.
+           "Gun visible: yes", "Weapon described: person holding a pistol"), OR
+        c) a clearly described forbidden ACTION (e.g. theft / taking items, forcing
+           a display case open, physical aggression, leaving without payment,
+           hiding jewelry inside clothing or bags).
+      Appearance ALONE (clothing, hood, mask, hat) can NEVER be "criminal".
+    - IMPORTANT — reaching over the counter or into a display case ("Reaching over
+      counter: yes") is SUSPICIOUS ONLY (score 0.3–0.7). It MUST NOT be scored as
+      "criminal" unless it is combined with a weapon, confirmed theft (taking/hiding
+      items), or physical aggression. A customer leaning over or gesturing near a
+      counter during normal interaction does NOT meet the criminal threshold.
+
+    ### 3. HOW TO USE THE INPUTS — BEHAVIOR FIRST
+    - The PRIMARY question is: what are people DOING, and does it match the store's
+      Allowed behaviors or the Forbidden behaviors in the business context above?
+      Base your decision mainly on the ACTIONS described vs that list.
+    - "VLM observation:" lines come from a vision model that looked directly at the
+      full video frame and answered specific questions (actions, appearance, weapons,
+      theft/forbidden actions, posture, aggression, concealed faces). This is the
+      PRIMARY behavioral evidence. A VLM weapon answer (e.g. "Gun visible: yes" or
+      a weapon description like "person holding a pistol") is STRONG evidence and
+      can justify "criminal" on its own, just like a WEAPON ALERT.
+    - "WEAPON ALERT:" lines from the tracker are STRONG evidence (weapons are
+      person-gated + temporally confirmed) and can justify "criminal" on their own.
+    - "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
+      hoods, masks and hats are frequently benign (hard hats, fashion, weather).
+      Appearance may RAISE concern only when combined with suspicious behavior. It
+      MUST NOT be the sole reason and MUST NOT push the label above "suspicious".
+    - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+      and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF RAW YOLO DATA
+    You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    (This prohibition does NOT apply to WEAPON ALERT / Appearance lines.)
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - describe ACTIONS / behaviors first (what people do), based on VLM observations and the
+      store's forbidden-behaviors list; a confirmed weapon is also a valid key moment
+    - mention appearance only as a MODIFIER of an action, never on its own
+    - NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "person reaching behind the cashier counter"
+    - "customer leaning over a display case and taking an item"
+    - "individual hiding jewelry inside their jacket"
+    - "person appears to be holding a gun"
+    - "hooded person forcing open a display case"   (appearance + action)
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "person wearing a hood"          (appearance with no action)
+    - "multiple people wearing hats"   (appearance with no action)
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe the behavioral/contextual anomaly (the ACTION), or the weapon
+    - be based on VLM observation content (and the forbidden-behaviors list)
+    - NOT be about appearance alone (e.g. "person wearing a hood" is NOT acceptable)
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- Scene description: A security camera captures a moment inside a jewelry store where a customer interacts with an employee at the counter.
+VLM observation: Scene: A security camera captures a moment inside a jewelry store where a customer interacts with an employee at the counter. People: The customer is standing near the counter, possibly making a purchase or inquiry. The employee is seated behind the counter, engaged in conversation with the customer. Appearance: The customer is wearing a white shirt and a red cap. The employee is dressed in a gray shirt and black pants. Weapon: none. Gun visible: no. Knife visible: no. Reaching over counter: yes. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+- Scene description: A security camera captures a scene inside a jewelry store where two individuals are interacting at the counter.
+VLM observation: Scene: A security camera captures a scene inside a jewelry store where two individuals are interacting at the counter. People: The person on the left is seated at a desk, working on a laptop and holding a cup. The person on the right is standing near the counter, gesturing with their hands as if explaining something. Appearance: The person on the left is wearing a white shirt and has short hair. The person on the right is wearing a white shirt and an orange hat. Weapon: none. Gun visible: no. Knife visible: no. Reaching over counter: no. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+VLM observation: Scene: A security camera captures a moment inside a jewelry store where a customer interacts with an employee at the counter. People: The customer is gesturing with their hands while talking to the employee, who is standing behind the counter. The employee appears to be listening and responding. Appearance: The customer is wearing a black outfit and a hat. The employee is dressed in a white shirt and black pants. Weapon: none. Gun visible: no. Knife visible: no. Reaching over counter: yes. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+- Scene description: A security camera captures a scene inside a jewelry store where a customer is interacting with an employee at the counter.
+VLM observation: Scene: A security camera captures a scene inside a jewelry store where a customer is interacting with an employee at the counter. People: The customer is standing near the counter, gesturing with their hands as they speak to the employee. The employee is standing behind the counter, facing the customer. Appearance: The customer is wearing a white shirt and a black hat. The employee is wearing a white shirt and a black hat. Weapon: none. Gun visible: no. Knife visible: no. Reaching over counter: yes. Hands raised (possible victim): no. Face concealed: yes. Aggressive: no.
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
+
+==================== NEW PROMPT ====================
+You are an expert system for video surveillance anomaly detection.
+
+    You receive short textual descriptions of what happens in a surveillance video over time.
+    These descriptions come from two sources:
+    1. VLM observation (full-frame behavioral Q&A: actions, weapons, theft cues, concealment)
+    2. YOLO tracker (object IDs, classes, bounding boxes, weapon alerts, continuity across frames)
+
+    Your task is to determine whether the described situation represents:
+    - normal everyday behavior,
+    - suspicious behavior, or
+    - criminal/dangerous behavior.
+
+    ==================== CRITICAL INSTRUCTIONS ====================
+
+    ### 1. JSON OUTPUT FORMAT (STRICT)
+    You must output EXACTLY one JSON object with the following fields:
+    - "anomaly_score": a float in [0, 1]
+    - "label": one of ["normal", "suspicious", "criminal"]
+    - "reason": a short explanation (max 30 words)
+    - "key_moments": a list of short phrases describing meaningful events
+
+    ### 2. SCORING CONSISTENCY RULES
+    - If label == "normal"     → anomaly_score MUST be <= 0.2
+    - If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+    - If label == "criminal"   → anomaly_score MUST be >= 0.8
+    - The score MUST always match the label category.
+    - "criminal" REQUIRES one of:
+        a) a WEAPON ALERT from the tracker (strong, person-gated confirmation), OR
+        b) a VLM observation that explicitly states a weapon is visible/held (e.g.
+           "Gun visible: yes", "Weapon described: person holding a pistol"), OR
+        c) a clearly described forbidden ACTION (e.g. theft / taking items, forcing
+           a display case open, physical aggression, leaving without payment,
+           hiding jewelry inside clothing or bags).
+      Appearance ALONE (clothing, hood, mask, hat) can NEVER be "criminal".
+    - IMPORTANT — reaching over the counter or into a display case ("Reaching over
+      counter: yes") is SUSPICIOUS ONLY (score 0.3–0.7). It MUST NOT be scored as
+      "criminal" unless it is combined with a weapon, confirmed theft (taking/hiding
+      items), or physical aggression. A customer leaning over or gesturing near a
+      counter during normal interaction does NOT meet the criminal threshold.
+
+    ### 3. HOW TO USE THE INPUTS — BEHAVIOR FIRST
+    - The PRIMARY question is: what are people DOING, and does it match the store's
+      Allowed behaviors or the Forbidden behaviors in the business context above?
+      Base your decision mainly on the ACTIONS described vs that list.
+    - "VLM observation:" lines come from a vision model that looked directly at the
+      full video frame and answered specific questions (actions, appearance, weapons,
+      theft/forbidden actions, posture, aggression, concealed faces). This is the
+      PRIMARY behavioral evidence. A VLM weapon answer (e.g. "Gun visible: yes" or
+      a weapon description like "person holding a pistol") is STRONG evidence and
+      can justify "criminal" on its own, just like a WEAPON ALERT.
+    - "WEAPON ALERT:" lines from the tracker are STRONG evidence (weapons are
+      person-gated + temporally confirmed) and can justify "criminal" on their own.
+    - "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
+      hoods, masks and hats are frequently benign (hard hats, fashion, weather).
+      Appearance may RAISE concern only when combined with suspicious behavior. It
+      MUST NOT be the sole reason and MUST NOT push the label above "suspicious".
+    - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+      and should be used ONLY to:
+      * understand continuity of people/objects across frames
+      * detect repeated presence or movement patterns
+      * identify that the same person appears in multiple frames
+
+    ### 4. PROHIBITED USE OF RAW YOLO DATA
+    You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+    Specifically:
+    - DO NOT use confidence scores as reasons.
+    - DO NOT use bounding boxes as reasons.
+    - DO NOT use "ID 1", "ID 2", etc. as key moments.
+    - DO NOT treat "multiple people detected" as suspicious by itself.
+    (This prohibition does NOT apply to WEAPON ALERT / Appearance lines.)
+
+    ### 5. KEY MOMENTS RULES
+    "key_moments" MUST:
+    - describe ACTIONS / behaviors first (what people do), based on VLM observations and the
+      store's forbidden-behaviors list; a confirmed weapon is also a valid key moment
+    - mention appearance only as a MODIFIER of an action, never on its own
+    - NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+    Examples of GOOD key moments:
+    - "person reaching behind the cashier counter"
+    - "customer leaning over a display case and taking an item"
+    - "individual hiding jewelry inside their jacket"
+    - "person appears to be holding a gun"
+    - "hooded person forcing open a display case"   (appearance + action)
+
+    Examples of BAD key moments (FORBIDDEN):
+    - "person wearing a hood"          (appearance with no action)
+    - "multiple people wearing hats"   (appearance with no action)
+    - "ID 1: person (confidence 0.91)"
+    - "three people detected"
+
+    ### 6. REASON FIELD RULES
+    The "reason" MUST:
+    - describe the behavioral/contextual anomaly (the ACTION), or the weapon
+    - be based on VLM observation content (and the forbidden-behaviors list)
+    - NOT be about appearance alone (e.g. "person wearing a hood" is NOT acceptable)
+    - NOT mention YOLO IDs, confidence, or bounding boxes
+    - be short and human‑interpretable
+
+    ==============================================================
+
+    Here is the scene description in chronological order:
+
+    Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- Scene description: A security camera captures a moment inside a jewelry store where a customer interacts with an employee at the counter.
+VLM observation: Scene: A security camera captures a moment inside a jewelry store where a customer interacts with an employee at the counter. People: The customer is standing near the counter, possibly making a purchase or inquiry. The employee is seated behind the counter, engaged in conversation with the customer. Appearance: The customer is wearing a white shirt and a red cap. The employee is dressed in a gray shirt and black pants. Weapon: none. Gun visible: no. Knife visible: no. Reaching over counter: yes. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+- Scene description: A security camera captures a scene inside a jewelry store where two individuals are interacting at the counter.
+VLM observation: Scene: A security camera captures a scene inside a jewelry store where two individuals are interacting at the counter. People: The person on the left is seated at a desk, working on a laptop and holding a cup. The person on the right is standing near the counter, gesturing with their hands as if explaining something. Appearance: The person on the left is wearing a white shirt and has short hair. The person on the right is wearing a white shirt and an orange hat. Weapon: none. Gun visible: no. Knife visible: no. Reaching over counter: no. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+VLM observation: Scene: A security camera captures a moment inside a jewelry store where a customer interacts with an employee at the counter. People: The customer is gesturing with their hands while talking to the employee, who is standing behind the counter. The employee appears to be listening and responding. Appearance: The customer is wearing a black outfit and a hat. The employee is dressed in a white shirt and black pants. Weapon: none. Gun visible: no. Knife visible: no. Reaching over counter: yes. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+- Scene description: A security camera captures a scene inside a jewelry store where a customer is interacting with an employee at the counter.
+VLM observation: Scene: A security camera captures a scene inside a jewelry store where a customer is interacting with an employee at the counter. People: The customer is standing near the counter, gesturing with their hands as they speak to the employee. The employee is standing behind the counter, facing the customer. Appearance: The customer is wearing a white shirt and a black hat. The employee is wearing a white shirt and a black hat. Weapon: none. Gun visible: no. Knife visible: no. Reaching over counter: yes. Hands raised (possible victim): no. Face concealed: yes. Aggressive: no.
+- Scene description: A security camera captures a moment inside a jewelry store where a customer is interacting with an employee at the counter.
+VLM observation: Scene: A security camera captures a moment inside a jewelry store where a customer is interacting with an employee at the counter. People: The customer is standing near the counter, holding a small object and talking to the employee. The employee appears to be assisting the customer. Appearance: The customer is wearing a black shirt and a red cap. The employee is wearing a white shirt and a black apron. Weapon: none. Gun visible: no. Knife visible: no. Reaching over counter: yes. Hands raised (possible victim): no. Face concealed: no. Aggressive: no.
+
+Current window:
+
+    Respond with exactly one JSON object and nothing else.
+====================================================
