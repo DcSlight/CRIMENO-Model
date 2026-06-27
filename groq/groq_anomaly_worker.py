@@ -4,6 +4,7 @@ import re
 import zmq
 import asyncio
 import argparse
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 from groq import Groq
@@ -20,7 +21,8 @@ ZMQ_ENDPOINT = "tcp://127.0.0.1:5581"
 MAX_QUEUE_SIZE = 30
 MAX_EVENT_HISTORY = 10
 
-CONTEXT_LOG_FILE = "groq_context_log.txt"
+# Log file lives next to this script (groq/ folder) regardless of CWD.
+CONTEXT_LOG_FILE = str(Path(__file__).resolve().parent / "groq_context_log.txt")
 
 # Cue keys that come from the VLM's structured QA dict (vlm_worker.py → rec["qa"]).
 # HARD_SIGNAL_KEYS: if ANY of these is "yes", the frame is ALWAYS sent to Groq —

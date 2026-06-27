@@ -4,7 +4,7 @@
 # - Runs YOLOv8 (COCO) + simple IOU tracker
 # - Optional motion fallback (MOG2)
 # - Sends results to NestJS via WebSocket
-# - ✨ Also sends tracking data to Qwen worker via ZeroMQ PUSH (port 5580)
+# - Sends tracking data to groq_anomaly_worker via ZeroMQ PUSH (port 5581)
 
 import argparse
 import asyncio
@@ -13,7 +13,11 @@ import json
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+# Anchor file-system paths relative to this script, not the CWD.
+_HERE = Path(__file__).resolve().parent
 
 import cv2
 import numpy as np
@@ -378,9 +382,9 @@ async def main_async():
     parser.add_argument("--ack-endpoint", dest="ack_endpoint", default="tcp://127.0.0.1:5562",
                         help="ZeroMQ endpoint to send reset ack back to broadcaster (PUSH).")
     parser.add_argument("--ws_url", default="none")
-    parser.add_argument("--yolo_model", default="yolo26s.pt",
+    parser.add_argument("--yolo_model", default=str(_HERE / "yolo26s.pt"),
                         help="YOLO26 detection weights for general objects (COCO).")
-    parser.add_argument("--appearance_model", default="yoloe-26s-seg.pt",
+    parser.add_argument("--appearance_model", default=str(_HERE / "yoloe-26s-seg.pt"),
                         help="Open-vocabulary YOLOE-26 weights. Detects both appearance "
                              "(hood, mask, dark clothing) AND weapons (gun, knife) by text prompt.")
     parser.add_argument("--use_appearance", type=int, default=1,
@@ -434,7 +438,7 @@ async def main_async():
     model_suspicious = None
     if args.use_suspicious:
         print("[TRACKER] Loading custom suspicious model: Suspicious_Activities_nano.pt...")
-        model_suspicious = YOLO("Suspicious_Activities_nano.pt")
+        model_suspicious = YOLO(str(_HERE / "Suspicious_Activities_nano.pt"))
     else:
         print("[TRACKER] Suspicious nano model disabled (--use_suspicious 0)")
 
