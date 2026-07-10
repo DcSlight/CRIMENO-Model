@@ -32,7 +32,11 @@ OUTPUT_LOG_FILE  = _HERE / "logs_output.jsonl"
 
 # Cue keys from the VLM's structured QA dict (vlm_worker.py → rec["qa"]).
 # HARD_SIGNAL_KEYS: if ANY of these is "yes", the frame is ALWAYS sent to Groq.
-BINARY_CUE_KEYS  = ["gun", "knife", "reaching_counter", "hands_up", "face_concealed", "aggression"]
+# NOTE: "reaching_counter" was split into "reaching_display_case" (normal browsing/selling
+# motion) and "reaching_behind_counter" (employee-only space) so the two are never conflated
+# before Groq gets to reason about them — see vlm/prompt.txt.
+BINARY_CUE_KEYS  = ["gun", "knife", "reaching_display_case", "reaching_behind_counter",
+                    "hands_up", "face_concealed", "aggression"]
 HARD_SIGNAL_KEYS = ["gun", "knife", "hands_up", "aggression"]
 
 _PROMPT_TEMPLATE = (_HERE / "prompt.txt").read_text(encoding="utf-8")
@@ -154,6 +158,30 @@ def call_groq_for_anomaly(client: Groq, model_name: str, prompt: str) -> Dict[st
 
 
 # ============================================================
+# Scoring
+# ============================================================
+
+def apply_scoring(label: str, raw_score: float, scoring_level: str = "balanced") -> float:
+    """Clamp a raw LLM anomaly_score into the fixed band for its label:
+      normal <= 0.2, suspicious in [0.3, 0.7], criminal >= 0.8.
+    Pure function (no I/O) so it's independently testable/importable — used by both the
+    live worker loop and eval/run_eval.py.
+
+    `scoring_level` (conservative/balanced/aggressive) is accepted but currently a no-op;
+    a later phase wires it to a deterministic pre-clamp bias so a store's chosen
+    sensitivity actually shifts borderline cases across label boundaries.
+    """
+    score = raw_score
+    if label == "normal":
+        score = min(score, 0.2)
+    elif label == "suspicious":
+        score = max(0.3, min(score, 0.7))
+    elif label == "criminal":
+        score = max(score, 0.8)
+    return score
+
+
+# ============================================================
 # WebSocket helpers
 # ============================================================
 
@@ -215,7 +243,7 @@ async def main_async():
     latest_business_context: str      = ""
     tracker_buffer: Dict[int, Dict]   = {}
     last_decision_frame: Optional[int] = None
-    last_cues: Optional[Dict[str, bool]] = None
+    last_cues: Optional[Dict[str, str]] = None  # raw 3-state (yes/no/unclear) values, not booleans
 
     try:
         while True:
@@ -277,14 +305,17 @@ async def main_async():
             print(f"[DEBUG] New event (VLM frame {frame_idx}): {new_event}")
 
             # Cue-based change detection.
-            # HARD SIGNALS (gun/knife/hands-up/aggression): always send.
+            # HARD SIGNALS (gun/knife/hands-up/aggression): always send on a definitive "yes".
             # Any cue flip: send. Identical benign cues: skip.
-            qa   = rec.get("qa") or {}
-            cues = {k: str(qa.get(k, "")).strip().lower().startswith("y")
-                    for k in BINARY_CUE_KEYS}
+            # NOTE: raw (3-state: yes/no/unclear) values are compared for change detection —
+            # not just the yes/no-ish boolean — so a "no" -> "unclear" escalation still
+            # triggers a Groq call even though it isn't a hard signal on its own.
+            qa       = rec.get("qa") or {}
+            raw_cues = {k: str(qa.get(k, "")).strip().lower() for k in BINARY_CUE_KEYS}
+            cues     = {k: v.startswith("y") for k, v in raw_cues.items()}
             hard_now     = any(cues[k] for k in HARD_SIGNAL_KEYS)
-            cues_changed = (last_cues is None) or (cues != last_cues)
-            print(f"[DEBUG] Cues: {cues} | hard={hard_now} | changed={cues_changed}")
+            cues_changed = (last_cues is None) or (raw_cues != last_cues)
+            print(f"[DEBUG] Cues: {raw_cues} | hard={hard_now} | changed={cues_changed}")
 
             # Scene-reset: major textual divergence clears stale history.
             if event_history and simple_similarity(new_event, event_history[-1]) < 0.20:
@@ -295,7 +326,7 @@ async def main_async():
                 print("[DEBUG] All cues benign + unchanged → SKIP.")
                 continue
 
-            last_cues = cues
+            last_cues = raw_cues
             print(f"[DEBUG] Sending to Groq (hard={hard_now}, changed={cues_changed}).")
 
             if all(simple_similarity(new_event, old) < 0.90 for old in event_history):
@@ -335,15 +366,7 @@ async def main_async():
 
             label = result.get("label", "")
             score = float(result.get("anomaly_score", 0.0))
-
-            if label == "normal":
-                score = min(score, 0.2)
-            elif label == "suspicious":
-                score = max(0.3, min(score, 0.7))
-            elif label == "criminal":
-                score = max(score, 0.8)
-
-            result["anomaly_score"] = score
+            result["anomaly_score"] = apply_scoring(label, score)
 
             print("\n==================== Anomaly decision ====================")
             print(f"VLM frame {frame_idx}")

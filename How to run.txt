@@ -4,36 +4,15 @@ Step 1 - Broadcaster:
 Step 2 - Groq anomaly worker:
   python groq_anomaly_worker.py --ws_url ws://127.0.0.1:3000/ws/groq --decision-frames 60 --tracker-every 5
 
-  --decision-frames: minimum video frames between two Groq API calls (= cost knob, default 60).
-                     Groq fires AT MOST once per this many frames regardless of how fast VLM runs.
-  --tracker-every:   tracker's --send_every_n_frames value (default 5). Used to bound how far a
-                     tracker record can be from a VLM anchor when attaching enrichment context.
-  Cost is fully decoupled from VLM speed: running VLM faster gives fresher context but never
-  increases API spend. Only lower --decision-frames to increase decision frequency.
-
 Step 3 - YOLO Tracker:
   python tracker_worker.py --device cuda --ws_url ws://127.0.0.1:3000/ws/tracker --send_overlay 0 --send_every_n_frames 5 --anomaly-endpoint tcp://127.0.0.1:5581
 
-Step 4 - VLM layer (Groq vision, full-frame scene analysis — PRIMARY decision driver / anchor):
+Step 4 - VLM layer:
   python vlm_worker.py --every 60 --ws-url none --anomaly-endpoint tcp://127.0.0.1:5581
 
-  Uses GROQ_API_KEY (see .env.example) — the SAME key as Step 2's anomaly worker, so both
-  share one Groq quota. Get one at https://console.groq.com/keys
-
-  VLM is the decision ANCHOR: each VLM frame triggers a potential Groq decision (subject to the
-  --decision-frames throttle above). The nearest tracker frame is attached automatically as
-  enrichment context.
-  One single structured call per frame returns rich JSON: scene description, people actions,
-  appearance, weapon description, + binary cues (gun, knife, reaching counter, hands up,
-  face concealed, aggression).
-  Model options:
-    --vlm_model meta-llama/llama-4-scout-17b-16e-instruct   (default, Groq's primary vision model)
-    --vlm_model qwen/qwen3.6-27b                            (newer 27B multimodal alternate)
-  NOTE: Llama 4 Maverick was deprecated on Groq (Feb 2026) and is now text-only — not usable here.
-  WS: use --ws-url none unless the NestJS backend actually exposes a /ws/vlm route (it does NOT by
-  default — a missing route causes "did not receive a valid HTTP response" and the worker hangs
-  retrying). The VLM reaches Groq via the anomaly-endpoint (5581) regardless of WS.
-
+Eval harness:
+  py eval/run_eval.py            (fast, free, no API calls)
+  py eval/run_eval.py --live     (calls real Groq API, small cost)
 
 
 ---------------

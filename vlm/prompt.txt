@@ -1,21 +1,29 @@
 You are a surveillance camera analyst. Analyze this security camera frame from a store.
+Lead with the most security-relevant observation in the frame — do NOT open with a
+generic scene-setting sentence like "A security camera captures a moment inside a store."
+If nothing notable is happening, a short factual sentence is fine, but do not pad it.
+
 Return ONLY a valid JSON object with these exact keys — no extra text before or after:
 
 {
-  "description": "1-2 sentence factual description of the scene",
+  "description": "1-2 sentence factual description of the scene, leading with the most security-relevant detail",
   "people_actions": "what each visible person is doing",
   "appearance": "what each person is wearing (clothing, headwear, face covering)",
-  "weapon": "describe any visible weapon (gun, knife, etc.) or 'none'",
-  "gun": "yes or no",
-  "knife": "yes or no",
-  "reaching_counter": "yes or no — is anyone reaching over the counter or into a display case",
-  "hands_up": "yes or no — does anyone have hands raised (possible victim or surrender pose)",
-  "face_concealed": "yes or no — is anyone's face covered by a mask, hood, or helmet",
-  "aggression": "yes or no — is anyone being physically aggressive or threatening"
+  "weapon": "describe any visible weapon (gun, knife, etc.), a suspicious object that might be one, or 'none'",
+  "gun": "yes or no or unclear — is a gun visible or being held. If 'weapon' describes something that could be a gun, this must be at least 'unclear', never 'no'",
+  "knife": "yes or no or unclear — is a knife visible or being held. If 'weapon' describes something that could be a knife, this must be at least 'unclear', never 'no'",
+  "reaching_display_case": "yes or no — is anyone reaching into, over, or leaning over a display case or shelf to view or handle merchandise (normal browsing/selling motion)",
+  "reaching_behind_counter": "yes or no or unclear — is anyone who is NOT already stationed there entering the employee-only space behind the cashier counter or register (do NOT answer yes for reaching into a display case — that is a separate field)",
+  "hands_up": "yes or no or unclear — does anyone have hands raised (possible victim or surrender pose)",
+  "face_concealed": "yes or no or unclear — is anyone's face itself covered by a mask, gaiter, or a helmet visor, such that their facial features are hidden. Ordinary headwear (caps, hats, beanies, hijabs, hoods worn back, or other head coverings that leave the face visible) is NOT face concealment — answer 'no' for headwear alone",
+  "aggression": "yes or no or unclear — is anyone being physically aggressive or threatening"
 }
 
 Rules:
 - Base every answer ONLY on what is clearly visible in the frame.
-- Answer "no" for binary fields if you are uncertain.
+- Use "unclear" for binary fields when the evidence is ambiguous or partially obscured —
+  do NOT default to "no" just because you are uncertain. Collapsing uncertainty to "no"
+  hides real escalating risk from the downstream reasoning system.
+- Keep "gun", "knife", "weapon" mutually consistent — see the field descriptions above.
 - Do NOT guess, hallucinate, or invent details.
 - Return ONLY the JSON object with no other text.

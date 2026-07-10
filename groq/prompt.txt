@@ -37,6 +37,16 @@ You must output EXACTLY one JSON object with the following fields:
 - The PRIMARY question is: what are people DOING, and does it match the store's
   Allowed behaviors or the Forbidden behaviors in the business context above?
   Base your decision mainly on the ACTIONS described vs that list.
+- MATCH BY SPECIFIC WORDING, NOT GENERAL TOPIC. Before scoring, go through each
+  described action and find the Allowed/Forbidden list item it actually matches —
+  do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump
+  to the nearest-sounding Forbidden item. Concretely: reaching INTO or OVER a
+  DISPLAY CASE to view/handle merchandise matches an Allowed item like "Employees
+  opening display cases" or "Customers trying on jewelry" — it is NOT the same as
+  reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what a
+  Forbidden item like "Reaching behind cashier counter" actually describes. Only
+  score the latter as suspicious/criminal reaching behavior; do not conflate the two
+  just because both mention "reaching" or "counter".
 - "VLM observation:" lines come from a vision model that looked directly at the
   full video frame and answered specific questions (actions, appearance, weapons,
   theft/forbidden actions, posture, aggression, concealed faces). This is the
@@ -45,10 +55,19 @@ You must output EXACTLY one JSON object with the following fields:
   can justify "criminal" on its own, just like a WEAPON ALERT.
 - "WEAPON ALERT:" lines from the tracker are STRONG evidence (weapons are
   person-gated + temporally confirmed) and can justify "criminal" on their own.
+- A binary VLM cue answered "unclear" (e.g. "Gun: unclear", "Aggression: unclear")
+  is WEAK-TO-MODERATE escalating evidence — more significant than "no", but not on
+  its own sufficient for "criminal" (see rule 2). Do not treat "unclear" the same
+  as "no"; a run of "unclear" answers across consecutive frames, or "unclear"
+  combined with a matching Forbidden-list action, can justify "suspicious".
 - "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
-  hoods, masks and hats are frequently benign (hard hats, fashion, weather).
-  Appearance may RAISE concern only when combined with suspicious behavior. It
-  MUST NOT be the sole reason and MUST NOT push the label above "suspicious".
+  hoods, masks and hats are frequently benign (hard hats, fashion, weather,
+  religious or cultural head coverings). Appearance may RAISE concern only when
+  combined with suspicious behavior. It MUST NOT be the sole reason and MUST NOT
+  push the label above "suspicious". Specifically: headwear mentioned only in an
+  "Appearance" line (caps, hats, beanies, hijabs, hoods) is NOT face concealment —
+  only an explicit VLM "Face concealed: yes/unclear" answer is concealment evidence;
+  never infer concealment yourself from appearance text alone.
 - Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
   and should be used ONLY to:
   * understand continuity of people/objects across frames
