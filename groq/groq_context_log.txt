@@ -129,7 +129,7 @@ Forbidden behaviors: Entering employee-only storage area, Reaching behind cashie
 Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
   - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
 Recent context:
-- VLM observation: Description: A man in a orange head covering appears to be holding a gun and is interacting with a store employee.. People Actions: One man is sitting at a desk, one man is standing behind the counter looking at him, another man is standing near the display case looking at items, and a fourth man is standing by the door.. Appearance: The man at the desk is wearing a white shirt. The man with the orange head covering is wearing a gray sweatshirt and pants. The man near the display case is wearing a white shirt and pants. The man by the door is wearing a black robe and head covering.. Weapon: A gun appears to be held by the man in the orange head covering.. Gun: yes. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: unclear. YOLO tracker detected: ID 1: person (confidence 0.92) at [486,100,541,236]; ID 2: person (confidence 0.91) at [113,264,191,358]; ID 3: person (confidence 0.80) at [350,133,406,223]; ID 4: person (confidence 0.69) at [457,0,470,29].
+- VLM observation: Description: A man wearing a grey sweatsuit and an orange beanie appears to be handling items on a display case, while another individual in a black garment stands nearby.. People Actions: One man is sitting at a desk, one man is handling items on a display case, and another individual is standing nearby.. Appearance: The man at the desk is wearing a white shirt. The man handling the display case is wearing a grey sweatsuit and an orange beanie. The third individual is wearing a black garment.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no. YOLO tracker detected: ID 1: person (confidence 0.92) at [486,100,541,236]; ID 2: person (confidence 0.91) at [113,264,191,358]; ID 3: person (confidence 0.80) at [350,133,406,223]; ID 4: person (confidence 0.69) at [457,0,470,29].
 
 Current window:
 
@@ -137,161 +137,11 @@ Respond with exactly one JSON object and nothing else.
 
 OUTPUT FROM GROQ:
 {
-  "anomaly_score": 0.9,
-  "label": "criminal",
-  "reason": "Gun held by man",
+  "anomaly_score": 0.1,
+  "label": "normal",
+  "reason": "Customers handling items",
   "key_moments": [
-    "person holding a gun",
-    "man interacting with store employee while armed"
-  ]
-}
-
-======================================================
-VLM frame 60
-======================================================
-INPUT TO GROQ:
-You are an expert system for video surveillance anomaly detection.
-
-You receive short textual descriptions of what happens in a surveillance video over time.
-These descriptions come from two sources:
-1. VLM observation (full-frame behavioral Q&A: actions, weapons, theft cues, concealment)
-2. YOLO tracker (object IDs, classes, bounding boxes, weapon alerts, continuity across frames)
-
-Your task is to determine whether the described situation represents:
-- normal everyday behavior,
-- suspicious behavior, or
-- criminal/dangerous behavior.
-
-==================== CRITICAL INSTRUCTIONS ====================
-
-### 1. JSON OUTPUT FORMAT (STRICT)
-You must output EXACTLY one JSON object with the following fields:
-- "anomaly_score": a float in [0, 1]
-- "label": one of ["normal", "suspicious", "criminal"]
-- "reason": a short explanation (max 30 words)
-- "key_moments": a list of short phrases describing meaningful events
-
-### 2. SCORING CONSISTENCY RULES
-- If label == "normal"     → anomaly_score MUST be <= 0.2
-- If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
-- If label == "criminal"   → anomaly_score MUST be >= 0.8
-- The score MUST always match the label category.
-- "criminal" REQUIRES one of:
-    a) a WEAPON ALERT from the tracker (strong, person-gated confirmation), OR
-    b) a VLM observation that explicitly states a weapon is visible/held (e.g.
-       "Gun visible: yes", "Weapon described: person holding a pistol"), OR
-    c) a clearly described forbidden ACTION (e.g. theft / taking items, forcing a
-       display case, physical aggression, reaching behind the counter, leaving
-       without payment).
-  Appearance ALONE (clothing, hood, mask, hat) can NEVER be "criminal".
-
-### 3. HOW TO USE THE INPUTS — BEHAVIOR FIRST
-- The PRIMARY question is: what are people DOING, and does it match the store's
-  Allowed behaviors or the Forbidden behaviors in the business context above?
-  Base your decision mainly on the ACTIONS described vs that list.
-- MATCH BY SPECIFIC WORDING, NOT GENERAL TOPIC. Before scoring, go through each
-  described action and find the Allowed/Forbidden list item it actually matches —
-  do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump
-  to the nearest-sounding Forbidden item. Concretely: reaching INTO or OVER a
-  DISPLAY CASE to view/handle merchandise matches an Allowed item like "Employees
-  opening display cases" or "Customers trying on jewelry" — it is NOT the same as
-  reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what a
-  Forbidden item like "Reaching behind cashier counter" actually describes. Only
-  score the latter as suspicious/criminal reaching behavior; do not conflate the two
-  just because both mention "reaching" or "counter".
-- "VLM observation:" lines come from a vision model that looked directly at the
-  full video frame and answered specific questions (actions, appearance, weapons,
-  theft/forbidden actions, posture, aggression, concealed faces). This is the
-  PRIMARY behavioral evidence. A VLM weapon answer (e.g. "Gun visible: yes" or
-  a weapon description like "person holding a pistol") is STRONG evidence and
-  can justify "criminal" on its own, just like a WEAPON ALERT.
-- "WEAPON ALERT:" lines from the tracker are STRONG evidence (weapons are
-  person-gated + temporally confirmed) and can justify "criminal" on their own.
-- A binary VLM cue answered "unclear" (e.g. "Gun: unclear", "Aggression: unclear")
-  is WEAK-TO-MODERATE escalating evidence — more significant than "no", but not on
-  its own sufficient for "criminal" (see rule 2). Do not treat "unclear" the same
-  as "no"; a run of "unclear" answers across consecutive frames, or "unclear"
-  combined with a matching Forbidden-list action, can justify "suspicious".
-- "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
-  hoods, masks and hats are frequently benign (hard hats, fashion, weather,
-  religious or cultural head coverings). Appearance may RAISE concern only when
-  combined with suspicious behavior. It MUST NOT be the sole reason and MUST NOT
-  push the label above "suspicious". Specifically: headwear mentioned only in an
-  "Appearance" line (caps, hats, beanies, hijabs, hoods) is NOT face concealment —
-  only an explicit VLM "Face concealed: yes/unclear" answer is concealment evidence;
-  never infer concealment yourself from appearance text alone.
-- Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
-  and should be used ONLY to:
-  * understand continuity of people/objects across frames
-  * detect repeated presence or movement patterns
-  * identify that the same person appears in multiple frames
-
-### 4. PROHIBITED USE OF RAW YOLO DATA
-You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
-Specifically:
-- DO NOT use confidence scores as reasons.
-- DO NOT use bounding boxes as reasons.
-- DO NOT use "ID 1", "ID 2", etc. as key moments.
-- DO NOT treat "multiple people detected" as suspicious by itself.
-(This prohibition does NOT apply to WEAPON ALERT / Appearance lines.)
-
-### 5. KEY MOMENTS RULES
-"key_moments" MUST:
-- describe ACTIONS / behaviors first (what people do), based on VLM observations and the
-  store's forbidden-behaviors list; a confirmed weapon is also a valid key moment
-- mention appearance only as a MODIFIER of an action, never on its own
-- NOT include raw YOLO technical data (IDs, confidence, bbox)
-
-Examples of GOOD key moments:
-- "person reaching behind the cashier counter"
-- "customer leaning over a display case and taking an item"
-- "individual hiding jewelry inside their jacket"
-- "person appears to be holding a gun"
-- "hooded person forcing open a display case"   (appearance + action)
-
-Examples of BAD key moments (FORBIDDEN):
-- "person wearing a hood"          (appearance with no action)
-- "multiple people wearing hats"   (appearance with no action)
-- "ID 1: person (confidence 0.91)"
-- "three people detected"
-
-### 6. REASON FIELD RULES
-The "reason" MUST:
-- describe the behavioral/contextual anomaly (the ACTION), or the weapon
-- be based on VLM observation content (and the forbidden-behaviors list)
-- NOT be about appearance alone (e.g. "person wearing a hood" is NOT acceptable)
-- NOT mention YOLO IDs, confidence, or bounding boxes
-- be short and human-interpretable
-
-==============================================================
-
-Here is the scene description in chronological order:
-
-Business context (from NestJS):
-- Store: Royal Diamond Jewelry (jewelry_store)
-Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
-Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
-Sensitivity: high; scoring: aggressive; interaction: high
-Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
-Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
-Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
-  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
-Recent context:
-- VLM observation: Description: A man in a orange head covering appears to be holding a gun and is interacting with a store employee.. People Actions: One man is sitting at a desk, one man is standing behind the counter looking at him, another man is standing near the display case looking at items, and a fourth man is standing by the door.. Appearance: The man at the desk is wearing a white shirt. The man with the orange head covering is wearing a gray sweatshirt and pants. The man near the display case is wearing a white shirt and pants. The man by the door is wearing a black robe and head covering.. Weapon: A gun appears to be held by the man in the orange head covering.. Gun: yes. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: unclear. YOLO tracker detected: ID 1: person (confidence 0.92) at [486,100,541,236]; ID 2: person (confidence 0.91) at [113,264,191,358]; ID 3: person (confidence 0.80) at [350,133,406,223]; ID 4: person (confidence 0.69) at [457,0,470,29].
-- VLM observation: Description: A man wearing an orange head covering is standing near a display case in a store, while another man sits at a desk.. People Actions: One man is sitting at a desk, and two men are standing near display cases.. Appearance: The seated man wears a white shirt. The man in the orange head covering wears a gray shirt and pants. The third man wears a black robe and a white head covering.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: yes. Aggression: no. YOLO tracker detected: ID 2: person (confidence 0.92) at [113,264,191,358]; ID 7: person (confidence 0.91) at [482,99,541,236]; ID 9: person (confidence 0.88) at [471,94,506,204]; ID 3: person (confidence 0.87) at [348,133,404,224]; ID 11: person (confidence 0.70) at [479,0,492,27].
-
-Current window:
-
-Respond with exactly one JSON object and nothing else.
-
-OUTPUT FROM GROQ:
-{
-  "anomaly_score": 0.9,
-  "label": "criminal",
-  "reason": "Gun visible, person holding",
-  "key_moments": [
-    "person appears to be holding a gun",
-    "man in orange head covering interacting with employee"
+    "person handling items on a display case"
   ]
 }
 
@@ -426,9 +276,8 @@ Forbidden behaviors: Entering employee-only storage area, Reaching behind cashie
 Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
   - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
 Recent context:
-- VLM observation: Description: A man in a orange head covering appears to be holding a gun and is interacting with a store employee.. People Actions: One man is sitting at a desk, one man is standing behind the counter looking at him, another man is standing near the display case looking at items, and a fourth man is standing by the door.. Appearance: The man at the desk is wearing a white shirt. The man with the orange head covering is wearing a gray sweatshirt and pants. The man near the display case is wearing a white shirt and pants. The man by the door is wearing a black robe and head covering.. Weapon: A gun appears to be held by the man in the orange head covering.. Gun: yes. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: unclear. YOLO tracker detected: ID 1: person (confidence 0.92) at [486,100,541,236]; ID 2: person (confidence 0.91) at [113,264,191,358]; ID 3: person (confidence 0.80) at [350,133,406,223]; ID 4: person (confidence 0.69) at [457,0,470,29].
-- VLM observation: Description: A man wearing an orange head covering is standing near a display case in a store, while another man sits at a desk.. People Actions: One man is sitting at a desk, and two men are standing near display cases.. Appearance: The seated man wears a white shirt. The man in the orange head covering wears a gray shirt and pants. The third man wears a black robe and a white head covering.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: yes. Aggression: no. YOLO tracker detected: ID 2: person (confidence 0.92) at [113,264,191,358]; ID 7: person (confidence 0.91) at [482,99,541,236]; ID 9: person (confidence 0.88) at [471,94,506,204]; ID 3: person (confidence 0.87) at [348,133,404,224]; ID 11: person (confidence 0.70) at [479,0,492,27].
-- VLM observation: Description: A man wearing an orange head covering and black face mask is standing at a display case in a jewelry store, while another man sits at a desk in the corner, and a woman in a black abaya and white head covering browses nearby.. People Actions: One man is standing by a display case with his hands up, possibly talking or gesturing. Another man sits at a desk, facing away, with one hand raised near his face. A woman in a black abaya browses jewelry.. Appearance: The standing man wears a gray sweatshirt and orange head covering with a black face mask. The seated man wears a white T-shirt. The woman wears a black abaya and white head covering.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: yes. Face Concealed: yes. Aggression: unclear. YOLO tracker detected: ID 2: person (confidence 0.92) at [110,271,190,359]; ID 3: person (confidence 0.90) at [347,126,403,225]; ID 7: person (confidence 0.86) at [480,95,543,222]; ID 16: person (confidence 0.60) at [465,41,490,97].
+- VLM observation: Description: A man wearing a grey sweatsuit and an orange beanie appears to be handling items on a display case, while another individual in a black garment stands nearby.. People Actions: One man is sitting at a desk, one man is handling items on a display case, and another individual is standing nearby.. Appearance: The man at the desk is wearing a white shirt. The man handling the display case is wearing a grey sweatsuit and an orange beanie. The third individual is wearing a black garment.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no. YOLO tracker detected: ID 1: person (confidence 0.92) at [486,100,541,236]; ID 2: person (confidence 0.91) at [113,264,191,358]; ID 3: person (confidence 0.80) at [350,133,406,223]; ID 4: person (confidence 0.69) at [457,0,470,29].
+- VLM observation: Description: A man wearing a mask and orange head covering appears to be interacting with a store employee while another person in a black garment and white head covering browses nearby.. People Actions: One man is standing at the counter, possibly interacting with the employee; another person in black is browsing near a display case; the employee is seated at a desk.. Appearance: The man at the counter wears a gray sweatshirt and an orange head covering with a black mask; the person in black wears a long black garment and a white head covering; the employee wears a white shirt.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: no. Reaching Behind Counter: no. Hands Up: no. Face Concealed: yes. Aggression: no. YOLO tracker detected: ID 2: person (confidence 0.92) at [110,271,190,359]; ID 3: person (confidence 0.90) at [347,126,403,225]; ID 7: person (confidence 0.86) at [480,95,543,222]; ID 16: person (confidence 0.60) at [465,41,490,97].
 
 Current window:
 
@@ -436,12 +285,12 @@ Respond with exactly one JSON object and nothing else.
 
 OUTPUT FROM GROQ:
 {
-  "anomaly_score": 0.9,
-  "label": "criminal",
-  "reason": "Gun visible",
+  "anomaly_score": 0.4,
+  "label": "suspicious",
+  "reason": "Face concealed, potential suspicious interaction",
   "key_moments": [
-    "person holding a gun",
-    "man standing near display case with hands up"
+    "person handling items on display case",
+    "individual with face concealed interacting with employee"
   ]
 }
 
@@ -576,10 +425,9 @@ Forbidden behaviors: Entering employee-only storage area, Reaching behind cashie
 Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
   - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
 Recent context:
-- VLM observation: Description: A man in a orange head covering appears to be holding a gun and is interacting with a store employee.. People Actions: One man is sitting at a desk, one man is standing behind the counter looking at him, another man is standing near the display case looking at items, and a fourth man is standing by the door.. Appearance: The man at the desk is wearing a white shirt. The man with the orange head covering is wearing a gray sweatshirt and pants. The man near the display case is wearing a white shirt and pants. The man by the door is wearing a black robe and head covering.. Weapon: A gun appears to be held by the man in the orange head covering.. Gun: yes. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: unclear. YOLO tracker detected: ID 1: person (confidence 0.92) at [486,100,541,236]; ID 2: person (confidence 0.91) at [113,264,191,358]; ID 3: person (confidence 0.80) at [350,133,406,223]; ID 4: person (confidence 0.69) at [457,0,470,29].
-- VLM observation: Description: A man wearing an orange head covering is standing near a display case in a store, while another man sits at a desk.. People Actions: One man is sitting at a desk, and two men are standing near display cases.. Appearance: The seated man wears a white shirt. The man in the orange head covering wears a gray shirt and pants. The third man wears a black robe and a white head covering.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: yes. Aggression: no. YOLO tracker detected: ID 2: person (confidence 0.92) at [113,264,191,358]; ID 7: person (confidence 0.91) at [482,99,541,236]; ID 9: person (confidence 0.88) at [471,94,506,204]; ID 3: person (confidence 0.87) at [348,133,404,224]; ID 11: person (confidence 0.70) at [479,0,492,27].
-- VLM observation: Description: A man wearing an orange head covering and black face mask is standing at a display case in a jewelry store, while another man sits at a desk in the corner, and a woman in a black abaya and white head covering browses nearby.. People Actions: One man is standing by a display case with his hands up, possibly talking or gesturing. Another man sits at a desk, facing away, with one hand raised near his face. A woman in a black abaya browses jewelry.. Appearance: The standing man wears a gray sweatshirt and orange head covering with a black face mask. The seated man wears a white T-shirt. The woman wears a black abaya and white head covering.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: yes. Face Concealed: yes. Aggression: unclear. YOLO tracker detected: ID 2: person (confidence 0.92) at [110,271,190,359]; ID 3: person (confidence 0.90) at [347,126,403,225]; ID 7: person (confidence 0.86) at [480,95,543,222]; ID 16: person (confidence 0.60) at [465,41,490,97].
-- VLM observation: Description: A man wearing an orange head covering is standing at a display case, while another person in a black outfit and white head covering stands nearby.. People Actions: One man is standing near a display case, another person is standing by the entrance, and a third person is sitting at a desk.. Appearance: The man by the display case is wearing a gray shirt and orange head covering, the person in black is wearing a long black outfit and white head covering, and the person at the desk is wearing a white shirt.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no. YOLO tracker detected: ID 16: person (confidence 0.90) at [420,52,451,158]; ID 3: person (confidence 0.89) at [348,128,402,224].
+- VLM observation: Description: A man wearing a grey sweatsuit and an orange beanie appears to be handling items on a display case, while another individual in a black garment stands nearby.. People Actions: One man is sitting at a desk, one man is handling items on a display case, and another individual is standing nearby.. Appearance: The man at the desk is wearing a white shirt. The man handling the display case is wearing a grey sweatsuit and an orange beanie. The third individual is wearing a black garment.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no. YOLO tracker detected: ID 1: person (confidence 0.92) at [486,100,541,236]; ID 2: person (confidence 0.91) at [113,264,191,358]; ID 3: person (confidence 0.80) at [350,133,406,223]; ID 4: person (confidence 0.69) at [457,0,470,29].
+- VLM observation: Description: A man wearing a mask and orange head covering appears to be interacting with a store employee while another person in a black garment and white head covering browses nearby.. People Actions: One man is standing at the counter, possibly interacting with the employee; another person in black is browsing near a display case; the employee is seated at a desk.. Appearance: The man at the counter wears a gray sweatshirt and an orange head covering with a black mask; the person in black wears a long black garment and a white head covering; the employee wears a white shirt.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: no. Reaching Behind Counter: no. Hands Up: no. Face Concealed: yes. Aggression: no. YOLO tracker detected: ID 2: person (confidence 0.92) at [110,271,190,359]; ID 3: person (confidence 0.90) at [347,126,403,225]; ID 7: person (confidence 0.86) at [480,95,543,222]; ID 16: person (confidence 0.60) at [465,41,490,97].
+- VLM observation: Description: A man wearing an orange head covering and gray clothing appears to be interacting with a display case, while another individual in a black outfit and white head covering browses nearby.. People Actions: One man is standing near a display case, another is browsing nearby, and a third person is sitting at a desk.. Appearance: The man near the display case wears an orange head covering and gray clothing. The individual in black has a white head covering and long black clothing. The person at the desk wears a white shirt.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no. YOLO tracker detected: ID 16: person (confidence 0.90) at [420,52,451,158]; ID 3: person (confidence 0.89) at [348,128,402,224].
 
 Current window:
 
@@ -587,12 +435,315 @@ Respond with exactly one JSON object and nothing else.
 
 OUTPUT FROM GROQ:
 {
-  "anomaly_score": 0.9,
-  "label": "criminal",
-  "reason": "Gun visible",
+  "anomaly_score": 0.4,
+  "label": "suspicious",
+  "reason": "Reaching display case",
   "key_moments": [
-    "person holding a gun",
-    "man reaching near display case"
+    "person handling items on a display case",
+    "person reaching display case"
+  ]
+}
+
+======================================================
+VLM frame 240
+======================================================
+INPUT TO GROQ:
+You are an expert system for video surveillance anomaly detection.
+
+You receive short textual descriptions of what happens in a surveillance video over time.
+These descriptions come from two sources:
+1. VLM observation (full-frame behavioral Q&A: actions, weapons, theft cues, concealment)
+2. YOLO tracker (object IDs, classes, bounding boxes, weapon alerts, continuity across frames)
+
+Your task is to determine whether the described situation represents:
+- normal everyday behavior,
+- suspicious behavior, or
+- criminal/dangerous behavior.
+
+==================== CRITICAL INSTRUCTIONS ====================
+
+### 1. JSON OUTPUT FORMAT (STRICT)
+You must output EXACTLY one JSON object with the following fields:
+- "anomaly_score": a float in [0, 1]
+- "label": one of ["normal", "suspicious", "criminal"]
+- "reason": a short explanation (max 30 words)
+- "key_moments": a list of short phrases describing meaningful events
+
+### 2. SCORING CONSISTENCY RULES
+- If label == "normal"     → anomaly_score MUST be <= 0.2
+- If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+- If label == "criminal"   → anomaly_score MUST be >= 0.8
+- The score MUST always match the label category.
+- "criminal" REQUIRES one of:
+    a) a WEAPON ALERT from the tracker (strong, person-gated confirmation), OR
+    b) a VLM observation that explicitly states a weapon is visible/held (e.g.
+       "Gun visible: yes", "Weapon described: person holding a pistol"), OR
+    c) a clearly described forbidden ACTION (e.g. theft / taking items, forcing a
+       display case, physical aggression, reaching behind the counter, leaving
+       without payment).
+  Appearance ALONE (clothing, hood, mask, hat) can NEVER be "criminal".
+
+### 3. HOW TO USE THE INPUTS — BEHAVIOR FIRST
+- The PRIMARY question is: what are people DOING, and does it match the store's
+  Allowed behaviors or the Forbidden behaviors in the business context above?
+  Base your decision mainly on the ACTIONS described vs that list.
+- MATCH BY SPECIFIC WORDING, NOT GENERAL TOPIC. Before scoring, go through each
+  described action and find the Allowed/Forbidden list item it actually matches —
+  do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump
+  to the nearest-sounding Forbidden item. Concretely: reaching INTO or OVER a
+  DISPLAY CASE to view/handle merchandise matches an Allowed item like "Employees
+  opening display cases" or "Customers trying on jewelry" — it is NOT the same as
+  reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what a
+  Forbidden item like "Reaching behind cashier counter" actually describes. Only
+  score the latter as suspicious/criminal reaching behavior; do not conflate the two
+  just because both mention "reaching" or "counter".
+- "VLM observation:" lines come from a vision model that looked directly at the
+  full video frame and answered specific questions (actions, appearance, weapons,
+  theft/forbidden actions, posture, aggression, concealed faces). This is the
+  PRIMARY behavioral evidence. A VLM weapon answer (e.g. "Gun visible: yes" or
+  a weapon description like "person holding a pistol") is STRONG evidence and
+  can justify "criminal" on its own, just like a WEAPON ALERT.
+- "WEAPON ALERT:" lines from the tracker are STRONG evidence (weapons are
+  person-gated + temporally confirmed) and can justify "criminal" on their own.
+- A binary VLM cue answered "unclear" (e.g. "Gun: unclear", "Aggression: unclear")
+  is WEAK-TO-MODERATE escalating evidence — more significant than "no", but not on
+  its own sufficient for "criminal" (see rule 2). Do not treat "unclear" the same
+  as "no"; a run of "unclear" answers across consecutive frames, or "unclear"
+  combined with a matching Forbidden-list action, can justify "suspicious".
+- "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
+  hoods, masks and hats are frequently benign (hard hats, fashion, weather,
+  religious or cultural head coverings). Appearance may RAISE concern only when
+  combined with suspicious behavior. It MUST NOT be the sole reason and MUST NOT
+  push the label above "suspicious". Specifically: headwear mentioned only in an
+  "Appearance" line (caps, hats, beanies, hijabs, hoods) is NOT face concealment —
+  only an explicit VLM "Face concealed: yes/unclear" answer is concealment evidence;
+  never infer concealment yourself from appearance text alone.
+- Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+  and should be used ONLY to:
+  * understand continuity of people/objects across frames
+  * detect repeated presence or movement patterns
+  * identify that the same person appears in multiple frames
+
+### 4. PROHIBITED USE OF RAW YOLO DATA
+You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+Specifically:
+- DO NOT use confidence scores as reasons.
+- DO NOT use bounding boxes as reasons.
+- DO NOT use "ID 1", "ID 2", etc. as key moments.
+- DO NOT treat "multiple people detected" as suspicious by itself.
+(This prohibition does NOT apply to WEAPON ALERT / Appearance lines.)
+
+### 5. KEY MOMENTS RULES
+"key_moments" MUST:
+- describe ACTIONS / behaviors first (what people do), based on VLM observations and the
+  store's forbidden-behaviors list; a confirmed weapon is also a valid key moment
+- mention appearance only as a MODIFIER of an action, never on its own
+- NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+Examples of GOOD key moments:
+- "person reaching behind the cashier counter"
+- "customer leaning over a display case and taking an item"
+- "individual hiding jewelry inside their jacket"
+- "person appears to be holding a gun"
+- "hooded person forcing open a display case"   (appearance + action)
+
+Examples of BAD key moments (FORBIDDEN):
+- "person wearing a hood"          (appearance with no action)
+- "multiple people wearing hats"   (appearance with no action)
+- "ID 1: person (confidence 0.91)"
+- "three people detected"
+
+### 6. REASON FIELD RULES
+The "reason" MUST:
+- describe the behavioral/contextual anomaly (the ACTION), or the weapon
+- be based on VLM observation content (and the forbidden-behaviors list)
+- NOT be about appearance alone (e.g. "person wearing a hood" is NOT acceptable)
+- NOT mention YOLO IDs, confidence, or bounding boxes
+- be short and human-interpretable
+
+==============================================================
+
+Here is the scene description in chronological order:
+
+Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- VLM observation: Description: A man wearing a grey sweatsuit and an orange beanie appears to be handling items on a display case, while another individual in a black garment stands nearby.. People Actions: One man is sitting at a desk, one man is handling items on a display case, and another individual is standing nearby.. Appearance: The man at the desk is wearing a white shirt. The man handling the display case is wearing a grey sweatsuit and an orange beanie. The third individual is wearing a black garment.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no. YOLO tracker detected: ID 1: person (confidence 0.92) at [486,100,541,236]; ID 2: person (confidence 0.91) at [113,264,191,358]; ID 3: person (confidence 0.80) at [350,133,406,223]; ID 4: person (confidence 0.69) at [457,0,470,29].
+- VLM observation: Description: A man wearing a mask and orange head covering appears to be interacting with a store employee while another person in a black garment and white head covering browses nearby.. People Actions: One man is standing at the counter, possibly interacting with the employee; another person in black is browsing near a display case; the employee is seated at a desk.. Appearance: The man at the counter wears a gray sweatshirt and an orange head covering with a black mask; the person in black wears a long black garment and a white head covering; the employee wears a white shirt.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: no. Reaching Behind Counter: no. Hands Up: no. Face Concealed: yes. Aggression: no. YOLO tracker detected: ID 2: person (confidence 0.92) at [110,271,190,359]; ID 3: person (confidence 0.90) at [347,126,403,225]; ID 7: person (confidence 0.86) at [480,95,543,222]; ID 16: person (confidence 0.60) at [465,41,490,97].
+- VLM observation: Description: A man wearing an orange head covering and gray clothing appears to be interacting with a display case, while another individual in a black outfit and white head covering browses nearby.. People Actions: One man is standing near a display case, another is browsing nearby, and a third person is sitting at a desk.. Appearance: The man near the display case wears an orange head covering and gray clothing. The individual in black has a white head covering and long black clothing. The person at the desk wears a white shirt.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no. YOLO tracker detected: ID 16: person (confidence 0.90) at [420,52,451,158]; ID 3: person (confidence 0.89) at [348,128,402,224].
+- VLM observation: Description: Three individuals are inside a store with display cases, one person is behind the counter at a desk.. People Actions: One person is sitting at a desk behind the counter, two people are walking around the store, and one person is standing near the entrance.. Appearance: The person at the desk is wearing a white shirt. The person near the entrance is wearing a dark jacket and pants. The person in the middle is wearing a gray sweatshirt, orange beanie, and dark pants. The person on the right is wearing a long black robe and a white head covering.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: no. Reaching Behind Counter: no. Hands Up: no. Face Concealed: yes. Aggression: no. YOLO tracker detected: ID 16: person (confidence 0.90) at [386,78,435,199]; ID 3: person (confidence 0.89) at [348,120,395,222]; ID 20: person (confidence 0.73) at [457,96,513,238].
+
+Current window:
+
+Respond with exactly one JSON object and nothing else.
+
+OUTPUT FROM GROQ:
+{
+  "anomaly_score": 0.4,
+  "label": "suspicious",
+  "reason": "Face concealed, reaching display case",
+  "key_moments": [
+    "person handling items on a display case",
+    "person with face concealed interacting with employee"
+  ]
+}
+
+======================================================
+VLM frame 300
+======================================================
+INPUT TO GROQ:
+You are an expert system for video surveillance anomaly detection.
+
+You receive short textual descriptions of what happens in a surveillance video over time.
+These descriptions come from two sources:
+1. VLM observation (full-frame behavioral Q&A: actions, weapons, theft cues, concealment)
+2. YOLO tracker (object IDs, classes, bounding boxes, weapon alerts, continuity across frames)
+
+Your task is to determine whether the described situation represents:
+- normal everyday behavior,
+- suspicious behavior, or
+- criminal/dangerous behavior.
+
+==================== CRITICAL INSTRUCTIONS ====================
+
+### 1. JSON OUTPUT FORMAT (STRICT)
+You must output EXACTLY one JSON object with the following fields:
+- "anomaly_score": a float in [0, 1]
+- "label": one of ["normal", "suspicious", "criminal"]
+- "reason": a short explanation (max 30 words)
+- "key_moments": a list of short phrases describing meaningful events
+
+### 2. SCORING CONSISTENCY RULES
+- If label == "normal"     → anomaly_score MUST be <= 0.2
+- If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+- If label == "criminal"   → anomaly_score MUST be >= 0.8
+- The score MUST always match the label category.
+- "criminal" REQUIRES one of:
+    a) a WEAPON ALERT from the tracker (strong, person-gated confirmation), OR
+    b) a VLM observation that explicitly states a weapon is visible/held (e.g.
+       "Gun visible: yes", "Weapon described: person holding a pistol"), OR
+    c) a clearly described forbidden ACTION (e.g. theft / taking items, forcing a
+       display case, physical aggression, reaching behind the counter, leaving
+       without payment).
+  Appearance ALONE (clothing, hood, mask, hat) can NEVER be "criminal".
+
+### 3. HOW TO USE THE INPUTS — BEHAVIOR FIRST
+- The PRIMARY question is: what are people DOING, and does it match the store's
+  Allowed behaviors or the Forbidden behaviors in the business context above?
+  Base your decision mainly on the ACTIONS described vs that list.
+- MATCH BY SPECIFIC WORDING, NOT GENERAL TOPIC. Before scoring, go through each
+  described action and find the Allowed/Forbidden list item it actually matches —
+  do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump
+  to the nearest-sounding Forbidden item. Concretely: reaching INTO or OVER a
+  DISPLAY CASE to view/handle merchandise matches an Allowed item like "Employees
+  opening display cases" or "Customers trying on jewelry" — it is NOT the same as
+  reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what a
+  Forbidden item like "Reaching behind cashier counter" actually describes. Only
+  score the latter as suspicious/criminal reaching behavior; do not conflate the two
+  just because both mention "reaching" or "counter".
+- "VLM observation:" lines come from a vision model that looked directly at the
+  full video frame and answered specific questions (actions, appearance, weapons,
+  theft/forbidden actions, posture, aggression, concealed faces). This is the
+  PRIMARY behavioral evidence. A VLM weapon answer (e.g. "Gun visible: yes" or
+  a weapon description like "person holding a pistol") is STRONG evidence and
+  can justify "criminal" on its own, just like a WEAPON ALERT.
+- "WEAPON ALERT:" lines from the tracker are STRONG evidence (weapons are
+  person-gated + temporally confirmed) and can justify "criminal" on their own.
+- A binary VLM cue answered "unclear" (e.g. "Gun: unclear", "Aggression: unclear")
+  is WEAK-TO-MODERATE escalating evidence — more significant than "no", but not on
+  its own sufficient for "criminal" (see rule 2). Do not treat "unclear" the same
+  as "no"; a run of "unclear" answers across consecutive frames, or "unclear"
+  combined with a matching Forbidden-list action, can justify "suspicious".
+- "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
+  hoods, masks and hats are frequently benign (hard hats, fashion, weather,
+  religious or cultural head coverings). Appearance may RAISE concern only when
+  combined with suspicious behavior. It MUST NOT be the sole reason and MUST NOT
+  push the label above "suspicious". Specifically: headwear mentioned only in an
+  "Appearance" line (caps, hats, beanies, hijabs, hoods) is NOT face concealment —
+  only an explicit VLM "Face concealed: yes/unclear" answer is concealment evidence;
+  never infer concealment yourself from appearance text alone.
+- Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+  and should be used ONLY to:
+  * understand continuity of people/objects across frames
+  * detect repeated presence or movement patterns
+  * identify that the same person appears in multiple frames
+
+### 4. PROHIBITED USE OF RAW YOLO DATA
+You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+Specifically:
+- DO NOT use confidence scores as reasons.
+- DO NOT use bounding boxes as reasons.
+- DO NOT use "ID 1", "ID 2", etc. as key moments.
+- DO NOT treat "multiple people detected" as suspicious by itself.
+(This prohibition does NOT apply to WEAPON ALERT / Appearance lines.)
+
+### 5. KEY MOMENTS RULES
+"key_moments" MUST:
+- describe ACTIONS / behaviors first (what people do), based on VLM observations and the
+  store's forbidden-behaviors list; a confirmed weapon is also a valid key moment
+- mention appearance only as a MODIFIER of an action, never on its own
+- NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+Examples of GOOD key moments:
+- "person reaching behind the cashier counter"
+- "customer leaning over a display case and taking an item"
+- "individual hiding jewelry inside their jacket"
+- "person appears to be holding a gun"
+- "hooded person forcing open a display case"   (appearance + action)
+
+Examples of BAD key moments (FORBIDDEN):
+- "person wearing a hood"          (appearance with no action)
+- "multiple people wearing hats"   (appearance with no action)
+- "ID 1: person (confidence 0.91)"
+- "three people detected"
+
+### 6. REASON FIELD RULES
+The "reason" MUST:
+- describe the behavioral/contextual anomaly (the ACTION), or the weapon
+- be based on VLM observation content (and the forbidden-behaviors list)
+- NOT be about appearance alone (e.g. "person wearing a hood" is NOT acceptable)
+- NOT mention YOLO IDs, confidence, or bounding boxes
+- be short and human-interpretable
+
+==============================================================
+
+Here is the scene description in chronological order:
+
+Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- VLM observation: Description: A man wearing a grey sweatsuit and an orange beanie appears to be handling items on a display case, while another individual in a black garment stands nearby.. People Actions: One man is sitting at a desk, one man is handling items on a display case, and another individual is standing nearby.. Appearance: The man at the desk is wearing a white shirt. The man handling the display case is wearing a grey sweatsuit and an orange beanie. The third individual is wearing a black garment.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no. YOLO tracker detected: ID 1: person (confidence 0.92) at [486,100,541,236]; ID 2: person (confidence 0.91) at [113,264,191,358]; ID 3: person (confidence 0.80) at [350,133,406,223]; ID 4: person (confidence 0.69) at [457,0,470,29].
+- VLM observation: Description: A man wearing a mask and orange head covering appears to be interacting with a store employee while another person in a black garment and white head covering browses nearby.. People Actions: One man is standing at the counter, possibly interacting with the employee; another person in black is browsing near a display case; the employee is seated at a desk.. Appearance: The man at the counter wears a gray sweatshirt and an orange head covering with a black mask; the person in black wears a long black garment and a white head covering; the employee wears a white shirt.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: no. Reaching Behind Counter: no. Hands Up: no. Face Concealed: yes. Aggression: no. YOLO tracker detected: ID 2: person (confidence 0.92) at [110,271,190,359]; ID 3: person (confidence 0.90) at [347,126,403,225]; ID 7: person (confidence 0.86) at [480,95,543,222]; ID 16: person (confidence 0.60) at [465,41,490,97].
+- VLM observation: Description: A man wearing an orange head covering and gray clothing appears to be interacting with a display case, while another individual in a black outfit and white head covering browses nearby.. People Actions: One man is standing near a display case, another is browsing nearby, and a third person is sitting at a desk.. Appearance: The man near the display case wears an orange head covering and gray clothing. The individual in black has a white head covering and long black clothing. The person at the desk wears a white shirt.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no. YOLO tracker detected: ID 16: person (confidence 0.90) at [420,52,451,158]; ID 3: person (confidence 0.89) at [348,128,402,224].
+- VLM observation: Description: Three individuals are inside a store with display cases, one person is behind the counter at a desk.. People Actions: One person is sitting at a desk behind the counter, two people are walking around the store, and one person is standing near the entrance.. Appearance: The person at the desk is wearing a white shirt. The person near the entrance is wearing a dark jacket and pants. The person in the middle is wearing a gray sweatshirt, orange beanie, and dark pants. The person on the right is wearing a long black robe and a white head covering.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: no. Reaching Behind Counter: no. Hands Up: no. Face Concealed: yes. Aggression: no. YOLO tracker detected: ID 16: person (confidence 0.90) at [386,78,435,199]; ID 3: person (confidence 0.89) at [348,120,395,222]; ID 20: person (confidence 0.73) at [457,96,513,238].
+- VLM observation: Description: Three individuals are standing near display cases in a jewelry store, while one person sits at a desk.. People Actions: Three people are standing near the display cases, possibly browsing, and one person is sitting at a desk with their back to the camera.. Appearance: Two individuals are wearing head coverings (one an orange beanie, the other possibly a hat), one person is in a dark jacket and pants, and the seated individual appears to be wearing a white shirt.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no. YOLO tracker detected: ID 25: person (confidence 0.74) at [71,283,164,359]; ID 24: person (confidence 0.71) at [336,97,386,202].
+
+Current window:
+
+Respond with exactly one JSON object and nothing else.
+
+OUTPUT FROM GROQ:
+{
+  "anomaly_score": 0.4,
+  "label": "suspicious",
+  "reason": "Face concealed and reaching display case",
+  "key_moments": [
+    "person reaching display case",
+    "individual with face concealed near counter"
   ]
 }
 
@@ -727,11 +878,12 @@ Forbidden behaviors: Entering employee-only storage area, Reaching behind cashie
 Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
   - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
 Recent context:
-- VLM observation: Description: A man in a orange head covering appears to be holding a gun and is interacting with a store employee.. People Actions: One man is sitting at a desk, one man is standing behind the counter looking at him, another man is standing near the display case looking at items, and a fourth man is standing by the door.. Appearance: The man at the desk is wearing a white shirt. The man with the orange head covering is wearing a gray sweatshirt and pants. The man near the display case is wearing a white shirt and pants. The man by the door is wearing a black robe and head covering.. Weapon: A gun appears to be held by the man in the orange head covering.. Gun: yes. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: unclear. YOLO tracker detected: ID 1: person (confidence 0.92) at [486,100,541,236]; ID 2: person (confidence 0.91) at [113,264,191,358]; ID 3: person (confidence 0.80) at [350,133,406,223]; ID 4: person (confidence 0.69) at [457,0,470,29].
-- VLM observation: Description: A man wearing an orange head covering is standing near a display case in a store, while another man sits at a desk.. People Actions: One man is sitting at a desk, and two men are standing near display cases.. Appearance: The seated man wears a white shirt. The man in the orange head covering wears a gray shirt and pants. The third man wears a black robe and a white head covering.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: yes. Aggression: no. YOLO tracker detected: ID 2: person (confidence 0.92) at [113,264,191,358]; ID 7: person (confidence 0.91) at [482,99,541,236]; ID 9: person (confidence 0.88) at [471,94,506,204]; ID 3: person (confidence 0.87) at [348,133,404,224]; ID 11: person (confidence 0.70) at [479,0,492,27].
-- VLM observation: Description: A man wearing an orange head covering and black face mask is standing at a display case in a jewelry store, while another man sits at a desk in the corner, and a woman in a black abaya and white head covering browses nearby.. People Actions: One man is standing by a display case with his hands up, possibly talking or gesturing. Another man sits at a desk, facing away, with one hand raised near his face. A woman in a black abaya browses jewelry.. Appearance: The standing man wears a gray sweatshirt and orange head covering with a black face mask. The seated man wears a white T-shirt. The woman wears a black abaya and white head covering.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: yes. Face Concealed: yes. Aggression: unclear. YOLO tracker detected: ID 2: person (confidence 0.92) at [110,271,190,359]; ID 3: person (confidence 0.90) at [347,126,403,225]; ID 7: person (confidence 0.86) at [480,95,543,222]; ID 16: person (confidence 0.60) at [465,41,490,97].
-- VLM observation: Description: A man wearing an orange head covering is standing at a display case, while another person in a black outfit and white head covering stands nearby.. People Actions: One man is standing near a display case, another person is standing by the entrance, and a third person is sitting at a desk.. Appearance: The man by the display case is wearing a gray shirt and orange head covering, the person in black is wearing a long black outfit and white head covering, and the person at the desk is wearing a white shirt.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no. YOLO tracker detected: ID 16: person (confidence 0.90) at [420,52,451,158]; ID 3: person (confidence 0.89) at [348,128,402,224].
-- VLM observation: Description: A man appears to be holding a gun and standing over a counter, while two people are behind the counter and two customers are browsing.. People Actions: One man is standing over a counter, possibly holding a gun. Two people are sitting or standing behind the counter. Two customers are browsing the store.. Appearance: The man with the possible gun is wearing a blue jacket and a grey cap. The two people behind the counter are partially obscured. The two customers are wearing a grey shirt and an orange hat, and a white shirt and black abaya.. Weapon: A long, thin, dark object that could be a gun. Gun: unclear. Knife: no. Reaching Display Case: no. Reaching Behind Counter: yes. Hands Up: no. Face Concealed: yes. Aggression: unclear. YOLO tracker detected: ID 24: person (confidence 0.91) at [382,89,426,227]; ID 30: person (confidence 0.62) at [197,130,247,259].
+- VLM observation: Description: A man wearing a grey sweatsuit and an orange beanie appears to be handling items on a display case, while another individual in a black garment stands nearby.. People Actions: One man is sitting at a desk, one man is handling items on a display case, and another individual is standing nearby.. Appearance: The man at the desk is wearing a white shirt. The man handling the display case is wearing a grey sweatsuit and an orange beanie. The third individual is wearing a black garment.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no. YOLO tracker detected: ID 1: person (confidence 0.92) at [486,100,541,236]; ID 2: person (confidence 0.91) at [113,264,191,358]; ID 3: person (confidence 0.80) at [350,133,406,223]; ID 4: person (confidence 0.69) at [457,0,470,29].
+- VLM observation: Description: A man wearing a mask and orange head covering appears to be interacting with a store employee while another person in a black garment and white head covering browses nearby.. People Actions: One man is standing at the counter, possibly interacting with the employee; another person in black is browsing near a display case; the employee is seated at a desk.. Appearance: The man at the counter wears a gray sweatshirt and an orange head covering with a black mask; the person in black wears a long black garment and a white head covering; the employee wears a white shirt.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: no. Reaching Behind Counter: no. Hands Up: no. Face Concealed: yes. Aggression: no. YOLO tracker detected: ID 2: person (confidence 0.92) at [110,271,190,359]; ID 3: person (confidence 0.90) at [347,126,403,225]; ID 7: person (confidence 0.86) at [480,95,543,222]; ID 16: person (confidence 0.60) at [465,41,490,97].
+- VLM observation: Description: A man wearing an orange head covering and gray clothing appears to be interacting with a display case, while another individual in a black outfit and white head covering browses nearby.. People Actions: One man is standing near a display case, another is browsing nearby, and a third person is sitting at a desk.. Appearance: The man near the display case wears an orange head covering and gray clothing. The individual in black has a white head covering and long black clothing. The person at the desk wears a white shirt.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no. YOLO tracker detected: ID 16: person (confidence 0.90) at [420,52,451,158]; ID 3: person (confidence 0.89) at [348,128,402,224].
+- VLM observation: Description: Three individuals are inside a store with display cases, one person is behind the counter at a desk.. People Actions: One person is sitting at a desk behind the counter, two people are walking around the store, and one person is standing near the entrance.. Appearance: The person at the desk is wearing a white shirt. The person near the entrance is wearing a dark jacket and pants. The person in the middle is wearing a gray sweatshirt, orange beanie, and dark pants. The person on the right is wearing a long black robe and a white head covering.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: no. Reaching Behind Counter: no. Hands Up: no. Face Concealed: yes. Aggression: no. YOLO tracker detected: ID 16: person (confidence 0.90) at [386,78,435,199]; ID 3: person (confidence 0.89) at [348,120,395,222]; ID 20: person (confidence 0.73) at [457,96,513,238].
+- VLM observation: Description: Three individuals are standing near display cases in a jewelry store, while one person sits at a desk.. People Actions: Three people are standing near the display cases, possibly browsing, and one person is sitting at a desk with their back to the camera.. Appearance: Two individuals are wearing head coverings (one an orange beanie, the other possibly a hat), one person is in a dark jacket and pants, and the seated individual appears to be wearing a white shirt.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no. YOLO tracker detected: ID 25: person (confidence 0.74) at [71,283,164,359]; ID 24: person (confidence 0.71) at [336,97,386,202].
+- VLM observation: Description: A man in a blue jacket and grey hat is holding a long object near the employee desk, while two others browse the store.. People Actions: One man is standing near the employee desk, another is browsing the jewelry displays, and a third is standing near the front of the store.. Appearance: The man near the desk is wearing a blue jacket and a grey hat, the man browsing is wearing a grey shirt and orange hat, and the third man is wearing a white shirt and a black garment.. Weapon: The man in the blue jacket appears to be holding a long object. Gun: unclear. Knife: unclear. Reaching Display Case: no. Reaching Behind Counter: yes. Hands Up: no. Face Concealed: no. Aggression: unclear. YOLO tracker detected: ID 24: person (confidence 0.91) at [382,89,426,227]; ID 30: person (confidence 0.62) at [197,130,247,259].
 
 Current window:
 
@@ -741,10 +893,319 @@ OUTPUT FROM GROQ:
 {
   "anomaly_score": 0.9,
   "label": "criminal",
-  "reason": "Gun held by man",
+  "reason": "Reaching behind counter",
   "key_moments": [
-    "person holding a gun",
-    "man standing over a counter",
-    "reaching behind the cashier counter"
+    "person reaching behind the cashier counter",
+    "man holding a long object near the employee desk"
+  ]
+}
+
+======================================================
+VLM frame 480
+======================================================
+INPUT TO GROQ:
+You are an expert system for video surveillance anomaly detection.
+
+You receive short textual descriptions of what happens in a surveillance video over time.
+These descriptions come from two sources:
+1. VLM observation (full-frame behavioral Q&A: actions, weapons, theft cues, concealment)
+2. YOLO tracker (object IDs, classes, bounding boxes, weapon alerts, continuity across frames)
+
+Your task is to determine whether the described situation represents:
+- normal everyday behavior,
+- suspicious behavior, or
+- criminal/dangerous behavior.
+
+==================== CRITICAL INSTRUCTIONS ====================
+
+### 1. JSON OUTPUT FORMAT (STRICT)
+You must output EXACTLY one JSON object with the following fields:
+- "anomaly_score": a float in [0, 1]
+- "label": one of ["normal", "suspicious", "criminal"]
+- "reason": a short explanation (max 30 words)
+- "key_moments": a list of short phrases describing meaningful events
+
+### 2. SCORING CONSISTENCY RULES
+- If label == "normal"     → anomaly_score MUST be <= 0.2
+- If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+- If label == "criminal"   → anomaly_score MUST be >= 0.8
+- The score MUST always match the label category.
+- "criminal" REQUIRES one of:
+    a) a WEAPON ALERT from the tracker (strong, person-gated confirmation), OR
+    b) a VLM observation that explicitly states a weapon is visible/held (e.g.
+       "Gun visible: yes", "Weapon described: person holding a pistol"), OR
+    c) a clearly described forbidden ACTION (e.g. theft / taking items, forcing a
+       display case, physical aggression, reaching behind the counter, leaving
+       without payment).
+  Appearance ALONE (clothing, hood, mask, hat) can NEVER be "criminal".
+
+### 3. HOW TO USE THE INPUTS — BEHAVIOR FIRST
+- The PRIMARY question is: what are people DOING, and does it match the store's
+  Allowed behaviors or the Forbidden behaviors in the business context above?
+  Base your decision mainly on the ACTIONS described vs that list.
+- MATCH BY SPECIFIC WORDING, NOT GENERAL TOPIC. Before scoring, go through each
+  described action and find the Allowed/Forbidden list item it actually matches —
+  do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump
+  to the nearest-sounding Forbidden item. Concretely: reaching INTO or OVER a
+  DISPLAY CASE to view/handle merchandise matches an Allowed item like "Employees
+  opening display cases" or "Customers trying on jewelry" — it is NOT the same as
+  reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what a
+  Forbidden item like "Reaching behind cashier counter" actually describes. Only
+  score the latter as suspicious/criminal reaching behavior; do not conflate the two
+  just because both mention "reaching" or "counter".
+- "VLM observation:" lines come from a vision model that looked directly at the
+  full video frame and answered specific questions (actions, appearance, weapons,
+  theft/forbidden actions, posture, aggression, concealed faces). This is the
+  PRIMARY behavioral evidence. A VLM weapon answer (e.g. "Gun visible: yes" or
+  a weapon description like "person holding a pistol") is STRONG evidence and
+  can justify "criminal" on its own, just like a WEAPON ALERT.
+- "WEAPON ALERT:" lines from the tracker are STRONG evidence (weapons are
+  person-gated + temporally confirmed) and can justify "criminal" on their own.
+- A binary VLM cue answered "unclear" (e.g. "Gun: unclear", "Aggression: unclear")
+  is WEAK-TO-MODERATE escalating evidence — more significant than "no", but not on
+  its own sufficient for "criminal" (see rule 2). Do not treat "unclear" the same
+  as "no"; a run of "unclear" answers across consecutive frames, or "unclear"
+  combined with a matching Forbidden-list action, can justify "suspicious".
+- "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
+  hoods, masks and hats are frequently benign (hard hats, fashion, weather,
+  religious or cultural head coverings). Appearance may RAISE concern only when
+  combined with suspicious behavior. It MUST NOT be the sole reason and MUST NOT
+  push the label above "suspicious". Specifically: headwear mentioned only in an
+  "Appearance" line (caps, hats, beanies, hijabs, hoods) is NOT face concealment —
+  only an explicit VLM "Face concealed: yes/unclear" answer is concealment evidence;
+  never infer concealment yourself from appearance text alone.
+- Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+  and should be used ONLY to:
+  * understand continuity of people/objects across frames
+  * detect repeated presence or movement patterns
+  * identify that the same person appears in multiple frames
+
+### 4. PROHIBITED USE OF RAW YOLO DATA
+You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+Specifically:
+- DO NOT use confidence scores as reasons.
+- DO NOT use bounding boxes as reasons.
+- DO NOT use "ID 1", "ID 2", etc. as key moments.
+- DO NOT treat "multiple people detected" as suspicious by itself.
+(This prohibition does NOT apply to WEAPON ALERT / Appearance lines.)
+
+### 5. KEY MOMENTS RULES
+"key_moments" MUST:
+- describe ACTIONS / behaviors first (what people do), based on VLM observations and the
+  store's forbidden-behaviors list; a confirmed weapon is also a valid key moment
+- mention appearance only as a MODIFIER of an action, never on its own
+- NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+Examples of GOOD key moments:
+- "person reaching behind the cashier counter"
+- "customer leaning over a display case and taking an item"
+- "individual hiding jewelry inside their jacket"
+- "person appears to be holding a gun"
+- "hooded person forcing open a display case"   (appearance + action)
+
+Examples of BAD key moments (FORBIDDEN):
+- "person wearing a hood"          (appearance with no action)
+- "multiple people wearing hats"   (appearance with no action)
+- "ID 1: person (confidence 0.91)"
+- "three people detected"
+
+### 6. REASON FIELD RULES
+The "reason" MUST:
+- describe the behavioral/contextual anomaly (the ACTION), or the weapon
+- be based on VLM observation content (and the forbidden-behaviors list)
+- NOT be about appearance alone (e.g. "person wearing a hood" is NOT acceptable)
+- NOT mention YOLO IDs, confidence, or bounding boxes
+- be short and human-interpretable
+
+==============================================================
+
+Here is the scene description in chronological order:
+
+Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- VLM observation: Description: A man wearing a grey sweatsuit and an orange beanie appears to be handling items on a display case, while another individual in a black garment stands nearby.. People Actions: One man is sitting at a desk, one man is handling items on a display case, and another individual is standing nearby.. Appearance: The man at the desk is wearing a white shirt. The man handling the display case is wearing a grey sweatsuit and an orange beanie. The third individual is wearing a black garment.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no. YOLO tracker detected: ID 1: person (confidence 0.92) at [486,100,541,236]; ID 2: person (confidence 0.91) at [113,264,191,358]; ID 3: person (confidence 0.80) at [350,133,406,223]; ID 4: person (confidence 0.69) at [457,0,470,29].
+- VLM observation: Description: A man wearing a mask and orange head covering appears to be interacting with a store employee while another person in a black garment and white head covering browses nearby.. People Actions: One man is standing at the counter, possibly interacting with the employee; another person in black is browsing near a display case; the employee is seated at a desk.. Appearance: The man at the counter wears a gray sweatshirt and an orange head covering with a black mask; the person in black wears a long black garment and a white head covering; the employee wears a white shirt.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: no. Reaching Behind Counter: no. Hands Up: no. Face Concealed: yes. Aggression: no. YOLO tracker detected: ID 2: person (confidence 0.92) at [110,271,190,359]; ID 3: person (confidence 0.90) at [347,126,403,225]; ID 7: person (confidence 0.86) at [480,95,543,222]; ID 16: person (confidence 0.60) at [465,41,490,97].
+- VLM observation: Description: A man wearing an orange head covering and gray clothing appears to be interacting with a display case, while another individual in a black outfit and white head covering browses nearby.. People Actions: One man is standing near a display case, another is browsing nearby, and a third person is sitting at a desk.. Appearance: The man near the display case wears an orange head covering and gray clothing. The individual in black has a white head covering and long black clothing. The person at the desk wears a white shirt.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no. YOLO tracker detected: ID 16: person (confidence 0.90) at [420,52,451,158]; ID 3: person (confidence 0.89) at [348,128,402,224].
+- VLM observation: Description: Three individuals are inside a store with display cases, one person is behind the counter at a desk.. People Actions: One person is sitting at a desk behind the counter, two people are walking around the store, and one person is standing near the entrance.. Appearance: The person at the desk is wearing a white shirt. The person near the entrance is wearing a dark jacket and pants. The person in the middle is wearing a gray sweatshirt, orange beanie, and dark pants. The person on the right is wearing a long black robe and a white head covering.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: no. Reaching Behind Counter: no. Hands Up: no. Face Concealed: yes. Aggression: no. YOLO tracker detected: ID 16: person (confidence 0.90) at [386,78,435,199]; ID 3: person (confidence 0.89) at [348,120,395,222]; ID 20: person (confidence 0.73) at [457,96,513,238].
+- VLM observation: Description: Three individuals are standing near display cases in a jewelry store, while one person sits at a desk.. People Actions: Three people are standing near the display cases, possibly browsing, and one person is sitting at a desk with their back to the camera.. Appearance: Two individuals are wearing head coverings (one an orange beanie, the other possibly a hat), one person is in a dark jacket and pants, and the seated individual appears to be wearing a white shirt.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no. YOLO tracker detected: ID 25: person (confidence 0.74) at [71,283,164,359]; ID 24: person (confidence 0.71) at [336,97,386,202].
+- VLM observation: Description: A man in a blue jacket and grey hat is holding a long object near the employee desk, while two others browse the store.. People Actions: One man is standing near the employee desk, another is browsing the jewelry displays, and a third is standing near the front of the store.. Appearance: The man near the desk is wearing a blue jacket and a grey hat, the man browsing is wearing a grey shirt and orange hat, and the third man is wearing a white shirt and a black garment.. Weapon: The man in the blue jacket appears to be holding a long object. Gun: unclear. Knife: unclear. Reaching Display Case: no. Reaching Behind Counter: yes. Hands Up: no. Face Concealed: no. Aggression: unclear. YOLO tracker detected: ID 24: person (confidence 0.91) at [382,89,426,227]; ID 30: person (confidence 0.62) at [197,130,247,259].
+- VLM observation: Description: A man in a blue shirt and cap appears to be interacting with a display case, while two others are nearby, one near the entrance and another by a display.. People Actions: One person is leaning over a display case, another is standing near the entrance, and a third person is by another display case.. Appearance: The man near the desk is wearing a blue shirt and a cap. The person near the entrance is wearing a grey shirt and black pants, with an orange head covering. The person by the display case is wearing a long black garment.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no.
+
+Current window:
+
+Respond with exactly one JSON object and nothing else.
+
+OUTPUT FROM GROQ:
+{
+  "anomaly_score": 0.4,
+  "label": "suspicious",
+  "reason": "Reaching display case",
+  "key_moments": [
+    "person reaching display case",
+    "individual leaning over display case"
+  ]
+}
+
+======================================================
+VLM frame 600
+======================================================
+INPUT TO GROQ:
+You are an expert system for video surveillance anomaly detection.
+
+You receive short textual descriptions of what happens in a surveillance video over time.
+These descriptions come from two sources:
+1. VLM observation (full-frame behavioral Q&A: actions, weapons, theft cues, concealment)
+2. YOLO tracker (object IDs, classes, bounding boxes, weapon alerts, continuity across frames)
+
+Your task is to determine whether the described situation represents:
+- normal everyday behavior,
+- suspicious behavior, or
+- criminal/dangerous behavior.
+
+==================== CRITICAL INSTRUCTIONS ====================
+
+### 1. JSON OUTPUT FORMAT (STRICT)
+You must output EXACTLY one JSON object with the following fields:
+- "anomaly_score": a float in [0, 1]
+- "label": one of ["normal", "suspicious", "criminal"]
+- "reason": a short explanation (max 30 words)
+- "key_moments": a list of short phrases describing meaningful events
+
+### 2. SCORING CONSISTENCY RULES
+- If label == "normal"     → anomaly_score MUST be <= 0.2
+- If label == "suspicious" → anomaly_score MUST be between 0.3 and 0.7
+- If label == "criminal"   → anomaly_score MUST be >= 0.8
+- The score MUST always match the label category.
+- "criminal" REQUIRES one of:
+    a) a WEAPON ALERT from the tracker (strong, person-gated confirmation), OR
+    b) a VLM observation that explicitly states a weapon is visible/held (e.g.
+       "Gun visible: yes", "Weapon described: person holding a pistol"), OR
+    c) a clearly described forbidden ACTION (e.g. theft / taking items, forcing a
+       display case, physical aggression, reaching behind the counter, leaving
+       without payment).
+  Appearance ALONE (clothing, hood, mask, hat) can NEVER be "criminal".
+
+### 3. HOW TO USE THE INPUTS — BEHAVIOR FIRST
+- The PRIMARY question is: what are people DOING, and does it match the store's
+  Allowed behaviors or the Forbidden behaviors in the business context above?
+  Base your decision mainly on the ACTIONS described vs that list.
+- MATCH BY SPECIFIC WORDING, NOT GENERAL TOPIC. Before scoring, go through each
+  described action and find the Allowed/Forbidden list item it actually matches —
+  do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump
+  to the nearest-sounding Forbidden item. Concretely: reaching INTO or OVER a
+  DISPLAY CASE to view/handle merchandise matches an Allowed item like "Employees
+  opening display cases" or "Customers trying on jewelry" — it is NOT the same as
+  reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what a
+  Forbidden item like "Reaching behind cashier counter" actually describes. Only
+  score the latter as suspicious/criminal reaching behavior; do not conflate the two
+  just because both mention "reaching" or "counter".
+- "VLM observation:" lines come from a vision model that looked directly at the
+  full video frame and answered specific questions (actions, appearance, weapons,
+  theft/forbidden actions, posture, aggression, concealed faces). This is the
+  PRIMARY behavioral evidence. A VLM weapon answer (e.g. "Gun visible: yes" or
+  a weapon description like "person holding a pistol") is STRONG evidence and
+  can justify "criminal" on its own, just like a WEAPON ALERT.
+- "WEAPON ALERT:" lines from the tracker are STRONG evidence (weapons are
+  person-gated + temporally confirmed) and can justify "criminal" on their own.
+- A binary VLM cue answered "unclear" (e.g. "Gun: unclear", "Aggression: unclear")
+  is WEAK-TO-MODERATE escalating evidence — more significant than "no", but not on
+  its own sufficient for "criminal" (see rule 2). Do not treat "unclear" the same
+  as "no"; a run of "unclear" answers across consecutive frames, or "unclear"
+  combined with a matching Forbidden-list action, can justify "suspicious".
+- "Appearance (context only...)" lines are WEAK, SUPPORTING context. Clothing,
+  hoods, masks and hats are frequently benign (hard hats, fashion, weather,
+  religious or cultural head coverings). Appearance may RAISE concern only when
+  combined with suspicious behavior. It MUST NOT be the sole reason and MUST NOT
+  push the label above "suspicious". Specifically: headwear mentioned only in an
+  "Appearance" line (caps, hats, beanies, hijabs, hoods) is NOT face concealment —
+  only an explicit VLM "Face concealed: yes/unclear" answer is concealment evidence;
+  never infer concealment yourself from appearance text alone.
+- Raw "YOLO tracker detected:" lines (IDs, classes, bounding boxes) are SECONDARY
+  and should be used ONLY to:
+  * understand continuity of people/objects across frames
+  * detect repeated presence or movement patterns
+  * identify that the same person appears in multiple frames
+
+### 4. PROHIBITED USE OF RAW YOLO DATA
+You MUST NOT use the raw "YOLO tracker detected:" technical data as evidence.
+Specifically:
+- DO NOT use confidence scores as reasons.
+- DO NOT use bounding boxes as reasons.
+- DO NOT use "ID 1", "ID 2", etc. as key moments.
+- DO NOT treat "multiple people detected" as suspicious by itself.
+(This prohibition does NOT apply to WEAPON ALERT / Appearance lines.)
+
+### 5. KEY MOMENTS RULES
+"key_moments" MUST:
+- describe ACTIONS / behaviors first (what people do), based on VLM observations and the
+  store's forbidden-behaviors list; a confirmed weapon is also a valid key moment
+- mention appearance only as a MODIFIER of an action, never on its own
+- NOT include raw YOLO technical data (IDs, confidence, bbox)
+
+Examples of GOOD key moments:
+- "person reaching behind the cashier counter"
+- "customer leaning over a display case and taking an item"
+- "individual hiding jewelry inside their jacket"
+- "person appears to be holding a gun"
+- "hooded person forcing open a display case"   (appearance + action)
+
+Examples of BAD key moments (FORBIDDEN):
+- "person wearing a hood"          (appearance with no action)
+- "multiple people wearing hats"   (appearance with no action)
+- "ID 1: person (confidence 0.91)"
+- "three people detected"
+
+### 6. REASON FIELD RULES
+The "reason" MUST:
+- describe the behavioral/contextual anomaly (the ACTION), or the weapon
+- be based on VLM observation content (and the forbidden-behaviors list)
+- NOT be about appearance alone (e.g. "person wearing a hood" is NOT acceptable)
+- NOT mention YOLO IDs, confidence, or bounding boxes
+- be short and human-interpretable
+
+==============================================================
+
+Here is the scene description in chronological order:
+
+Business context (from NestJS):
+- Store: Royal Diamond Jewelry (jewelry_store)
+Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
+Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
+Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+Recent context:
+- VLM observation: Description: A man wearing a grey sweatsuit and an orange beanie appears to be handling items on a display case, while another individual in a black garment stands nearby.. People Actions: One man is sitting at a desk, one man is handling items on a display case, and another individual is standing nearby.. Appearance: The man at the desk is wearing a white shirt. The man handling the display case is wearing a grey sweatsuit and an orange beanie. The third individual is wearing a black garment.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no. YOLO tracker detected: ID 1: person (confidence 0.92) at [486,100,541,236]; ID 2: person (confidence 0.91) at [113,264,191,358]; ID 3: person (confidence 0.80) at [350,133,406,223]; ID 4: person (confidence 0.69) at [457,0,470,29].
+- VLM observation: Description: A man wearing a mask and orange head covering appears to be interacting with a store employee while another person in a black garment and white head covering browses nearby.. People Actions: One man is standing at the counter, possibly interacting with the employee; another person in black is browsing near a display case; the employee is seated at a desk.. Appearance: The man at the counter wears a gray sweatshirt and an orange head covering with a black mask; the person in black wears a long black garment and a white head covering; the employee wears a white shirt.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: no. Reaching Behind Counter: no. Hands Up: no. Face Concealed: yes. Aggression: no. YOLO tracker detected: ID 2: person (confidence 0.92) at [110,271,190,359]; ID 3: person (confidence 0.90) at [347,126,403,225]; ID 7: person (confidence 0.86) at [480,95,543,222]; ID 16: person (confidence 0.60) at [465,41,490,97].
+- VLM observation: Description: A man wearing an orange head covering and gray clothing appears to be interacting with a display case, while another individual in a black outfit and white head covering browses nearby.. People Actions: One man is standing near a display case, another is browsing nearby, and a third person is sitting at a desk.. Appearance: The man near the display case wears an orange head covering and gray clothing. The individual in black has a white head covering and long black clothing. The person at the desk wears a white shirt.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no. YOLO tracker detected: ID 16: person (confidence 0.90) at [420,52,451,158]; ID 3: person (confidence 0.89) at [348,128,402,224].
+- VLM observation: Description: Three individuals are inside a store with display cases, one person is behind the counter at a desk.. People Actions: One person is sitting at a desk behind the counter, two people are walking around the store, and one person is standing near the entrance.. Appearance: The person at the desk is wearing a white shirt. The person near the entrance is wearing a dark jacket and pants. The person in the middle is wearing a gray sweatshirt, orange beanie, and dark pants. The person on the right is wearing a long black robe and a white head covering.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: no. Reaching Behind Counter: no. Hands Up: no. Face Concealed: yes. Aggression: no. YOLO tracker detected: ID 16: person (confidence 0.90) at [386,78,435,199]; ID 3: person (confidence 0.89) at [348,120,395,222]; ID 20: person (confidence 0.73) at [457,96,513,238].
+- VLM observation: Description: Three individuals are standing near display cases in a jewelry store, while one person sits at a desk.. People Actions: Three people are standing near the display cases, possibly browsing, and one person is sitting at a desk with their back to the camera.. Appearance: Two individuals are wearing head coverings (one an orange beanie, the other possibly a hat), one person is in a dark jacket and pants, and the seated individual appears to be wearing a white shirt.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no. YOLO tracker detected: ID 25: person (confidence 0.74) at [71,283,164,359]; ID 24: person (confidence 0.71) at [336,97,386,202].
+- VLM observation: Description: A man in a blue jacket and grey hat is holding a long object near the employee desk, while two others browse the store.. People Actions: One man is standing near the employee desk, another is browsing the jewelry displays, and a third is standing near the front of the store.. Appearance: The man near the desk is wearing a blue jacket and a grey hat, the man browsing is wearing a grey shirt and orange hat, and the third man is wearing a white shirt and a black garment.. Weapon: The man in the blue jacket appears to be holding a long object. Gun: unclear. Knife: unclear. Reaching Display Case: no. Reaching Behind Counter: yes. Hands Up: no. Face Concealed: no. Aggression: unclear. YOLO tracker detected: ID 24: person (confidence 0.91) at [382,89,426,227]; ID 30: person (confidence 0.62) at [197,130,247,259].
+- VLM observation: Description: A man in a blue shirt and cap appears to be interacting with a display case, while two others are nearby, one near the entrance and another by a display.. People Actions: One person is leaning over a display case, another is standing near the entrance, and a third person is by another display case.. Appearance: The man near the desk is wearing a blue shirt and a cap. The person near the entrance is wearing a grey shirt and black pants, with an orange head covering. The person by the display case is wearing a long black garment.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: yes. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no.
+- VLM observation: Description: Person wearing an orange head covering is bending over a desk, while another person approaches a display case.. People Actions: One person is bending over a desk, and another person is approaching or standing near a display case.. Appearance: The person bending over the desk is wearing a gray and white shirt and an orange head covering. The other person is wearing a dark jacket and white head covering.. Weapon: none. Gun: no. Knife: no. Reaching Display Case: no. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no.
+
+Current window:
+
+Respond with exactly one JSON object and nothing else.
+
+OUTPUT FROM GROQ:
+{
+  "anomaly_score": 0.4,
+  "label": "suspicious",
+  "reason": "Reaching display case, unclear aggression",
+  "key_moments": [
+    "person reaching behind the counter",
+    "person leaning over a display case",
+    "individual bending over a desk"
   ]
 }

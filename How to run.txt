@@ -11,8 +11,8 @@ Step 4 - VLM layer:
   python vlm_worker.py --every 60 --ws-url none --anomaly-endpoint tcp://127.0.0.1:5581
 
 Eval harness:
-  py eval/run_eval.py            (fast, free, no API calls)
-  py eval/run_eval.py --live     (calls real Groq API, small cost)
+  python eval/run_eval.py            (fast, free, no API calls)
+  python eval/run_eval.py --live     (calls real Groq API, small cost)
 
 
 ---------------
