@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 _HERE = Path(__file__).resolve().parent
-_OUTPUT_LOG = _HERE / "vlm_output.jsonl"
+_OUTPUT_LOG = _HERE / "logs_output.jsonl"
 
 import zmq
 

@@ -26,8 +26,9 @@ ZMQ_ENDPOINT    = "tcp://127.0.0.1:5581"
 MAX_QUEUE_SIZE    = 30
 MAX_EVENT_HISTORY = 10
 
-# Log file lives next to this script (groq/ folder) regardless of CWD.
+# Log files live next to this script (groq/ folder) regardless of CWD.
 CONTEXT_LOG_FILE = str(_HERE / "groq_context_log.txt")
+OUTPUT_LOG_FILE  = _HERE / "logs_output.jsonl"
 
 # Cue keys from the VLM's structured QA dict (vlm_worker.py → rec["qa"]).
 # HARD_SIGNAL_KEYS: if ANY of these is "yes", the frame is ALWAYS sent to Groq.
@@ -359,6 +360,9 @@ async def main_async():
                     "key_moments":   result.get("key_moments", []),
                 },
             }
+
+            with open(OUTPUT_LOG_FILE, "a", encoding="utf-8") as f:
+                f.write(json.dumps(anomaly_payload, ensure_ascii=False) + "\n")
 
             try:
                 await ws_send_json(ws, anomaly_payload)

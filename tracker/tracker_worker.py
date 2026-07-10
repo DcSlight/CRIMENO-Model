@@ -25,6 +25,15 @@ from detection import (
 )
 
 _HERE = Path(__file__).resolve().parent
+_OUTPUT_LOG = _HERE / "logs_output.jsonl"
+
+
+def _log_output(payload: Dict[str, Any]) -> None:
+    """Append the exact payload about to be sent to NestJS (minus the bulky overlay JPEG)."""
+    record = {k: v for k, v in payload.items() if k != "overlay_jpg_b64"}
+    with open(_OUTPUT_LOG, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
 
 # ============================================================
 # Reset handshake state (shared between watcher thread + main loop)
@@ -271,6 +280,7 @@ async def main_async():
                 "type": "tracker_frame", "frame_index": -1,
                 "video_time_ms": -1, "tracks": [], "motion_detected": False, "reset": True,
             }
+            _log_output(clear_payload)
             try:
                 await ws_send_json(ws, clear_payload)
                 print("[TRACKER] Sent UI clear payload on reset")
@@ -501,6 +511,7 @@ async def main_async():
         except Exception as e:
             print(f"[TRACKER] Failed to send to Groq: {e}")
 
+        _log_output(payload)
         try:
             await ws_send_json(ws, payload)
         except Exception as e:

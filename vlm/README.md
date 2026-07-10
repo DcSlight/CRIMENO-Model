@@ -12,7 +12,7 @@ primary decision anchor.
 | `vlm_worker.py` | Main worker: ZMQ subscriber, frame throttling, result dispatch to Groq + NestJS |
 | `vlm_model.py` | Model loading, inference, JSON parsing, output sanitization, summary building |
 | `prompt.txt` | Instruction sent to Qwen2.5-VL — edit here to change what the model analyses |
-| `vlm_output.jsonl` | Auto-generated log of every VLM output record (one JSON object per line) |
+| `logs_output.jsonl` | Auto-generated log of every VLM record sent to NestJS (one JSON object per line) |
 
 ## How it works
 
