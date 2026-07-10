@@ -1,6 +1,4 @@
 .env
-analysis.jsonl
-*jsonl
 yolov8n.pt
 .env
 .idea
@@ -8,3 +6,9 @@ __pycache__/*
 #AI
 .claude
 CLAUDE.md
+
+
+groq/__pycache__/*
+tracker/__pycache__/*
+vlm/__pycache__/*
+tracker/mobileclip2_b.ts
