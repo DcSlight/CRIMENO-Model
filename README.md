@@ -77,6 +77,29 @@ python vlm/vlm_worker.py \
 
 ---
 
+## Eval harness
+
+```bash
+py eval/run_eval.py            # fast, free, no API calls
+py eval/run_eval.py --live     # calls real Groq API, small cost
+```
+
+**`py eval/run_eval.py`** (no `--live`)
+- Doesn't call any AI model at all.
+- Takes the hand-written mock answers (`groq_mock.jsonl` — label + score someone already decided is "correct" for that scenario) and just re-runs them through your local clamping math (`apply_scoring()`).
+- It's checking: "does the scoring/clamping code do what it's supposed to do?" — a math check, not an AI check.
+- Free, instant, no API key needed.
+
+**`py eval/run_eval.py --live`**
+- Takes the mock VLM observations (`vlm_mock.jsonl` — hand-written descriptions like "handgun becomes visible near the seller") and actually sends them to the real Groq model, asking it to decide: normal, suspicious, or criminal?
+- Compares Groq's real answer to what the mock says the answer *should* be.
+- It's checking: "does the AI actually reach the right conclusion, given our current prompt?" — a real accuracy test.
+- Costs a small number of real API calls, needs `GROQ_API_KEY`.
+
+Short version: **no-live tests the math, live tests the AI's judgment.**
+
+---
+
 ## Architecture
 
 ### Pipeline overview
@@ -197,7 +220,7 @@ The nearest tracker frame is automatically attached as enrichment context.
 - Calls **Groq vision** (default `meta-llama/llama-4-scout-17b-16e-instruct`) via API — uses the same `GROQ_API_KEY` as the anomaly worker.
 - Returns a single structured JSON per frame:
   - Scene description, people actions, appearance, weapon description.
-  - Binary cues: `gun`, `knife`, `reaching_counter`, `hands_up`, `face_concealed`, `aggression`.
+  - Binary cues (yes/no/unclear): `gun`, `knife`, `reaching_display_case`, `reaching_behind_counter`, `hands_up`, `face_concealed`, `aggression`.
 - Pushes each result to the Groq anomaly worker via ZMQ.
 
 ---
