@@ -135,7 +135,7 @@ def apply_scoring(label: str, raw_score: float, scoring_level: str = "balanced")
         score = max(0.3, min(score, 0.7))
     elif label == "criminal":
         score = max(score, 0.8)
-    return score
+    return round(score, 2)
 
 
 def score_from_cues(
