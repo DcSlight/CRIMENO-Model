@@ -1,24 +1,25 @@
 # vlm/ — Vision-Language Model Worker
 
 This folder contains the VLM scene-analysis layer.
-It calls the **Google Gemini API** (default `gemini-3.5-flash`) to produce structured
+It calls **Groq's vision API** (default `meta-llama/llama-4-scout-17b-16e-instruct`) to produce structured
 scene analysis for each video frame, which the Groq anomaly worker uses as its
-primary decision anchor. Requires a `GEMINI_API_KEY` (see `.env.example`).
+primary decision anchor. Requires a `GROQ_API_KEY` (see `.env.example`) — the same
+key used by `groq/groq_anomaly_worker.py`, so both share one quota.
 
 ## Files
 
 | File | Purpose |
 |---|---|
 | `vlm_worker.py` | Main worker: ZMQ subscriber, frame throttling, result dispatch to Groq + NestJS |
-| `vlm_model.py` | Gemini client, inference call, JSON parsing, output sanitization, summary building |
-| `prompt.txt` | Instruction sent to Gemini — edit here to change what the model analyses |
+| `vlm_model.py` | Groq client, inference call, JSON parsing, output sanitization, summary building |
+| `prompt.txt` | Instruction sent to the vision model — edit here to change what the model analyses |
 | `logs_output.jsonl` | Auto-generated log of every VLM record sent to NestJS (one JSON object per line) |
 
 ## How it works
 
 1. **Subscribes** to the broadcaster PUB socket (`tcp://127.0.0.1:5560`) for `frame` and `reset` topics.
 2. **Throttles** — processes one frame every `--every` frames (default 60) to bound API request rate.
-3. **Runs inference** via a single structured-JSON Gemini vision call (prompt from `prompt.txt`), sending the raw JPEG bytes directly.
+3. **Runs inference** via a single structured-JSON Groq vision call (prompt from `prompt.txt`), sending the JPEG as a base64 data URI.
 4. **Parses** the JSON response into a structured QA dict + a one-line `summary` string.
 5. **PUSHes** a `vlm_frame` record to the Groq anomaly worker (`tcp://127.0.0.1:5581`).
 6. **Optionally** forwards the same record to NestJS via WebSocket (disabled by default with `--ws-url none`).
@@ -43,7 +44,7 @@ primary decision anchor. Requires a `GEMINI_API_KEY` (see `.env.example`).
     "aggression": "no"
   },
   "summary": "Scene: A person stands at the store counter. People: ...",
-  "meta": { "generated_at_unix_ms": 1730000000000, "model": "gemini-3.5-flash" }
+  "meta": { "generated_at_unix_ms": 1730000000000, "model": "meta-llama/llama-4-scout-17b-16e-instruct" }
 }
 ```
 
@@ -66,16 +67,15 @@ So to add a new field (e.g. `"loitering"`), just add it to the JSON block in `pr
 ```
 The fallback dict, binary-key detection, sanitizer, and summary builder all update automatically.
 
-- **Frame rate** → `--every` CLI flag (lower = more API requests + fresher context for Groq, but higher chance of hitting free-tier rate limits).
+- **Frame rate** → `--every` CLI flag (lower = more API requests + fresher context for Groq, but higher combined load on the shared `GROQ_API_KEY` quota).
 - **Model** → `--vlm_model` flag:
 
 | Model | Notes |
 |---|---|
-| `gemini-3.5-flash` *(default)* | fast, free tier |
-| `gemini-2.5-flash` | higher quality, slower, lower free-tier RPM |
-| `gemini-2.5-flash-lite` | fastest/cheapest, lower quality |
+| `meta-llama/llama-4-scout-17b-16e-instruct` *(default)* | Groq's primary vision model, JSON mode, ≤5 images/request |
+| `qwen/qwen3.6-27b` | newer 27B multimodal alternate |
 
-> `gemini-2.0-flash` was shut down by Google on 2026-06-01 — do not use it.
+> Llama 4 Maverick was deprecated on Groq (Feb 2026) and is now text-only — not usable here.
 
 ## Launch command
 

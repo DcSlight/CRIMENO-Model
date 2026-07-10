@@ -59,18 +59,18 @@ async def main_async():
                         help="ZeroMQ PUSH endpoint of the Groq anomaly worker.")
     parser.add_argument("--ws-url", "--ws_url", dest="ws_url", default="none",
                         help="WebSocket URL for forwarding VLM records (or 'none').")
-    parser.add_argument("--vlm_model", default="gemini-3.5-flash",
-                        help="Gemini vision model id (e.g. gemini-3.5-flash, gemini-2.5-flash). "
-                             "gemini-2.0-flash was shut down 2026-06-01 — do not use.")
-    parser.add_argument("--gemini-api-key", "--gemini_api_key", dest="gemini_api_key", default="",
-                        help="Gemini API key (or set GEMINI_API_KEY env var).")
+    parser.add_argument("--vlm_model", default="meta-llama/llama-4-scout-17b-16e-instruct",
+                        help="Groq vision model id (e.g. meta-llama/llama-4-scout-17b-16e-instruct, "
+                             "qwen/qwen3.6-27b).")
+    parser.add_argument("--groq-api-key", "--groq_api_key", dest="groq_api_key", default="",
+                        help="Groq API key (or set GROQ_API_KEY env var).")
     parser.add_argument("--process_every_n_frames", "--every", dest="process_every_n_frames",
                         type=int, default=60, help="Analyze one frame every N frames.")
     parser.add_argument("--max_new_tokens", "--max_output_tokens", dest="max_new_tokens",
                         type=int, default=256, help="Token budget for the structured JSON response.")
     args = parser.parse_args()
 
-    client = load_vlm(args.vlm_model, args.gemini_api_key)
+    client = load_vlm(args.vlm_model, args.groq_api_key)
 
     context = zmq.Context()
 

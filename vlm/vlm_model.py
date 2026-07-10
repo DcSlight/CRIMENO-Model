@@ -1,3 +1,4 @@
+import base64
 import io
 import json
 import os
@@ -7,8 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
 from PIL import Image
-from google import genai
-from google.genai import types
+from groq import Groq
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -100,26 +100,12 @@ def _fallback_dict(raw_text: str) -> Dict[str, str]:
 # Model loading
 # ============================================================
 
-# Surveillance frames legitimately contain weapons/aggression cues — Gemini's default
-# safety filters can block or empty out the response on exactly the frames that matter,
-# so the harm categories relevant to this analysis are relaxed to BLOCK_NONE.
-_SAFETY_SETTINGS = [
-    types.SafetySetting(category=cat, threshold=types.HarmBlockThreshold.BLOCK_NONE)
-    for cat in (
-        types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-        types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-        types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-        types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-    )
-]
-
-
 def load_vlm(model_id: str, api_key: str = ""):
-    api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
+    api_key = api_key or os.environ.get("GROQ_API_KEY", "")
     if not api_key:
-        raise ValueError("GEMINI_API_KEY not set. Pass --gemini-api-key or set env var GEMINI_API_KEY.")
-    client = genai.Client(api_key=api_key)
-    print(f"✅ [VLM] Gemini client ready — model={model_id}")
+        raise ValueError("GROQ_API_KEY not set. Pass --groq-api-key or set env var GROQ_API_KEY.")
+    client = Groq(api_key=api_key)
+    print(f"✅ [VLM] Groq client ready — model={model_id}")
     return client
 
 
@@ -127,25 +113,28 @@ def load_vlm(model_id: str, api_key: str = ""):
 # Inference
 # ============================================================
 
-def analyze_frame(client: "genai.Client", model_id: str, jpg_bytes: bytes,
+def analyze_frame(client: "Groq", model_id: str, jpg_bytes: bytes,
                   max_new_tokens: int = 256) -> Dict[str, str]:
-    """Single Gemini vision call → structured dict. Safe fallback on API/parse failure."""
+    """Single Groq vision call → structured dict. Safe fallback on API/parse failure."""
     try:
-        resp = client.models.generate_content(
+        b64 = base64.b64encode(jpg_bytes).decode("ascii")
+        resp = client.chat.completions.create(
             model=model_id,
-            contents=[
-                types.Part.from_bytes(data=jpg_bytes, mime_type="image/jpeg"),
-                _PROMPT_TEXT,
-            ],
-            config=types.GenerateContentConfig(
-                temperature=0.0,
-                max_output_tokens=max_new_tokens,
-                safety_settings=_SAFETY_SETTINGS,
-            ),
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": _PROMPT_TEXT},
+                    {"type": "image_url",
+                     "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+                ],
+            }],
+            temperature=0.0,
+            max_tokens=max_new_tokens,
+            response_format={"type": "json_object"},
         )
-        raw_text = (resp.text or "").strip()
+        raw_text = (resp.choices[0].message.content or "").strip()
     except Exception as e:
-        print(f"[VLM] ⚠️ Gemini API call failed: {e}")
+        print(f"[VLM] ⚠️ Groq API call failed: {e}")
         return _fallback_dict("")
 
     return _parse_vlm_output(raw_text)

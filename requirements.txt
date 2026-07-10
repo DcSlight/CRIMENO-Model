@@ -8,11 +8,10 @@ websockets
 # YOLO tracker
 ultralytics
 
-# VLM (Gemini API)
+# VLM (uses torch only for the tracker; inference is via Groq below)
 torch
-google-genai
 
-# Groq anomaly worker
+# Groq (anomaly worker + VLM vision — shared client/key)
 groq
 python-dotenv
 
