@@ -6,7 +6,11 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 _HERE = Path(__file__).resolve().parent
+_PROJECT_ROOT = _HERE.parent
 _OUTPUT_LOG = _HERE / "logs_output.jsonl"
+
+from dotenv import load_dotenv
+load_dotenv(_PROJECT_ROOT / ".env")
 
 import zmq
 
