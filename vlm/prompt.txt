@@ -9,9 +9,9 @@ Return ONLY a valid JSON object with these exact keys — no extra text before o
   "description": "1-2 sentence factual description of the scene, leading with the most security-relevant detail",
   "people_actions": "what each visible person is doing",
   "appearance": "what each person is wearing (clothing, headwear, face covering)",
-  "weapon": "describe any visible weapon (gun, knife, etc.), a suspicious object that might be one, or 'none'",
-  "gun": "yes or no or unclear — is a gun visible or being held. If 'weapon' describes something that could be a gun, this must be at least 'unclear', never 'no'",
-  "knife": "yes or no or unclear — is a knife visible or being held. If 'weapon' describes something that could be a knife, this must be at least 'unclear', never 'no'",
+  "weapon": "describe any visible weapon (gun, knife, etc.), a suspicious object that might be one, or 'none'. If your description is hedged (e.g. 'appears to be', 'possibly', 'might be', 'looks like'), that hedging MUST carry over into the gun/knife fields below — do not describe something tentatively here and then answer 'yes' below",
+  "gun": "yes or no or unclear — answer 'yes' ONLY if a gun is clearly and directly visible, unmistakably a gun, not inferred from posture or context. Answer 'unclear' for anything hedged, partially obscured, or ambiguous in shape. Answer 'no' only when nothing gun-like is visible. If 'weapon' uses hedging language (appears/possibly/might/looks like), this must be 'unclear', NEVER 'yes' — hedged perception is not confirmed presence",
+  "knife": "yes or no or unclear — answer 'yes' ONLY if a knife is clearly and directly visible, unmistakably a knife, not inferred from posture or context. Answer 'unclear' for anything hedged, partially obscured, or ambiguous in shape. Answer 'no' only when nothing knife-like is visible. If 'weapon' uses hedging language (appears/possibly/might/looks like), this must be 'unclear', NEVER 'yes' — hedged perception is not confirmed presence",
   "reaching_display_case": "yes or no — is anyone reaching into, over, or leaning over a display case or shelf to view or handle merchandise (normal browsing/selling motion)",
   "reaching_behind_counter": "yes or no or unclear — is anyone who is NOT already stationed there entering the employee-only space behind the cashier counter or register (do NOT answer yes for reaching into a display case — that is a separate field)",
   "hands_up": "yes or no or unclear — does anyone have hands raised (possible victim or surrender pose)",
@@ -21,9 +21,14 @@ Return ONLY a valid JSON object with these exact keys — no extra text before o
 
 Rules:
 - Base every answer ONLY on what is clearly visible in the frame.
-- Use "unclear" for binary fields when the evidence is ambiguous or partially obscured —
-  do NOT default to "no" just because you are uncertain. Collapsing uncertainty to "no"
-  hides real escalating risk from the downstream reasoning system.
+- Calibration for ALL binary fields (gun, knife, reaching_behind_counter, hands_up,
+  face_concealed, aggression): "yes" requires direct, unambiguous visual evidence you
+  could point to. "unclear" is for genuinely ambiguous, partial, or hedged evidence.
+  "no" is for nothing suggestive at all. Do NOT default straight to "no" just because
+  you are uncertain (that hides real escalating risk) — but do NOT default to "yes"
+  either. If your own free-text answers (description, weapon) use hedging language
+  ("appears to be", "possibly", "might be", "looks like"), the matching binary field
+  must be "unclear", never "yes" — a hedge in your own words is not confirmed presence.
 - Keep "gun", "knife", "weapon" mutually consistent — see the field descriptions above.
 - Do NOT guess, hallucinate, or invent details.
 - Return ONLY the JSON object with no other text.
