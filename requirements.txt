@@ -8,10 +8,9 @@ websockets
 # YOLO tracker
 ultralytics
 
-# VLM (Qwen2.5-VL — runs locally)
+# VLM (Gemini API)
 torch
-transformers==4.49
-accelerate
+google-genai
 
 # Groq anomaly worker
 groq

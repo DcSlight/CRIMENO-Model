@@ -16,6 +16,7 @@ Create a `.env` file in the project root (use `.env.example` as a template):
 
 ```
 GROQ_API_KEY=gsk_YOUR_KEY_HERE
+GEMINI_API_KEY=YOUR_GEMINI_KEY_HERE
 ```
 
 ### Launch order
@@ -49,10 +50,9 @@ python tracker/tracker_worker.py \
   --anomaly-endpoint tcp://127.0.0.1:5581
 ```
 
-**Step 4 — VLM Scene Analyser** (Qwen2.5-VL, runs locally — no API key needed)
+**Step 4 — VLM Scene Analyser** (Gemini API, requires `GEMINI_API_KEY`)
 ```bash
 python vlm/vlm_worker.py \
-  --device cuda \
   --every 60 \
   --ws-url none \
   --anomaly-endpoint tcp://127.0.0.1:5581
@@ -62,12 +62,15 @@ python vlm/vlm_worker.py \
 > (subject to `--decision-frames` throttle). Cost is fully decoupled from VLM speed:
 > running VLM faster gives fresher context but never increases API spend.
 
-**Model size options:**
+**Model options:**
 
-| Flag | Model | VRAM |
+| Flag | Model | Notes |
 |---|---|---|
-| *(default)* | `Qwen/Qwen2.5-VL-3B-Instruct` | ~8 GB |
-| `--vlm_model Qwen/Qwen2.5-VL-7B-Instruct` | higher quality | ~16 GB |
+| *(default)* | `gemini-3.5-flash` | fast, free tier |
+| `--vlm_model gemini-2.5-flash` | higher quality, slower, lower free-tier RPM |
+| `--vlm_model gemini-2.5-flash-lite` | fastest/cheapest, lower quality |
+
+> `gemini-2.0-flash` was shut down 2026-06-01 by Google — do not use it.
 
 > **`--ws-url none`** — use this unless the NestJS backend exposes a `/ws/vlm` route
 > (it does **not** by default). A missing route causes a hang on retry.
@@ -90,7 +93,7 @@ video_broadcaster.py
    │        → ZMQ PUSH tcp://127.0.0.1:5581
    │
    └──▶ vlm/vlm_worker.py           (every 60 frames, default)
-            Qwen2.5-VL-3B — full-frame scene analysis
+            Gemini 3.5 Flash (API) — full-frame scene analysis
             → ZMQ PUSH tcp://127.0.0.1:5581
                      │
                      ▼
@@ -191,7 +194,7 @@ The nearest tracker frame is automatically attached as enrichment context.
 
 #### `vlm/vlm_worker.py`
 - Processes one full frame every N frames (default: 60).
-- Runs **Qwen2.5-VL** locally — zero API cost, no key required.
+- Calls **Gemini** (default `gemini-3.5-flash`) via API — requires `GEMINI_API_KEY`, free tier.
 - Returns a single structured JSON per frame:
   - Scene description, people actions, appearance, weapon description.
   - Binary cues: `gun`, `knife`, `reaching_counter`, `hands_up`, `face_concealed`, `aggression`.

@@ -10,7 +10,7 @@ _OUTPUT_LOG = _HERE / "logs_output.jsonl"
 
 import zmq
 
-from vlm_model import load_vlm, analyze_frame, build_summary, pil_from_jpg, now_unix_ms
+from vlm_model import load_vlm, analyze_frame, build_summary, now_unix_ms
 
 
 # ============================================================
@@ -55,26 +55,18 @@ async def main_async():
                         help="ZeroMQ PUSH endpoint of the Groq anomaly worker.")
     parser.add_argument("--ws-url", "--ws_url", dest="ws_url", default="none",
                         help="WebSocket URL for forwarding VLM records (or 'none').")
-    parser.add_argument("--vlm_model", default="Qwen/Qwen2.5-VL-3B-Instruct",
-                        help="Qwen2.5-VL model weights. 3B ~8GB VRAM, 7B ~16GB VRAM.")
-    parser.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
+    parser.add_argument("--vlm_model", default="gemini-3.5-flash",
+                        help="Gemini vision model id (e.g. gemini-3.5-flash, gemini-2.5-flash). "
+                             "gemini-2.0-flash was shut down 2026-06-01 — do not use.")
+    parser.add_argument("--gemini-api-key", "--gemini_api_key", dest="gemini_api_key", default="",
+                        help="Gemini API key (or set GEMINI_API_KEY env var).")
     parser.add_argument("--process_every_n_frames", "--every", dest="process_every_n_frames",
                         type=int, default=60, help="Analyze one frame every N frames.")
-    parser.add_argument("--max_new_tokens", type=int, default=256,
-                        help="Token budget for the structured JSON response.")
+    parser.add_argument("--max_new_tokens", "--max_output_tokens", dest="max_new_tokens",
+                        type=int, default=256, help="Token budget for the structured JSON response.")
     args = parser.parse_args()
 
-    model, processor, device, dtype = load_vlm(args.vlm_model, args.device)
-
-    print("[VLM] Warming up...")
-    from PIL import Image as _Image
-    try:
-        analyze_frame(model, processor, device, dtype,
-                      _Image.new("RGB", (448, 448), color=(128, 128, 128)),
-                      max_new_tokens=16)
-    except Exception as e:
-        print(f"[VLM] Warmup failed (continuing): {e}")
-    print("[VLM] ✓ Warmup complete")
+    client = load_vlm(args.vlm_model, args.gemini_api_key)
 
     context = zmq.Context()
 
@@ -134,10 +126,8 @@ async def main_async():
             if args.process_every_n_frames > 1 and (frame_idx % args.process_every_n_frames) != 0:
                 continue
 
-            image = pil_from_jpg(jpg_bytes)
-
             qa = await asyncio.to_thread(
-                analyze_frame, model, processor, device, dtype, image, args.max_new_tokens
+                analyze_frame, client, args.vlm_model, jpg_bytes, args.max_new_tokens
             )
             summary = build_summary(qa)
 

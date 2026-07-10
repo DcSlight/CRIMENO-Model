@@ -1,24 +1,24 @@
 # vlm/ — Vision-Language Model Worker
 
-This folder contains the local VLM inference layer.
-It runs **Qwen2.5-VL** fully on-device (no API key needed) to produce structured
+This folder contains the VLM scene-analysis layer.
+It calls the **Google Gemini API** (default `gemini-3.5-flash`) to produce structured
 scene analysis for each video frame, which the Groq anomaly worker uses as its
-primary decision anchor.
+primary decision anchor. Requires a `GEMINI_API_KEY` (see `.env.example`).
 
 ## Files
 
 | File | Purpose |
 |---|---|
 | `vlm_worker.py` | Main worker: ZMQ subscriber, frame throttling, result dispatch to Groq + NestJS |
-| `vlm_model.py` | Model loading, inference, JSON parsing, output sanitization, summary building |
-| `prompt.txt` | Instruction sent to Qwen2.5-VL — edit here to change what the model analyses |
+| `vlm_model.py` | Gemini client, inference call, JSON parsing, output sanitization, summary building |
+| `prompt.txt` | Instruction sent to Gemini — edit here to change what the model analyses |
 | `logs_output.jsonl` | Auto-generated log of every VLM record sent to NestJS (one JSON object per line) |
 
 ## How it works
 
 1. **Subscribes** to the broadcaster PUB socket (`tcp://127.0.0.1:5560`) for `frame` and `reset` topics.
-2. **Throttles** — processes one frame every `--every` frames (default 60) to keep GPU load manageable.
-3. **Runs inference** via a single structured-JSON Qwen2.5-VL call (prompt from `prompt.txt`).
+2. **Throttles** — processes one frame every `--every` frames (default 60) to bound API request rate.
+3. **Runs inference** via a single structured-JSON Gemini vision call (prompt from `prompt.txt`), sending the raw JPEG bytes directly.
 4. **Parses** the JSON response into a structured QA dict + a one-line `summary` string.
 5. **PUSHes** a `vlm_frame` record to the Groq anomaly worker (`tcp://127.0.0.1:5581`).
 6. **Optionally** forwards the same record to NestJS via WebSocket (disabled by default with `--ws-url none`).
@@ -43,7 +43,7 @@ primary decision anchor.
     "aggression": "no"
   },
   "summary": "Scene: A person stands at the store counter. People: ...",
-  "meta": { "generated_at_unix_ms": 1730000000000, "model": "Qwen/Qwen2.5-VL-3B-Instruct" }
+  "meta": { "generated_at_unix_ms": 1730000000000, "model": "gemini-3.5-flash" }
 }
 ```
 
@@ -66,19 +66,21 @@ So to add a new field (e.g. `"loitering"`), just add it to the JSON block in `pr
 ```
 The fallback dict, binary-key detection, sanitizer, and summary builder all update automatically.
 
-- **Frame rate** → `--every` CLI flag (lower = more GPU usage + fresher context for Groq).
-- **Model size** → `--vlm_model` flag:
+- **Frame rate** → `--every` CLI flag (lower = more API requests + fresher context for Groq, but higher chance of hitting free-tier rate limits).
+- **Model** → `--vlm_model` flag:
 
-| Model | VRAM |
+| Model | Notes |
 |---|---|
-| `Qwen/Qwen2.5-VL-3B-Instruct` *(default)* | ~8 GB |
-| `Qwen/Qwen2.5-VL-7B-Instruct` | ~16 GB |
+| `gemini-3.5-flash` *(default)* | fast, free tier |
+| `gemini-2.5-flash` | higher quality, slower, lower free-tier RPM |
+| `gemini-2.5-flash-lite` | fastest/cheapest, lower quality |
+
+> `gemini-2.0-flash` was shut down by Google on 2026-06-01 — do not use it.
 
 ## Launch command
 
 ```bash
 python vlm/vlm_worker.py \
-  --device cuda \
   --every 60 \
   --ws-url none \
   --anomaly-endpoint tcp://127.0.0.1:5581
