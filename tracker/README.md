@@ -16,6 +16,7 @@ and the Groq anomaly worker (via ZMQ PUSH).
 | `yoloe-26s-seg.pt` | Open-vocabulary appearance + weapon detection (YOLOE-26) |
 | `yolov8s.pt` | Legacy weights (kept for reference) |
 | `Suspicious_Activities_nano.pt` | Custom classifier: Fighting, Man_With_Gun, Man_with_Knife, Theaf_Robbery |
+| `logs_output.jsonl` | Auto-generated log of every tracker payload sent to NestJS (one JSON object per line; `overlay_jpg_b64` omitted) |
 
 ## How it works
 

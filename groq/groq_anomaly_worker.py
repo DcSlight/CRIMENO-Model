@@ -9,7 +9,8 @@ from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 from groq import Groq
 
-from event_builder import build_event_sentence
+from event_builder import build_event_sentence, CUE_LABELS
+from scoring import apply_scoring, score_from_cues
 
 _HERE         = Path(__file__).resolve().parent
 _PROJECT_ROOT = _HERE.parent
@@ -26,12 +27,15 @@ ZMQ_ENDPOINT    = "tcp://127.0.0.1:5581"
 MAX_QUEUE_SIZE    = 30
 MAX_EVENT_HISTORY = 10
 
-# Log file lives next to this script (groq/ folder) regardless of CWD.
+# Log files live next to this script (groq/ folder) regardless of CWD.
 CONTEXT_LOG_FILE = str(_HERE / "groq_context_log.txt")
+OUTPUT_LOG_FILE  = _HERE / "logs_output.jsonl"
 
-# Cue keys from the VLM's structured QA dict (vlm_worker.py → rec["qa"]).
+# Cue keys from the VLM's structured QA dict (vlm_worker.py → rec["qa"]). Sourced from
+# event_builder.CUE_LABELS so the worker, the prompt-text builder, and scoring.py can
+# never drift out of sync with each other or with the VLM schema (vlm/prompt.txt).
 # HARD_SIGNAL_KEYS: if ANY of these is "yes", the frame is ALWAYS sent to Groq.
-BINARY_CUE_KEYS  = ["gun", "knife", "reaching_counter", "hands_up", "face_concealed", "aggression"]
+BINARY_CUE_KEYS  = list(CUE_LABELS.keys())
 HARD_SIGNAL_KEYS = ["gun", "knife", "hands_up", "aggression"]
 
 _PROMPT_TEMPLATE = (_HERE / "prompt.txt").read_text(encoding="utf-8")
@@ -76,27 +80,64 @@ def normalize_business_context(context_body: Any) -> str:
         return str(context_body).strip()
 
 
+_SCORING_LEVEL_RE = re.compile(r"scoring:\s*(\w+)", flags=re.IGNORECASE)
+
+
+def extract_scoring_level(business_context: str) -> str:
+    """Pull `scoring_level` (conservative/balanced/aggressive) back out of the flattened
+    business-context text NestJS sends today (e.g. "Sensitivity: high; scoring: aggressive;
+    interaction: high"). Lightweight regex extraction — avoids requiring the backend to send
+    structured JSON (that's the separate, not-yet-started business-context-contract phase);
+    defaults to "balanced" if absent or unrecognized.
+    """
+    if not business_context:
+        return "balanced"
+    m = _SCORING_LEVEL_RE.search(business_context)
+    if not m:
+        return "balanced"
+    level = m.group(1).strip().lower()
+    return level if level in ("conservative", "balanced", "aggressive") else "balanced"
+
+
+def multi_person_converging(rec: Dict[str, Any], min_people: int = 3) -> bool:
+    """Heuristic corroborating signal for the scoring gate: does the attached tracker
+    frame show several people present at once (e.g. multiple suspects positioning)?
+    """
+    tracker = rec.get("tracker")
+    if not tracker:
+        return False
+    tracks = tracker.get("tracks", [])
+    person_count = sum(1 for t in tracks if t.get("cls") == "person")
+    return person_count >= min_people
+
+
 # ============================================================
 # Prompt builder
 # ============================================================
 
 def build_scene_description(
-    event_history: List[str],
-    current_window_events: List[str],
+    earlier_events: List[Dict[str, Any]],
+    now_events: List[Dict[str, Any]],
     business_context: str = "",
 ) -> str:
+    """`earlier_events`/`now_events` are lists of {"frame_index": int, "text": str},
+    oldest -> newest. Explicitly labeling EARLIER vs NOW (instead of the old single
+    "Recent context" / "Current window" split, where "Current window" ended up empty
+    at runtime due to a dedup collision) gives Groq a clear now-vs-then to narrate a
+    trajectory from, and lets it cite which frame a change appeared in.
+    """
     lines = []
     if business_context:
         lines.append("Business context (from NestJS):")
         lines.append(f"- {business_context}")
-    if event_history:
-        lines.append("Recent context:")
-        for ev in event_history[-MAX_EVENT_HISTORY:]:
-            lines.append(f"- {ev}")
-    if current_window_events:
-        lines.append("\nCurrent window:")
-        for ev in current_window_events:
-            lines.append(f"- {ev}")
+    if earlier_events:
+        lines.append("EARLIER observations (oldest → most recent):")
+        for ev in earlier_events[-MAX_EVENT_HISTORY:]:
+            lines.append(f"- (frame {ev['frame_index']}) {ev['text']}")
+    if now_events:
+        lines.append("\nNOW — current window (oldest → most recent; compare against EARLIER):")
+        for ev in now_events:
+            lines.append(f"- (frame {ev['frame_index']}) {ev['text']}")
     return "\n".join(lines)
 
 
@@ -123,7 +164,7 @@ def parse_groq_output(text: str) -> Dict[str, Any]:
         except Exception:
             continue
 
-    if "anomaly_score" in text:
+    if "reason" in text:
         try:
             return json.loads("{" + text.strip().strip(",") + "}")
         except Exception:
@@ -135,9 +176,9 @@ def parse_groq_output(text: str) -> Dict[str, Any]:
             pass
 
     return {
-        "anomaly_score": 0.0,
-        "label": "unknown",
         "reason": "Failed to parse model JSON output",
+        "key_moments": [],
+        "concern": "",
         "raw_output": text[:500],
     }
 
@@ -146,10 +187,19 @@ def call_groq_for_anomaly(client: Groq, model_name: str, prompt: str) -> Dict[st
     response = client.chat.completions.create(
         model=model_name,
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=256,
+        max_tokens=400,
         temperature=0.0,
     )
     return parse_groq_output(response.choices[0].message.content or "")
+
+
+# ============================================================
+# Scoring
+# ============================================================
+# The anomaly_score/label are no longer decided by Groq — see groq/scoring.py.
+# apply_scoring / score_from_cues are imported at the top of this file and re-exported
+# here (via that import) for callers that still do `from groq_anomaly_worker import
+# apply_scoring` (e.g. eval/run_eval.py's older call sites).
 
 
 # ============================================================
@@ -198,6 +248,11 @@ async def main_async():
                         help="Minimum video frames between two Groq API calls (cost knob).")
     parser.add_argument("--tracker-every", dest="tracker_every", type=int, default=5,
                         help="Must match tracker's --send_every_n_frames; sizes the decision window.")
+    parser.add_argument("--window-frames", dest="window_frames", type=int, default=3,
+                        help="How many of the most recent VLM observations to show Groq as the "
+                             "'NOW' window (gives it a real temporal arc to narrate instead of one "
+                             "instant). Independent of --decision-frames, which only controls how "
+                             "often a Groq call fires.")
     args = parser.parse_args()
 
     context = zmq.Context()
@@ -210,11 +265,21 @@ async def main_async():
 
     ws = await ws_connect_loop(args.ws_url)
 
-    event_history: List[str]          = []
+    # Long-term memory: one entry per past DECISION (a Groq call actually made), shown to
+    # Groq as "EARLIER observations". Entries: {"frame_index": int, "text": str}.
+    event_history: List[Dict[str, Any]] = []
+    # Short-term buffer: one entry per VLM frame RECEIVED, regardless of whether it was
+    # throttled/skipped from becoming a decision. Feeds both the sliding "NOW" window
+    # (real temporal arc) and the scoring module's cue-persistence tracking (real
+    # frame-level resolution, not just once-per-decision resolution).
+    # Entries: {"frame_index": int, "text": str, "raw_cues": Dict[str, str]}.
+    vlm_frame_buffer: List[Dict[str, Any]] = []
     latest_business_context: str      = ""
     tracker_buffer: Dict[int, Dict]   = {}
     last_decision_frame: Optional[int] = None
-    last_cues: Optional[Dict[str, bool]] = None
+    last_cues: Optional[Dict[str, str]] = None  # raw 3-state (yes/no/unclear) values, not booleans
+
+    buffer_cap = max(MAX_EVENT_HISTORY, args.window_frames) + 5
 
     try:
         while True:
@@ -231,10 +296,12 @@ async def main_async():
 
             if msg_type == "reset":
                 event_history.clear()
+                vlm_frame_buffer.clear()
                 tracker_buffer.clear()
                 last_decision_frame = None
                 last_cues = None
-                print("[GROQ] Reset — cleared event_history, tracker_buffer, last_decision_frame, last_cues")
+                print("[GROQ] Reset — cleared event_history, vlm_frame_buffer, tracker_buffer, "
+                      "last_decision_frame, last_cues")
                 continue
 
             if msg_type == "business_context":
@@ -257,14 +324,6 @@ async def main_async():
             # --- VLM anchor: each vlm_frame is a candidate Groq decision point ---
             frame_idx = rec.get("frame_index")
 
-            # Throttle: fire Groq at most once per --decision-frames video frames.
-            if (last_decision_frame is not None and isinstance(frame_idx, int)
-                    and frame_idx - last_decision_frame < args.decision_frames):
-                continue
-
-            if isinstance(frame_idx, int):
-                last_decision_frame = frame_idx
-
             # Attach nearest tracker record.
             if isinstance(frame_idx, int) and tracker_buffer:
                 nearest = min(tracker_buffer, key=lambda k: abs(k - frame_idx))
@@ -273,20 +332,39 @@ async def main_async():
 
             rec["vlm"] = rec
             new_event = build_event_sentence(rec)
+            qa       = rec.get("qa") or {}
+            raw_cues = {k: str(qa.get(k, "")).strip().lower() for k in BINARY_CUE_KEYS}
             print(f"[DEBUG] New event (VLM frame {frame_idx}): {new_event}")
 
+            # Buffer EVERY vlm_frame seen (before the throttle below) so the sliding "NOW"
+            # window and the scoring module's persistence tracking both get real frame-level
+            # resolution, not just once-per-decision resolution.
+            if isinstance(frame_idx, int):
+                vlm_frame_buffer.append({"frame_index": frame_idx, "text": new_event, "raw_cues": raw_cues})
+                if len(vlm_frame_buffer) > buffer_cap:
+                    vlm_frame_buffer = vlm_frame_buffer[-buffer_cap:]
+
+            # Throttle: fire Groq at most once per --decision-frames video frames.
+            if (last_decision_frame is not None and isinstance(frame_idx, int)
+                    and frame_idx - last_decision_frame < args.decision_frames):
+                continue
+
+            if isinstance(frame_idx, int):
+                last_decision_frame = frame_idx
+
             # Cue-based change detection.
-            # HARD SIGNALS (gun/knife/hands-up/aggression): always send.
+            # HARD SIGNALS (gun/knife/hands-up/aggression): always send on a definitive "yes".
             # Any cue flip: send. Identical benign cues: skip.
-            qa   = rec.get("qa") or {}
-            cues = {k: str(qa.get(k, "")).strip().lower().startswith("y")
-                    for k in BINARY_CUE_KEYS}
+            # NOTE: raw (3-state: yes/no/unclear) values are compared for change detection —
+            # not just the yes/no-ish boolean — so a "no" -> "unclear" escalation still
+            # triggers a Groq call even though it isn't a hard signal on its own.
+            cues         = {k: v.startswith("y") for k, v in raw_cues.items()}
             hard_now     = any(cues[k] for k in HARD_SIGNAL_KEYS)
-            cues_changed = (last_cues is None) or (cues != last_cues)
-            print(f"[DEBUG] Cues: {cues} | hard={hard_now} | changed={cues_changed}")
+            cues_changed = (last_cues is None) or (raw_cues != last_cues)
+            print(f"[DEBUG] Cues: {raw_cues} | hard={hard_now} | changed={cues_changed}")
 
             # Scene-reset: major textual divergence clears stale history.
-            if event_history and simple_similarity(new_event, event_history[-1]) < 0.20:
+            if event_history and simple_similarity(new_event, event_history[-1]["text"]) < 0.20:
                 print("[DEBUG] Scene reset (textual divergence) → clearing event history.")
                 event_history = []
 
@@ -294,11 +372,17 @@ async def main_async():
                 print("[DEBUG] All cues benign + unchanged → SKIP.")
                 continue
 
-            last_cues = cues
+            last_cues = raw_cues
             print(f"[DEBUG] Sending to Groq (hard={hard_now}, changed={cues_changed}).")
 
-            if all(simple_similarity(new_event, old) < 0.90 for old in event_history):
-                event_history.append(new_event)
+            # Sliding window: the last --window-frames buffered VLM observations become the
+            # "NOW" span Groq narrates over — frame_range below becomes a real span instead
+            # of a single instant, and Groq gets an actual trajectory to compare against.
+            now_window = vlm_frame_buffer[-args.window_frames:]
+            now_frame  = now_window[-1]
+
+            if all(simple_similarity(now_frame["text"], old["text"]) < 0.90 for old in event_history):
+                event_history.append({"frame_index": now_frame["frame_index"], "text": now_frame["text"]})
             if len(event_history) > MAX_EVENT_HISTORY:
                 event_history = event_history[-MAX_EVENT_HISTORY:]
 
@@ -307,58 +391,76 @@ async def main_async():
             else:
                 print("[CTX] No business context.")
 
+            # Exclude the just-appended now_frame from "EARLIER" — it's already shown as
+            # part of now_window. This is the fix for the old bug where the current frame's
+            # line ended up duplicated into both sections and then silently deduped away,
+            # leaving "Current window" always empty.
             scene_description = build_scene_description(
-                event_history, [new_event], latest_business_context,
+                event_history[:-1], now_window, latest_business_context,
             )
-            scene_description = "\n".join(dict.fromkeys(scene_description.split("\n")))
-
             prompt = build_prompt(scene_description)
 
             try:
-                result = await asyncio.to_thread(call_groq_for_anomaly, client, args.groq_model, prompt)
+                groq_result = await asyncio.to_thread(call_groq_for_anomaly, client, args.groq_model, prompt)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 print(f"[ERROR] Groq API call failed (frame {frame_idx}): {exc}")
                 continue
 
+            # Code, not Groq, decides the number (see groq/scoring.py) — this is what stops a
+            # single loosely-matched cue (e.g. one frame of "reaching behind counter") from
+            # snapping straight to "criminal". Persistence is measured over the buffered
+            # per-frame cue history; scoring_level comes from the business-context text;
+            # multi-person convergence is a corroborating signal from the tracker; Groq's own
+            # "concern" tag is only a small bounded tiebreak, never the deciding factor.
+            cue_history   = [entry["raw_cues"] for entry in vlm_frame_buffer]
+            scoring_level = extract_scoring_level(latest_business_context)
+            converging    = multi_person_converging(rec)
+            score, label = score_from_cues(
+                cue_history,
+                scoring_level=scoring_level,
+                multi_person_converge=converging,
+                concern=groq_result.get("concern", ""),
+            )
+
+            result = {
+                "anomaly_score": score,
+                "label": label,
+                "reason": groq_result.get("reason", ""),
+                "key_moments": groq_result.get("key_moments", []),
+            }
+
             with open(CONTEXT_LOG_FILE, "a", encoding="utf-8") as f:
                 f.write(f"\n{'='*54}\n")
-                f.write(f"VLM frame {frame_idx}\n")
+                f.write(f"VLM frame {frame_idx} "
+                        f"(window {now_window[0]['frame_index']}-{now_window[-1]['frame_index']})\n")
                 f.write(f"{'='*54}\n")
                 f.write("INPUT TO GROQ:\n")
                 f.write(prompt)
-                f.write("\n\nOUTPUT FROM GROQ:\n")
+                f.write("\n\nRAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):\n")
+                f.write(json.dumps(groq_result, ensure_ascii=False, indent=2))
+                f.write("\n\nFINAL RESULT (code-scored):\n")
                 f.write(json.dumps(result, ensure_ascii=False, indent=2))
                 f.write("\n")
 
-            label = result.get("label", "")
-            score = float(result.get("anomaly_score", 0.0))
-
-            if label == "normal":
-                score = min(score, 0.2)
-            elif label == "suspicious":
-                score = max(0.3, min(score, 0.7))
-            elif label == "criminal":
-                score = max(score, 0.8)
-
-            result["anomaly_score"] = score
-
             print("\n==================== Anomaly decision ====================")
-            print(f"VLM frame {frame_idx}")
+            print(f"VLM frame {frame_idx} | scoring_level={scoring_level} | "
+                  f"multi_person_converge={converging}")
             print(json.dumps(result, ensure_ascii=False, indent=2))
             print("=========================================================\n")
 
             anomaly_payload = {
                 "type": "groq_anomaly",
-                "frame_range": {"start": frame_idx, "end": frame_idx},
-                "result": {
-                    "anomaly_score": result["anomaly_score"],
-                    "label":         result.get("label", "unknown"),
-                    "reason":        result.get("reason", ""),
-                    "key_moments":   result.get("key_moments", []),
+                "frame_range": {
+                    "start": now_window[0]["frame_index"],
+                    "end":   now_window[-1]["frame_index"],
                 },
+                "result": result,
             }
+
+            with open(OUTPUT_LOG_FILE, "a", encoding="utf-8") as f:
+                f.write(json.dumps(anomaly_payload, ensure_ascii=False) + "\n")
 
             try:
                 await ws_send_json(ws, anomaly_payload)

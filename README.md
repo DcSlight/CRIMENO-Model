@@ -18,6 +18,8 @@ Create a `.env` file in the project root (use `.env.example` as a template):
 GROQ_API_KEY=gsk_YOUR_KEY_HERE
 ```
 
+> `GROQ_API_KEY` is shared by the anomaly worker (Step 2) and the VLM worker (Step 4).
+
 ### Launch order
 
 Run each command in a **separate terminal**, from the project root:
@@ -49,10 +51,9 @@ python tracker/tracker_worker.py \
   --anomaly-endpoint tcp://127.0.0.1:5581
 ```
 
-**Step 4 — VLM Scene Analyser** (Qwen2.5-VL, runs locally — no API key needed)
+**Step 4 — VLM Scene Analyser** (Groq vision, uses `GROQ_API_KEY` — same key as Step 2)
 ```bash
 python vlm/vlm_worker.py \
-  --device cuda \
   --every 60 \
   --ws-url none \
   --anomaly-endpoint tcp://127.0.0.1:5581
@@ -61,16 +62,50 @@ python vlm/vlm_worker.py \
 > **VLM is the decision anchor.** Each VLM frame triggers a potential Groq call
 > (subject to `--decision-frames` throttle). Cost is fully decoupled from VLM speed:
 > running VLM faster gives fresher context but never increases API spend.
+> Note: the VLM's own Groq vision call and the anomaly worker's Groq text call
+> share the same `GROQ_API_KEY` quota.
 
-**Model size options:**
+**Model options:**
 
-| Flag | Model | VRAM |
+| Flag | Model | Notes |
 |---|---|---|
-| *(default)* | `Qwen/Qwen2.5-VL-3B-Instruct` | ~8 GB |
-| `--vlm_model Qwen/Qwen2.5-VL-7B-Instruct` | higher quality | ~16 GB |
+| *(default)* | `meta-llama/llama-4-scout-17b-16e-instruct` | Groq's primary vision model |
+| `--vlm_model qwen/qwen3.6-27b` | newer 27B multimodal alternate |
 
 > **`--ws-url none`** — use this unless the NestJS backend exposes a `/ws/vlm` route
 > (it does **not** by default). A missing route causes a hang on retry.
+
+---
+
+## Eval harness
+
+```bash
+py eval/run_eval.py            # fast, free, no API calls
+py eval/run_eval.py --live     # calls real Groq API, small cost
+```
+
+Anomaly score/label are no longer decided by Groq — they're computed deterministically from
+the VLM's cue history by `groq/scoring.py` (`score_from_cues()`). Groq's only remaining job is
+the `reason`/`key_moments` narrative. That split changes what each eval mode actually tests:
+
+**`py eval/run_eval.py`** (no `--live`)
+- Doesn't call any AI model at all.
+- Replays each store's `vlm_mock.jsonl` cue sequence through the real `score_from_cues()` (the
+  same code the live worker uses) and compares the resulting label/score against
+  `groq_mock.jsonl`'s ground truth.
+- It's checking: "does the deterministic scoring logic (weights/persistence/criminal-gate)
+  reach the right verdict?" — a real accuracy test, and it's free because scoring is code, not
+  an LLM call.
+- Free, instant, no API key needed.
+
+**`py eval/run_eval.py --live`**
+- Does everything the fast mode does, PLUS calls the real Groq model at each step to fetch its
+  narrative `reason`, printed next to the mock's ground-truth reason.
+- It's checking: "does Groq's prose actually read like an analyst narrating a trajectory, or
+  like a robot echoing a cue?" — a manual spot-check, not a pass/fail number.
+- Costs a small number of real API calls, needs `GROQ_API_KEY`.
+
+Short version: **fast mode tests the score, live mode spot-checks the narrative.**
 
 ---
 
@@ -90,7 +125,7 @@ video_broadcaster.py
    │        → ZMQ PUSH tcp://127.0.0.1:5581
    │
    └──▶ vlm/vlm_worker.py           (every 60 frames, default)
-            Qwen2.5-VL-3B — full-frame scene analysis
+            Llama 4 Scout via Groq (API) — full-frame scene analysis
             → ZMQ PUSH tcp://127.0.0.1:5581
                      │
                      ▼
@@ -191,21 +226,29 @@ The nearest tracker frame is automatically attached as enrichment context.
 
 #### `vlm/vlm_worker.py`
 - Processes one full frame every N frames (default: 60).
-- Runs **Qwen2.5-VL** locally — zero API cost, no key required.
+- Calls **Groq vision** (default `meta-llama/llama-4-scout-17b-16e-instruct`) via API — uses the same `GROQ_API_KEY` as the anomaly worker.
 - Returns a single structured JSON per frame:
   - Scene description, people actions, appearance, weapon description.
-  - Binary cues: `gun`, `knife`, `reaching_counter`, `hands_up`, `face_concealed`, `aggression`.
+  - Binary cues (yes/no/unclear): `gun`, `knife`, `reaching_display_case`, `reaching_behind_counter`, `hands_up`, `face_concealed`, `aggression`.
 - Pushes each result to the Groq anomaly worker via ZMQ.
 
 ---
 
 #### `groq/groq_anomaly_worker.py`
 - ZMQ PULL on port `5581` — receives VLM frames (primary) and tracker enrichment.
-- Maintains a sliding window of events; fires a Groq API call at most once per `--decision-frames` frames.
+- Buffers every VLM frame it sees; fires a Groq API call at most once per `--decision-frames`
+  frames, but narrates over the last `--window-frames` (default 3) buffered observations —
+  a real temporal span, not a single instant, so `frame_range` in the output is a span too.
 - **Hard-signal bypass:** `gun`, `knife`, `hands_up`, `aggression` cues always trigger a Groq call, regardless of the throttle.
 - Optionally prepends **business context** (store name, sensitivity, forbidden behaviours) to every prompt when NestJS sends a `business_context` ZMQ message.
+- **Groq narrates, code scores:** Groq's API call returns only `reason`/`key_moments`/an advisory
+  `concern` tag — the `anomaly_score`/`label` are computed deterministically from the VLM cue
+  history by `groq/scoring.py` (tiered evidence weights + a persistence/corroboration gate that
+  requires a confirmed weapon or a sustained, corroborated forbidden action before ever labeling
+  "criminal" — never a single loosely-matched cue on one frame).
 - Sends final anomaly verdict to NestJS via WebSocket.
-- Appends full context to `groq/groq_context_log.txt` for debugging.
+- Appends full context (prompt, Groq's raw narrative, and the final code-scored result) to
+  `groq/groq_context_log.txt` for debugging.
 
 **Anomaly output payload:**
 ```json

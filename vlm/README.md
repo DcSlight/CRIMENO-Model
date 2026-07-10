@@ -1,24 +1,25 @@
 # vlm/ — Vision-Language Model Worker
 
-This folder contains the local VLM inference layer.
-It runs **Qwen2.5-VL** fully on-device (no API key needed) to produce structured
+This folder contains the VLM scene-analysis layer.
+It calls **Groq's vision API** (default `meta-llama/llama-4-scout-17b-16e-instruct`) to produce structured
 scene analysis for each video frame, which the Groq anomaly worker uses as its
-primary decision anchor.
+primary decision anchor. Requires a `GROQ_API_KEY` (see `.env.example`) — the same
+key used by `groq/groq_anomaly_worker.py`, so both share one quota.
 
 ## Files
 
 | File | Purpose |
 |---|---|
 | `vlm_worker.py` | Main worker: ZMQ subscriber, frame throttling, result dispatch to Groq + NestJS |
-| `vlm_model.py` | Model loading, inference, JSON parsing, output sanitization, summary building |
-| `prompt.txt` | Instruction sent to Qwen2.5-VL — edit here to change what the model analyses |
-| `vlm_output.jsonl` | Auto-generated log of every VLM output record (one JSON object per line) |
+| `vlm_model.py` | Groq client, inference call, JSON parsing, output sanitization, summary building |
+| `prompt.txt` | Instruction sent to the vision model — edit here to change what the model analyses |
+| `logs_output.jsonl` | Auto-generated log of every VLM record sent to NestJS (one JSON object per line) |
 
 ## How it works
 
 1. **Subscribes** to the broadcaster PUB socket (`tcp://127.0.0.1:5560`) for `frame` and `reset` topics.
-2. **Throttles** — processes one frame every `--every` frames (default 60) to keep GPU load manageable.
-3. **Runs inference** via a single structured-JSON Qwen2.5-VL call (prompt from `prompt.txt`).
+2. **Throttles** — processes one frame every `--every` frames (default 60) to bound API request rate.
+3. **Runs inference** via a single structured-JSON Groq vision call (prompt from `prompt.txt`), sending the JPEG as a base64 data URI.
 4. **Parses** the JSON response into a structured QA dict + a one-line `summary` string.
 5. **PUSHes** a `vlm_frame` record to the Groq anomaly worker (`tcp://127.0.0.1:5581`).
 6. **Optionally** forwards the same record to NestJS via WebSocket (disabled by default with `--ws-url none`).
@@ -43,7 +44,7 @@ primary decision anchor.
     "aggression": "no"
   },
   "summary": "Scene: A person stands at the store counter. People: ...",
-  "meta": { "generated_at_unix_ms": 1730000000000, "model": "Qwen/Qwen2.5-VL-3B-Instruct" }
+  "meta": { "generated_at_unix_ms": 1730000000000, "model": "meta-llama/llama-4-scout-17b-16e-instruct" }
 }
 ```
 
@@ -66,19 +67,20 @@ So to add a new field (e.g. `"loitering"`), just add it to the JSON block in `pr
 ```
 The fallback dict, binary-key detection, sanitizer, and summary builder all update automatically.
 
-- **Frame rate** → `--every` CLI flag (lower = more GPU usage + fresher context for Groq).
-- **Model size** → `--vlm_model` flag:
+- **Frame rate** → `--every` CLI flag (lower = more API requests + fresher context for Groq, but higher combined load on the shared `GROQ_API_KEY` quota).
+- **Model** → `--vlm_model` flag:
 
-| Model | VRAM |
+| Model | Notes |
 |---|---|
-| `Qwen/Qwen2.5-VL-3B-Instruct` *(default)* | ~8 GB |
-| `Qwen/Qwen2.5-VL-7B-Instruct` | ~16 GB |
+| `meta-llama/llama-4-scout-17b-16e-instruct` *(default)* | Groq's primary vision model, JSON mode, ≤5 images/request |
+| `qwen/qwen3.6-27b` | newer 27B multimodal alternate |
+
+> Llama 4 Maverick was deprecated on Groq (Feb 2026) and is now text-only — not usable here.
 
 ## Launch command
 
 ```bash
 python vlm/vlm_worker.py \
-  --device cuda \
   --every 60 \
   --ws-url none \
   --anomaly-endpoint tcp://127.0.0.1:5581

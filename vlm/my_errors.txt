@@ -1,0 +1,7 @@
+[VLM] Reset received — draining stale frames
+[VLM] ⚠️ Gemini API call failed: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}
+🤖 [VLM] frame 0 | Description: Scene analysis unavailable.. People Actions: -. Appearance: -. Weapon: none. Gun: no. Knife: no. Reaching Counter: no. Hands Up: no. Face Concealed: no. Aggression: no.
+[VLM] processed=1 last_frame=0
+[VLM] ⚠️ Gemini API call failed: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}
+🤖 [VLM] frame 60 | Description: Scene analysis unavailable.. People Actions: -. Appearance: -. Weapon: none. Gun: no. Knife: no. Reaching Counter: no. Hands Up: no. Face Concealed: no. Aggression: no.
+Traceback (most recent call last):

@@ -1,21 +1,14 @@
+import base64
 import io
 import json
+import os
 import re
 import time
 from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
 from PIL import Image
-
-try:
-    import torch
-    from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
-    import transformers
-    transformers.logging.set_verbosity_error()
-except Exception:
-    torch = None
-    Qwen2_5_VLForConditionalGeneration = None
-    AutoProcessor = None
+from groq import Groq
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -107,61 +100,43 @@ def _fallback_dict(raw_text: str) -> Dict[str, str]:
 # Model loading
 # ============================================================
 
-def load_vlm(model_id: str, device_str: str):
-    if Qwen2_5_VLForConditionalGeneration is None:
-        raise RuntimeError(
-            "Qwen2.5-VL requires transformers>=4.49 and accelerate. "
-            'Run: pip install "transformers>=4.49" accelerate'
-        )
-
-    use_cuda = device_str == "cuda" and torch.cuda.is_available()
-    dtype  = torch.bfloat16 if use_cuda else torch.float32
-    device = "cuda:0" if use_cuda else "cpu"
-
-    print(f"[VLM] Loading {model_id} on {device} ({dtype})...")
-    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-        model_id,
-        torch_dtype=dtype,
-        device_map=device,
-    ).eval()
-    processor = AutoProcessor.from_pretrained(model_id)
-    print(f"✅ [VLM] {model_id} ready on {device}")
-    return model, processor, device, dtype
+def load_vlm(model_id: str, api_key: str = ""):
+    api_key = api_key or os.environ.get("GROQ_API_KEY", "")
+    if not api_key:
+        raise ValueError("GROQ_API_KEY not set. Pass --groq-api-key or set env var GROQ_API_KEY.")
+    client = Groq(api_key=api_key)
+    print(f"✅ [VLM] Groq client ready — model={model_id}")
+    return client
 
 
 # ============================================================
 # Inference
 # ============================================================
 
-def analyze_frame(model, processor, device, dtype, image: Image.Image,
+def analyze_frame(client: "Groq", model_id: str, jpg_bytes: bytes,
                   max_new_tokens: int = 256) -> Dict[str, str]:
-    """Single Qwen2.5-VL call → structured dict. Safe fallback on parse failure."""
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "image"},
-                {"type": "text", "text": _PROMPT_TEXT},
-            ],
-        }
-    ]
+    """Single Groq vision call → structured dict. Safe fallback on API/parse failure."""
+    try:
+        b64 = base64.b64encode(jpg_bytes).decode("ascii")
+        resp = client.chat.completions.create(
+            model=model_id,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": _PROMPT_TEXT},
+                    {"type": "image_url",
+                     "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+                ],
+            }],
+            temperature=0.0,
+            max_tokens=max_new_tokens,
+            response_format={"type": "json_object"},
+        )
+        raw_text = (resp.choices[0].message.content or "").strip()
+    except Exception as e:
+        print(f"[VLM] ⚠️ Groq API call failed: {e}")
+        return _fallback_dict("")
 
-    text = processor.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
-    )
-    inputs = processor(
-        text=[text],
-        images=[image],
-        return_tensors="pt",
-        padding=True,
-    ).to(device)
-
-    input_len = inputs["input_ids"].shape[-1]
-
-    with torch.inference_mode():
-        out = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
-
-    raw_text = processor.decode(out[0][input_len:], skip_special_tokens=True).strip()
     return _parse_vlm_output(raw_text)
 
 
