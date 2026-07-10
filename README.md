@@ -84,19 +84,28 @@ py eval/run_eval.py            # fast, free, no API calls
 py eval/run_eval.py --live     # calls real Groq API, small cost
 ```
 
+Anomaly score/label are no longer decided by Groq — they're computed deterministically from
+the VLM's cue history by `groq/scoring.py` (`score_from_cues()`). Groq's only remaining job is
+the `reason`/`key_moments` narrative. That split changes what each eval mode actually tests:
+
 **`py eval/run_eval.py`** (no `--live`)
 - Doesn't call any AI model at all.
-- Takes the hand-written mock answers (`groq_mock.jsonl` — label + score someone already decided is "correct" for that scenario) and just re-runs them through your local clamping math (`apply_scoring()`).
-- It's checking: "does the scoring/clamping code do what it's supposed to do?" — a math check, not an AI check.
+- Replays each store's `vlm_mock.jsonl` cue sequence through the real `score_from_cues()` (the
+  same code the live worker uses) and compares the resulting label/score against
+  `groq_mock.jsonl`'s ground truth.
+- It's checking: "does the deterministic scoring logic (weights/persistence/criminal-gate)
+  reach the right verdict?" — a real accuracy test, and it's free because scoring is code, not
+  an LLM call.
 - Free, instant, no API key needed.
 
 **`py eval/run_eval.py --live`**
-- Takes the mock VLM observations (`vlm_mock.jsonl` — hand-written descriptions like "handgun becomes visible near the seller") and actually sends them to the real Groq model, asking it to decide: normal, suspicious, or criminal?
-- Compares Groq's real answer to what the mock says the answer *should* be.
-- It's checking: "does the AI actually reach the right conclusion, given our current prompt?" — a real accuracy test.
+- Does everything the fast mode does, PLUS calls the real Groq model at each step to fetch its
+  narrative `reason`, printed next to the mock's ground-truth reason.
+- It's checking: "does Groq's prose actually read like an analyst narrating a trajectory, or
+  like a robot echoing a cue?" — a manual spot-check, not a pass/fail number.
 - Costs a small number of real API calls, needs `GROQ_API_KEY`.
 
-Short version: **no-live tests the math, live tests the AI's judgment.**
+Short version: **fast mode tests the score, live mode spot-checks the narrative.**
 
 ---
 
@@ -227,11 +236,19 @@ The nearest tracker frame is automatically attached as enrichment context.
 
 #### `groq/groq_anomaly_worker.py`
 - ZMQ PULL on port `5581` — receives VLM frames (primary) and tracker enrichment.
-- Maintains a sliding window of events; fires a Groq API call at most once per `--decision-frames` frames.
+- Buffers every VLM frame it sees; fires a Groq API call at most once per `--decision-frames`
+  frames, but narrates over the last `--window-frames` (default 3) buffered observations —
+  a real temporal span, not a single instant, so `frame_range` in the output is a span too.
 - **Hard-signal bypass:** `gun`, `knife`, `hands_up`, `aggression` cues always trigger a Groq call, regardless of the throttle.
 - Optionally prepends **business context** (store name, sensitivity, forbidden behaviours) to every prompt when NestJS sends a `business_context` ZMQ message.
+- **Groq narrates, code scores:** Groq's API call returns only `reason`/`key_moments`/an advisory
+  `concern` tag — the `anomaly_score`/`label` are computed deterministically from the VLM cue
+  history by `groq/scoring.py` (tiered evidence weights + a persistence/corroboration gate that
+  requires a confirmed weapon or a sustained, corroborated forbidden action before ever labeling
+  "criminal" — never a single loosely-matched cue on one frame).
 - Sends final anomaly verdict to NestJS via WebSocket.
-- Appends full context to `groq/groq_context_log.txt` for debugging.
+- Appends full context (prompt, Groq's raw narrative, and the final code-scored result) to
+  `groq/groq_context_log.txt` for debugging.
 
 **Anomaly output payload:**
 ```json
