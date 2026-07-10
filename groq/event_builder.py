@@ -156,6 +156,16 @@ def build_vlm_sentence(rec: Dict[str, Any]) -> str:
         summary = (vlm.get("summary") or "").strip()
         return ("VLM observation: " + summary) if summary else ""
 
+    # "weapon" is free text (e.g. "long, thin object, possibly a rifle or shotgun"), not a
+    # yes/no/unclear cue like gun/knife — it previously wasn't surfaced here at all, so
+    # anything the VLM could describe but not confidently classify as gun-or-knife (a bat,
+    # an ambiguous long object) was invisible to Groq's narrative. Surface it explicitly
+    # whenever it's not "none" (it still never feeds the deterministic score — only
+    # gun/knife do that — this is narrative-only, same as the description sentence).
+    weapon_note = (qa.get("weapon") or "").strip()
+    if weapon_note and weapon_note.lower() not in ("none", "n/a", "none visible"):
+        description = f"{description} Weapon note: {weapon_note}."
+
     flags = []
     for key, label in CUE_LABELS.items():
         value = str(qa.get(key, "")).strip().lower()

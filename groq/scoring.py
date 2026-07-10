@@ -11,9 +11,13 @@ This module owns the number instead. It converts a short HISTORY of VLM binary-c
 observations (raw 3-state yes/no/unclear values, oldest -> newest) into an
 (anomaly_score, label) pair using:
   - tiered evidence weights (a confirmed weapon outweighs an ambiguous cue),
-  - a persistence discount (a cue's first appearance counts for less — kills one-frame spikes),
+  - recency-decayed evidence (a cue that WAS true 1-2 observations ago but isn't in the
+    current frame still counts, just less — see EVIDENCE_DECAY below),
   - a "criminal" gate that requires EITHER a confirmed weapon OR a forbidden action that is
-    both sustained across multiple decision points AND corroborated by a second cue.
+    both sustained across multiple decision points AND corroborated by a second cue — and
+    critically, the gate is computed from RAW per-frame cues only, never from the decayed
+    evidence sum above, so a single stale/decayed signal can never manufacture a fake
+    multi-frame streak (see score_from_cues for why this separation matters).
 
 Pure functions only — no I/O, no ZMQ, no LLM calls — so this is directly unit-testable and
 importable by eval/run_eval.py without pulling in the live worker's dependencies.
@@ -38,8 +42,14 @@ CORROBORATING_CUES = ("aggression", "hands_up")
 
 # Weight applied per cue value. A cue/value combination not listed here contributes 0.
 CUE_WEIGHTS: Dict[str, Dict[str, float]] = {
-    "gun":                     {"yes": 1.00, "unclear": 0.15},
-    "knife":                   {"yes": 1.00, "unclear": 0.15},
+    # gun/knife "unclear" is weighted much closer to "yes" than the other cues: real VLM
+    # footage shows hedged weapon language ("possibly a rifle", "appears to be a weapon")
+    # is the NORM, not the exception — a VLM confidently saying "yes, a gun" on a partially
+    # obscured or awkwardly-angled weapon is rare. Treating weapon "unclear" as barely-worth-
+    # mentioning (as an earlier low weight did) meant the ONLY weapon signal seen in a real
+    # robbery video was almost invisible to the score.
+    "gun":                     {"yes": 1.00, "unclear": 0.50},
+    "knife":                   {"yes": 1.00, "unclear": 0.50},
     "aggression":              {"yes": 0.35, "unclear": 0.12},
     "hands_up":                {"yes": 0.25, "unclear": 0.08},
     "reaching_behind_counter": {"yes": 0.50, "unclear": 0.20},
@@ -53,13 +63,22 @@ MULTI_PERSON_CONVERGE_WEIGHT = 0.10
 # scoring_level (from business context) biases the raw score before the label/gate decision.
 SCORING_LEVEL_BIAS = {"conservative": -0.10, "balanced": 0.0, "aggressive": 0.10}
 
-# A cue's FIRST appearance in the history counts at this fraction of its full weight;
-# it reaches full weight once it has persisted for >1 consecutive decision point. Gentle
-# on purpose (0.8, not 0.5) — a single confirmed "yes" on a forbidden action is still real
-# evidence and should land solidly in "suspicious" on its own; the CRIMINAL gate below
-# (which requires either a confirmed weapon or a sustained + corroborated streak) is what
-# actually stops a one-frame spike from being labeled criminal, not this discount.
-PERSISTENCE_DISCOUNT_FIRST_SEEN = 0.8
+# Recency decay for evidence that is no longer visible in the current frame but appeared
+# recently. A cue's effective weight for a given past frame is base_weight * DECAY^age
+# (age=0 is the current/most recent frame in the buffer, age increases going back in time),
+# and each cue's contribution to the raw score is the MAX decayed weight seen across the
+# buffer — not just whatever the single most-recent frame shows.
+#
+# Why: a real production bug showed a weapon flagged ("gun: unclear") in one observation,
+# then NOT flagged in the very next one (VLM occlusion / angle change / person tucked it
+# away) — and the old "only look at the current frame" design scored that window "normal",
+# even though the very next VLM observation showed the person reaching into a display case
+# (i.e. the robbery narrative kept escalating; the weapon evidence didn't retract). Weapons
+# don't evaporate in a few seconds — a cue that WAS true recently is still meaningful
+# evidence now, just fading. DECAY is tuned so evidence 1-2 observations old still visibly
+# raises the score into "suspicious" but — combined with the criminal gate below, which
+# deliberately does NOT use this decayed value — cannot alone reach "criminal".
+EVIDENCE_DECAY = 0.55
 
 # A forbidden-action cue must hold "yes" for at least this many consecutive decision
 # points before it can (with corroboration) open the criminal gate.
@@ -128,8 +147,17 @@ def score_from_cues(
     """Compute (anomaly_score, label) from a history of raw 3-state cue dicts.
 
     `cue_history` is ordered oldest -> newest; the LAST entry is the current decision
-    point (used both for the raw-score sum and as the point being gated). Earlier entries
-    are used only to measure persistence (how long a cue has held its current value).
+    point. It is used TWICE, for two deliberately DIFFERENT purposes that must never be
+    conflated:
+      1. Raw-score magnitude: each cue's contribution is the MAX of (weight * DECAY^age)
+         across the whole buffer — recent-but-not-current evidence still counts, decayed.
+      2. Criminal-gate eligibility: computed from RAW per-frame values only (the current
+         frame's own value, plus a streak count over undecayed history) — never from the
+         decayed sum above. If the gate used decayed/aggregated values, a single stale
+         misfire smeared across several decisions by the decay could look like a genuine
+         multi-frame streak and reopen the "one loose cue -> criminal" bug this module
+         was originally built to close.
+
     Each dict maps cue key -> "yes" / "no" / "unclear" (raw VLM values).
     """
     if not cue_history:
@@ -137,15 +165,25 @@ def score_from_cues(
 
     current = cue_history[-1]
 
+    # 1. Decayed-max raw score: recent evidence that has since dropped out of view still
+    # contributes, just fading with age, instead of being invisible the moment it's not in
+    # the single most-recent frame (see EVIDENCE_DECAY docstring for the bug this fixes).
+    all_keys = set()
+    for cues in cue_history:
+        all_keys.update(cues.keys())
+
     raw = 0.0
-    for key, value in current.items():
-        value = str(value).strip().lower()
-        weight = _cue_weight(key, value)
-        if weight <= 0:
-            continue
-        streak = _streak_length(cue_history, key, value)
-        discount = 1.0 if streak > 1 else PERSISTENCE_DISCOUNT_FIRST_SEEN
-        raw += weight * discount
+    for key in all_keys:
+        best = 0.0
+        for age, cues in enumerate(reversed(cue_history)):
+            value = str(cues.get(key, "")).strip().lower()
+            weight = _cue_weight(key, value)
+            if weight <= 0:
+                continue
+            decayed = weight * (EVIDENCE_DECAY ** age)
+            if decayed > best:
+                best = decayed
+        raw += best
 
     if multi_person_converge:
         raw += MULTI_PERSON_CONVERGE_WEIGHT
@@ -154,7 +192,9 @@ def score_from_cues(
     raw = apply_concern_tiebreak(raw, concern)
     raw = max(0.0, min(1.0, raw))
 
-    # --- Criminal gate: never open on one loosely-matched cue ---
+    # 2. Criminal gate: deliberately re-reads `current` and raw `cue_history` directly —
+    # NOT the decayed `raw` sum above — so it never opens on one loosely-matched cue,
+    # decayed or not.
     confirmed_weapon = any(
         str(current.get(k, "")).strip().lower() == "yes" for k in CONFIRMED_WEAPON_CUES
     )

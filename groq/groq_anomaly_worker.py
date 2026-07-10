@@ -431,6 +431,17 @@ async def main_async():
                 "key_moments": groq_result.get("key_moments", []),
             }
 
+            # Coherence canary: Groq's advisory concern and the code-computed label are
+            # produced from different (though overlapping) evidence views, so they CAN
+            # legitimately disagree — but a "high"/"normal" or "low"/"criminal" pairing is
+            # worth a look, since it either means the narrative is overreacting or the
+            # scoring weights need retuning against eval/run_eval.py.
+            groq_concern = str(groq_result.get("concern", "")).strip().lower()
+            if (groq_concern == "high" and label == "normal") or (groq_concern == "low" and label == "criminal"):
+                print(f"[WARN] Concern/label mismatch at frame {frame_idx}: "
+                      f"concern={groq_concern!r} but label={label!r} (score={score:.2f}) — "
+                      f"worth a look via eval/run_eval.py.")
+
             with open(CONTEXT_LOG_FILE, "a", encoding="utf-8") as f:
                 f.write(f"\n{'='*54}\n")
                 f.write(f"VLM frame {frame_idx} "
