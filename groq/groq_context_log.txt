@@ -81,41 +81,32 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 
 Here is the scene, in chronological order:
 
-Business context (from NestJS):
-- Store: Royal Diamond Jewelry (jewelry_store)
-Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
-Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
-Sensitivity: high; scoring: aggressive; interaction: high
-Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
-Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
-Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
-  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 0) VLM observation: A man wearing an orange beanie and gray attire appears to be handling items near the display case, while another individual in a black garment stands nearby, and a third person sits at a desk. Flags — reaching display case: yes. Tracker detected: 4 persons.
+- (frame 0) VLM observation: A man wearing an orange head covering and a gray outfit appears to be handling items on a display case, while another man in a black outfit stands nearby, and a third man sits at a desk. Flags — reaching display case: yes. Tracker detected: 4 persons.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Man interacts with display case, another stands by",
+  "reason": "Man handling items on display case",
   "key_moments": [
-    "subject handles items near the display case",
-    "another individual stands nearby",
-    "third person sits at a desk, possibly an employee"
+    "man interacts with display case",
+    "another man stands nearby",
+    "third man sits at desk"
   ],
-  "concern": "medium"
+  "concern": "low"
 }
 
 FINAL RESULT (code-scored):
 {
-  "anomaly_score": 0.2,
+  "anomaly_score": 0.05,
   "label": "normal",
-  "reason": "Man interacts with display case, another stands by",
+  "reason": "Man handling items on display case",
   "key_moments": [
-    "subject handles items near the display case",
-    "another individual stands nearby",
-    "third person sits at a desk, possibly an employee"
+    "man interacts with display case",
+    "another man stands nearby",
+    "third man sits at desk"
   ]
 }
 
@@ -202,44 +193,35 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 
 Here is the scene, in chronological order:
 
-Business context (from NestJS):
-- Store: Royal Diamond Jewelry (jewelry_store)
-Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
-Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
-Sensitivity: high; scoring: aggressive; interaction: high
-Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
-Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
-Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
-  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
 EARLIER observations (oldest → most recent):
-- (frame 0) VLM observation: A man wearing an orange beanie and gray attire appears to be handling items near the display case, while another individual in a black garment stands nearby, and a third person sits at a desk. Flags — reaching display case: yes. Tracker detected: 4 persons.
+- (frame 0) VLM observation: A man wearing an orange head covering and a gray outfit appears to be handling items on a display case, while another man in a black outfit stands nearby, and a third man sits at a desk. Flags — reaching display case: yes. Tracker detected: 4 persons.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 0) VLM observation: A man wearing an orange beanie and gray attire appears to be handling items near the display case, while another individual in a black garment stands nearby, and a third person sits at a desk. Flags — reaching display case: yes. Tracker detected: 4 persons.
-- (frame 60) VLM observation: A man in an orange head covering is standing near a display case, while another man in a black robe and a third individual are present in the store. Flags — face concealed: yes. Tracker detected: 5 persons.
+- (frame 0) VLM observation: A man wearing an orange head covering and a gray outfit appears to be handling items on a display case, while another man in a black outfit stands nearby, and a third man sits at a desk. Flags — reaching display case: yes. Tracker detected: 4 persons.
+- (frame 60) VLM observation: A man wearing a head covering and gray clothing appears to be looking at items on a display case while another individual in a black outfit and head covering looks on, a store employee sits at a desk. Flags — face concealed: yes. Tracker detected: 5 persons.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Scene remains stable with customers near display cases",
+  "reason": "Scene remains stable with customers browsing",
   "key_moments": [
-    "subject handling items near display case",
-    "additional person enters the store",
-    "face of one individual becomes concealed"
+    "subject continues handling items on display case",
+    "new individual appears in the area",
+    "face concealment flag appears on one individual"
   ],
-  "concern": "medium"
+  "concern": "low"
 }
 
 FINAL RESULT (code-scored):
 {
-  "anomaly_score": 0.32,
-  "label": "suspicious",
-  "reason": "Scene remains stable with customers near display cases",
+  "anomaly_score": 0.2,
+  "label": "normal",
+  "reason": "Scene remains stable with customers browsing",
   "key_moments": [
-    "subject handling items near display case",
-    "additional person enters the store",
-    "face of one individual becomes concealed"
+    "subject continues handling items on display case",
+    "new individual appears in the area",
+    "face concealment flag appears on one individual"
   ]
 }
 
@@ -326,46 +308,37 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 
 Here is the scene, in chronological order:
 
-Business context (from NestJS):
-- Store: Royal Diamond Jewelry (jewelry_store)
-Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
-Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
-Sensitivity: high; scoring: aggressive; interaction: high
-Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
-Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
-Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
-  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
 EARLIER observations (oldest → most recent):
-- (frame 0) VLM observation: A man wearing an orange beanie and gray attire appears to be handling items near the display case, while another individual in a black garment stands nearby, and a third person sits at a desk. Flags — reaching display case: yes. Tracker detected: 4 persons.
-- (frame 60) VLM observation: A man in an orange head covering is standing near a display case, while another man in a black robe and a third individual are present in the store. Flags — face concealed: yes. Tracker detected: 5 persons.
+- (frame 0) VLM observation: A man wearing an orange head covering and a gray outfit appears to be handling items on a display case, while another man in a black outfit stands nearby, and a third man sits at a desk. Flags — reaching display case: yes. Tracker detected: 4 persons.
+- (frame 60) VLM observation: A man wearing a head covering and gray clothing appears to be looking at items on a display case while another individual in a black outfit and head covering looks on, a store employee sits at a desk. Flags — face concealed: yes. Tracker detected: 5 persons.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 0) VLM observation: A man wearing an orange beanie and gray attire appears to be handling items near the display case, while another individual in a black garment stands nearby, and a third person sits at a desk. Flags — reaching display case: yes. Tracker detected: 4 persons.
-- (frame 60) VLM observation: A man in an orange head covering is standing near a display case, while another man in a black robe and a third individual are present in the store. Flags — face concealed: yes. Tracker detected: 5 persons.
-- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing at a display case in a jewelry store, while another man sits at a desk in the background, and a woman in a black garment and white head covering browses near the front door. Flags — reaching display case: yes; hands up: yes; face concealed: yes; aggression: unclear. Tracker detected: 4 persons.
+- (frame 0) VLM observation: A man wearing an orange head covering and a gray outfit appears to be handling items on a display case, while another man in a black outfit stands nearby, and a third man sits at a desk. Flags — reaching display case: yes. Tracker detected: 4 persons.
+- (frame 60) VLM observation: A man wearing a head covering and gray clothing appears to be looking at items on a display case while another individual in a black outfit and head covering looks on, a store employee sits at a desk. Flags — face concealed: yes. Tracker detected: 5 persons.
+- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing at a display case in a jewelry store, while another man in a black abaya and white head covering browses nearby. Flags — reaching display case: yes; hands up: yes; face concealed: yes; aggression: unclear. Tracker detected: 4 persons.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Man at display case, hands up, with concealed face",
+  "reason": "Scene escalates with hands up and unclear aggression",
   "key_moments": [
-    "subject stands near display case with hands up",
-    "face concealed with black face mask",
-    "aggression level is unclear"
+    "subject approaches display case with hands up",
+    "face concealment increases with addition of face mask",
+    "posture becomes more assertive with unclear aggression"
   ],
-  "concern": "medium"
+  "concern": "high"
 }
 
 FINAL RESULT (code-scored):
 {
-  "anomaly_score": 0.6459999999999999,
+  "anomaly_score": 0.67,
   "label": "suspicious",
-  "reason": "Man at display case, hands up, with concealed face",
+  "reason": "Scene escalates with hands up and unclear aggression",
   "key_moments": [
-    "subject stands near display case with hands up",
-    "face concealed with black face mask",
-    "aggression level is unclear"
+    "subject approaches display case with hands up",
+    "face concealment increases with addition of face mask",
+    "posture becomes more assertive with unclear aggression"
   ]
 }
 
@@ -452,47 +425,38 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 
 Here is the scene, in chronological order:
 
-Business context (from NestJS):
-- Store: Royal Diamond Jewelry (jewelry_store)
-Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
-Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
-Sensitivity: high; scoring: aggressive; interaction: high
-Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
-Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
-Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
-  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
 EARLIER observations (oldest → most recent):
-- (frame 0) VLM observation: A man wearing an orange beanie and gray attire appears to be handling items near the display case, while another individual in a black garment stands nearby, and a third person sits at a desk. Flags — reaching display case: yes. Tracker detected: 4 persons.
-- (frame 60) VLM observation: A man in an orange head covering is standing near a display case, while another man in a black robe and a third individual are present in the store. Flags — face concealed: yes. Tracker detected: 5 persons.
-- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing at a display case in a jewelry store, while another man sits at a desk in the background, and a woman in a black garment and white head covering browses near the front door. Flags — reaching display case: yes; hands up: yes; face concealed: yes; aggression: unclear. Tracker detected: 4 persons.
+- (frame 0) VLM observation: A man wearing an orange head covering and a gray outfit appears to be handling items on a display case, while another man in a black outfit stands nearby, and a third man sits at a desk. Flags — reaching display case: yes. Tracker detected: 4 persons.
+- (frame 60) VLM observation: A man wearing a head covering and gray clothing appears to be looking at items on a display case while another individual in a black outfit and head covering looks on, a store employee sits at a desk. Flags — face concealed: yes. Tracker detected: 5 persons.
+- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing at a display case in a jewelry store, while another man in a black abaya and white head covering browses nearby. Flags — reaching display case: yes; hands up: yes; face concealed: yes; aggression: unclear. Tracker detected: 4 persons.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 60) VLM observation: A man in an orange head covering is standing near a display case, while another man in a black robe and a third individual are present in the store. Flags — face concealed: yes. Tracker detected: 5 persons.
-- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing at a display case in a jewelry store, while another man sits at a desk in the background, and a woman in a black garment and white head covering browses near the front door. Flags — reaching display case: yes; hands up: yes; face concealed: yes; aggression: unclear. Tracker detected: 4 persons.
-- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing appears to be approaching or standing near a display case, while two other individuals are in the store. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 60) VLM observation: A man wearing a head covering and gray clothing appears to be looking at items on a display case while another individual in a black outfit and head covering looks on, a store employee sits at a desk. Flags — face concealed: yes. Tracker detected: 5 persons.
+- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing at a display case in a jewelry store, while another man in a black abaya and white head covering browses nearby. Flags — reaching display case: yes; hands up: yes; face concealed: yes; aggression: unclear. Tracker detected: 4 persons.
+- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing appears to be interacting with a display case, while another individual in a black outfit and white head covering looks at items on a shelf. Flags — reaching display case: yes. Tracker detected: 2 persons.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Man approaches display case, concern due to unclear aggression",
+  "reason": "Scene remains stable with customers browsing",
   "key_moments": [
-    "subject closes distance to the display case",
-    "reaching display case behavior continues",
-    "aggression remains unclear"
+    "subject continues to interact with display case",
+    "number of people in the store decreases",
+    "individual in black outfit looks at items on a shelf"
   ],
-  "concern": "medium"
+  "concern": "low"
 }
 
 FINAL RESULT (code-scored):
 {
-  "anomaly_score": 0.1,
+  "anomaly_score": 0.2,
   "label": "normal",
-  "reason": "Man approaches display case, concern due to unclear aggression",
+  "reason": "Scene remains stable with customers browsing",
   "key_moments": [
-    "subject closes distance to the display case",
-    "reaching display case behavior continues",
-    "aggression remains unclear"
+    "subject continues to interact with display case",
+    "number of people in the store decreases",
+    "individual in black outfit looks at items on a shelf"
   ]
 }
 
@@ -579,48 +543,34 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 
 Here is the scene, in chronological order:
 
-Business context (from NestJS):
-- Store: Royal Diamond Jewelry (jewelry_store)
-Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
-Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
-Sensitivity: high; scoring: aggressive; interaction: high
-Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
-Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
-Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
-  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
-EARLIER observations (oldest → most recent):
-- (frame 0) VLM observation: A man wearing an orange beanie and gray attire appears to be handling items near the display case, while another individual in a black garment stands nearby, and a third person sits at a desk. Flags — reaching display case: yes. Tracker detected: 4 persons.
-- (frame 60) VLM observation: A man in an orange head covering is standing near a display case, while another man in a black robe and a third individual are present in the store. Flags — face concealed: yes. Tracker detected: 5 persons.
-- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing at a display case in a jewelry store, while another man sits at a desk in the background, and a woman in a black garment and white head covering browses near the front door. Flags — reaching display case: yes; hands up: yes; face concealed: yes; aggression: unclear. Tracker detected: 4 persons.
-- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing appears to be approaching or standing near a display case, while two other individuals are in the store. Flags — reaching display case: yes. Tracker detected: 2 persons.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing at a display case in a jewelry store, while another man sits at a desk in the background, and a woman in a black garment and white head covering browses near the front door. Flags — reaching display case: yes; hands up: yes; face concealed: yes; aggression: unclear. Tracker detected: 4 persons.
-- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing appears to be approaching or standing near a display case, while two other individuals are in the store. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 240) VLM observation: Three individuals are present in a jewelry store, with one wearing a robe and another an orange beanie, standing near display cases. Flags — face concealed: yes. Tracker detected: 3 persons.
+- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing at a display case in a jewelry store, while another man in a black abaya and white head covering browses nearby. Flags — reaching display case: yes; hands up: yes; face concealed: yes; aggression: unclear. Tracker detected: 4 persons.
+- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing appears to be interacting with a display case, while another individual in a black outfit and white head covering looks at items on a shelf. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 240) VLM observation: Three individuals are inside a jewelry store, with one standing behind the counter and two others browsing the displays. Flags — face concealed: yes. Tracker detected: 3 persons.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Scene remains stable with customers near display cases",
+  "reason": "Man interacts with display case, potential aggression unclear",
   "key_moments": [
-    "subject stands near display case",
-    "another individual browses near the front door",
-    "face concealment noted but no aggressive behavior confirmed"
+    "subject reaches for display case",
+    "face concealment noted",
+    "posture and hands suggest possible assertive behavior"
   ],
   "concern": "medium"
 }
 
 FINAL RESULT (code-scored):
 {
-  "anomaly_score": 0.32,
+  "anomaly_score": 0.36,
   "label": "suspicious",
-  "reason": "Scene remains stable with customers near display cases",
+  "reason": "Man interacts with display case, potential aggression unclear",
   "key_moments": [
-    "subject stands near display case",
-    "another individual browses near the front door",
-    "face concealment noted but no aggressive behavior confirmed"
+    "subject reaches for display case",
+    "face concealment noted",
+    "posture and hands suggest possible assertive behavior"
   ]
 }
 
@@ -707,49 +657,36 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 
 Here is the scene, in chronological order:
 
-Business context (from NestJS):
-- Store: Royal Diamond Jewelry (jewelry_store)
-Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
-Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
-Sensitivity: high; scoring: aggressive; interaction: high
-Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
-Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
-Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
-  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
 EARLIER observations (oldest → most recent):
-- (frame 0) VLM observation: A man wearing an orange beanie and gray attire appears to be handling items near the display case, while another individual in a black garment stands nearby, and a third person sits at a desk. Flags — reaching display case: yes. Tracker detected: 4 persons.
-- (frame 60) VLM observation: A man in an orange head covering is standing near a display case, while another man in a black robe and a third individual are present in the store. Flags — face concealed: yes. Tracker detected: 5 persons.
-- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing at a display case in a jewelry store, while another man sits at a desk in the background, and a woman in a black garment and white head covering browses near the front door. Flags — reaching display case: yes; hands up: yes; face concealed: yes; aggression: unclear. Tracker detected: 4 persons.
-- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing appears to be approaching or standing near a display case, while two other individuals are in the store. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 240) VLM observation: Three individuals are present in a jewelry store, with one wearing a robe and another an orange beanie, standing near display cases. Flags — face concealed: yes. Tracker detected: 3 persons.
+- (frame 240) VLM observation: Three individuals are inside a jewelry store, with one standing behind the counter and two others browsing the displays. Flags — face concealed: yes. Tracker detected: 3 persons.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing appears to be approaching or standing near a display case, while two other individuals are in the store. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 240) VLM observation: Three individuals are present in a jewelry store, with one wearing a robe and another an orange beanie, standing near display cases. Flags — face concealed: yes. Tracker detected: 3 persons.
-- (frame 300) VLM observation: Three individuals are in a jewelry store, two are near the display cases and one is behind the counter. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing appears to be interacting with a display case, while another individual in a black outfit and white head covering looks at items on a shelf. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 240) VLM observation: Three individuals are inside a jewelry store, with one standing behind the counter and two others browsing the displays. Flags — face concealed: yes. Tracker detected: 3 persons.
+- (frame 300) VLM observation: Three people are standing near display cases, one appears to be reaching into a case. Flags — reaching display case: yes. Tracker detected: 2 persons.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Scene remains stable with customers near display cases",
+  "reason": "Individuals interact with display cases, one reaching in",
   "key_moments": [
-    "individuals standing near display cases",
-    "one person behind the counter",
-    "reaching display case behavior continues"
+    "subject approaches display case",
+    "reaching into case observed",
+    "number of individuals near cases remains consistent"
   ],
-  "concern": "low"
+  "concern": "medium"
 }
 
 FINAL RESULT (code-scored):
 {
-  "anomaly_score": 0.05,
+  "anomaly_score": 0.14,
   "label": "normal",
-  "reason": "Scene remains stable with customers near display cases",
+  "reason": "Individuals interact with display cases, one reaching in",
   "key_moments": [
-    "individuals standing near display cases",
-    "one person behind the counter",
-    "reaching display case behavior continues"
+    "subject approaches display case",
+    "reaching into case observed",
+    "number of individuals near cases remains consistent"
   ]
 }
 
@@ -836,181 +773,37 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 
 Here is the scene, in chronological order:
 
-Business context (from NestJS):
-- Store: Royal Diamond Jewelry (jewelry_store)
-Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
-Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
-Sensitivity: high; scoring: aggressive; interaction: high
-Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
-Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
-Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
-  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
 EARLIER observations (oldest → most recent):
-- (frame 0) VLM observation: A man wearing an orange beanie and gray attire appears to be handling items near the display case, while another individual in a black garment stands nearby, and a third person sits at a desk. Flags — reaching display case: yes. Tracker detected: 4 persons.
-- (frame 60) VLM observation: A man in an orange head covering is standing near a display case, while another man in a black robe and a third individual are present in the store. Flags — face concealed: yes. Tracker detected: 5 persons.
-- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing at a display case in a jewelry store, while another man sits at a desk in the background, and a woman in a black garment and white head covering browses near the front door. Flags — reaching display case: yes; hands up: yes; face concealed: yes; aggression: unclear. Tracker detected: 4 persons.
-- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing appears to be approaching or standing near a display case, while two other individuals are in the store. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 240) VLM observation: Three individuals are present in a jewelry store, with one wearing a robe and another an orange beanie, standing near display cases. Flags — face concealed: yes. Tracker detected: 3 persons.
-- (frame 300) VLM observation: Three individuals are in a jewelry store, two are near the display cases and one is behind the counter. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 240) VLM observation: Three individuals are inside a jewelry store, with one standing behind the counter and two others browsing the displays. Flags — face concealed: yes. Tracker detected: 3 persons.
+- (frame 300) VLM observation: Three people are standing near display cases, one appears to be reaching into a case. Flags — reaching display case: yes. Tracker detected: 2 persons.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 240) VLM observation: Three individuals are present in a jewelry store, with one wearing a robe and another an orange beanie, standing near display cases. Flags — face concealed: yes. Tracker detected: 3 persons.
-- (frame 300) VLM observation: Three individuals are in a jewelry store, two are near the display cases and one is behind the counter. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 360) VLM observation: Two individuals are standing near display cases in a jewelry store, with one appearing to gesture towards the cases. Flags — aggression: unclear. Tracker detected: 2 persons.
+- (frame 240) VLM observation: Three individuals are inside a jewelry store, with one standing behind the counter and two others browsing the displays. Flags — face concealed: yes. Tracker detected: 3 persons.
+- (frame 300) VLM observation: Three people are standing near display cases, one appears to be reaching into a case. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 360) VLM observation: Two men are standing near display cases in a jewelry store, one appears to be pointing at items in a case. Flags — none. Tracker detected: 2 persons.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Scene remains stable with customers near display cases",
+  "reason": "Scene stabilizes with customers browsing",
   "key_moments": [
-    "individuals standing near display cases",
-    "one person gesturing towards the cases",
-    "reduced number of people in the store"
+    "subject stops reaching into display case",
+    "individual starts pointing at items in a case",
+    "number of people remains consistent"
   ],
   "concern": "low"
 }
 
 FINAL RESULT (code-scored):
 {
-  "anomaly_score": 0.14600000000000002,
+  "anomaly_score": 0.03,
   "label": "normal",
-  "reason": "Scene remains stable with customers near display cases",
+  "reason": "Scene stabilizes with customers browsing",
   "key_moments": [
-    "individuals standing near display cases",
-    "one person gesturing towards the cases",
-    "reduced number of people in the store"
-  ]
-}
-
-======================================================
-VLM frame 420 (window 300-420)
-======================================================
-INPUT TO GROQ:
-You are a security analyst reviewing a sequence of camera observations from a store, in
-chronological order. Your job is to write a short narrative of what is happening and how the
-scene has changed — so a human reader instantly understands whether the situation is
-escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
-deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
-from the structured evidence. Your only job is the narrative and your honest read of concern.
-
-You receive:
-1. Business context — this store's specific allowed and forbidden behaviors.
-2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
-   oldest first.
-3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
-
-==================== HOW TO WRITE THE NARRATIVE ====================
-
-### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
-Look at what changed between the earlier observations and now: movement, positioning, new
-people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
-toward the counter, closing distance, escalating from browsing to something else? Say so.
-
-### 2. Ground every claim in the evidence you were given — do not invent motion
-Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
-context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
-(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
-escalation, movement, or a weapon that isn't supported by the text just to make the narrative
-more dramatic. A stable, boring scene deserves a stable, boring narrative.
-
-### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
-Before writing, check which specific Allowed/Forbidden list item each described action actually
-matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
-nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
-matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
-is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
-a Forbidden item like "Reaching behind cashier counter" actually describes.
-
-### 4. Appearance is context only
-Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
-headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
-as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
-plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
-from appearance words alone.
-
-### 5. Weapons and forbidden actions are the strongest signal
-If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
-lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
-escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
-not treat it as confirmed either.
-
-==================== OUTPUT FORMAT (STRICT) ====================
-Output EXACTLY one JSON object with these keys — no extra text before or after:
-- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
-  has changed since the earlier observations — write it the way a human security analyst would
-  describe the situation to a colleague, not a restated flag.
-- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
-  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
-  isolated flag names, never appearance alone, never raw tracker/technical data.
-- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
-  moment is. This is advisory only: the actual anomaly score and label are computed separately
-  from the structured evidence, not from this field, so answer honestly rather than trying to
-  guess a target number.
-
-Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
-
-Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
-- "Capped male enters and moves directly toward the counter with limited browsing behavior."
-- "Subject reaches the counter area and body language becomes more assertive, though weapon
-  visibility is still uncertain."
-- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
-
-Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
-- "Reaching display case"
-- "Face concealed, reaching display case"
-- "person wearing a hood" (appearance stated with no action)
-- Any mention of tracker IDs, confidence scores, or bounding boxes
-
-==============================================================
-
-Here is the scene, in chronological order:
-
-Business context (from NestJS):
-- Store: Royal Diamond Jewelry (jewelry_store)
-Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
-Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
-Sensitivity: high; scoring: aggressive; interaction: high
-Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
-Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
-Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
-  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
-EARLIER observations (oldest → most recent):
-- (frame 0) VLM observation: A man wearing an orange beanie and gray attire appears to be handling items near the display case, while another individual in a black garment stands nearby, and a third person sits at a desk. Flags — reaching display case: yes. Tracker detected: 4 persons.
-- (frame 60) VLM observation: A man in an orange head covering is standing near a display case, while another man in a black robe and a third individual are present in the store. Flags — face concealed: yes. Tracker detected: 5 persons.
-- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing at a display case in a jewelry store, while another man sits at a desk in the background, and a woman in a black garment and white head covering browses near the front door. Flags — reaching display case: yes; hands up: yes; face concealed: yes; aggression: unclear. Tracker detected: 4 persons.
-- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing appears to be approaching or standing near a display case, while two other individuals are in the store. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 240) VLM observation: Three individuals are present in a jewelry store, with one wearing a robe and another an orange beanie, standing near display cases. Flags — face concealed: yes. Tracker detected: 3 persons.
-- (frame 300) VLM observation: Three individuals are in a jewelry store, two are near the display cases and one is behind the counter. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 360) VLM observation: Two individuals are standing near display cases in a jewelry store, with one appearing to gesture towards the cases. Flags — aggression: unclear. Tracker detected: 2 persons.
-
-NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 300) VLM observation: Three individuals are in a jewelry store, two are near the display cases and one is behind the counter. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 360) VLM observation: Two individuals are standing near display cases in a jewelry store, with one appearing to gesture towards the cases. Flags — aggression: unclear. Tracker detected: 2 persons.
-- (frame 420) VLM observation: A man in a blue jacket and grey hat is standing near the office area with what appears to be a weapon in his hand, while two other individuals are browsing the store. Flags — gun: unclear; knife: unclear; aggression: unclear.
-
-Respond with exactly one JSON object and nothing else.
-
-RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
-{
-  "reason": "Potential threat emerges near office area",
-  "key_moments": [
-    "subject approaches office area with possible weapon",
-    "individuals browsing store, unaware of potential threat",
-    "gesture towards cases observed earlier, now accompanied by possible aggression"
-  ],
-  "concern": "high"
-}
-
-FINAL RESULT (code-scored):
-{
-  "anomaly_score": 0.51,
-  "label": "suspicious",
-  "reason": "Potential threat emerges near office area",
-  "key_moments": [
-    "subject approaches office area with possible weapon",
-    "individuals browsing store, unaware of potential threat",
-    "gesture towards cases observed earlier, now accompanied by possible aggression"
+    "subject stops reaching into display case",
+    "individual starts pointing at items in a case",
+    "number of people remains consistent"
   ]
 }
 
@@ -1097,52 +890,277 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 
 Here is the scene, in chronological order:
 
-Business context (from NestJS):
-- Store: Royal Diamond Jewelry (jewelry_store)
-Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
-Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
-Sensitivity: high; scoring: aggressive; interaction: high
-Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
-Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
-Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
-  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
 EARLIER observations (oldest → most recent):
-- (frame 0) VLM observation: A man wearing an orange beanie and gray attire appears to be handling items near the display case, while another individual in a black garment stands nearby, and a third person sits at a desk. Flags — reaching display case: yes. Tracker detected: 4 persons.
-- (frame 60) VLM observation: A man in an orange head covering is standing near a display case, while another man in a black robe and a third individual are present in the store. Flags — face concealed: yes. Tracker detected: 5 persons.
-- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing at a display case in a jewelry store, while another man sits at a desk in the background, and a woman in a black garment and white head covering browses near the front door. Flags — reaching display case: yes; hands up: yes; face concealed: yes; aggression: unclear. Tracker detected: 4 persons.
-- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing appears to be approaching or standing near a display case, while two other individuals are in the store. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 240) VLM observation: Three individuals are present in a jewelry store, with one wearing a robe and another an orange beanie, standing near display cases. Flags — face concealed: yes. Tracker detected: 3 persons.
-- (frame 300) VLM observation: Three individuals are in a jewelry store, two are near the display cases and one is behind the counter. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 360) VLM observation: Two individuals are standing near display cases in a jewelry store, with one appearing to gesture towards the cases. Flags — aggression: unclear. Tracker detected: 2 persons.
-- (frame 420) VLM observation: A man in a blue jacket and grey hat is standing near the office area with what appears to be a weapon in his hand, while two other individuals are browsing the store. Flags — gun: unclear; knife: unclear; aggression: unclear.
+- (frame 240) VLM observation: Three individuals are inside a jewelry store, with one standing behind the counter and two others browsing the displays. Flags — face concealed: yes. Tracker detected: 3 persons.
+- (frame 300) VLM observation: Three people are standing near display cases, one appears to be reaching into a case. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 360) VLM observation: Two men are standing near display cases in a jewelry store, one appears to be pointing at items in a case. Flags — none. Tracker detected: 2 persons.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 360) VLM observation: Two individuals are standing near display cases in a jewelry store, with one appearing to gesture towards the cases. Flags — aggression: unclear. Tracker detected: 2 persons.
-- (frame 420) VLM observation: A man in a blue jacket and grey hat is standing near the office area with what appears to be a weapon in his hand, while two other individuals are browsing the store. Flags — gun: unclear; knife: unclear; aggression: unclear.
-- (frame 480) VLM observation: A man in a blue jacket and grey cap appears to be interacting with the cashier, while two other individuals are browsing the store, one near a display case. Flags — reaching display case: yes.
+- (frame 360) VLM observation: Two men are standing near display cases in a jewelry store, one appears to be pointing at items in a case. Flags — none. Tracker detected: 2 persons.
+- (frame 420) VLM observation: Two individuals are standing near display cases while a third person interacts with a computer behind a desk. Flags — none. Tracker detected: 2 persons.
+- (frame 480) VLM observation: A man in a blue shirt appears to be handling papers at a desk, while two others are browsing display cases. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 3 persons.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Scene escalates with potential weapon near office area",
+  "reason": "Scene escalates with reaching display case and face concealment",
   "key_moments": [
-    "man in blue jacket stands near office area with possible weapon",
-    "individuals browse store, one near display case",
-    "aggression and weapon presence remain unclear"
+    "subject reaches into a display case",
+    "a third person appears behind a desk",
+    "face concealment reappears among the individuals"
+  ],
+  "concern": "medium"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.2,
+  "label": "normal",
+  "reason": "Scene escalates with reaching display case and face concealment",
+  "key_moments": [
+    "subject reaches into a display case",
+    "a third person appears behind a desk",
+    "face concealment reappears among the individuals"
+  ]
+}
+
+======================================================
+VLM frame 540 (window 420-540)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+EARLIER observations (oldest → most recent):
+- (frame 240) VLM observation: Three individuals are inside a jewelry store, with one standing behind the counter and two others browsing the displays. Flags — face concealed: yes. Tracker detected: 3 persons.
+- (frame 300) VLM observation: Three people are standing near display cases, one appears to be reaching into a case. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 360) VLM observation: Two men are standing near display cases in a jewelry store, one appears to be pointing at items in a case. Flags — none. Tracker detected: 2 persons.
+- (frame 480) VLM observation: A man in a blue shirt appears to be handling papers at a desk, while two others are browsing display cases. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 3 persons.
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 420) VLM observation: Two individuals are standing near display cases while a third person interacts with a computer behind a desk. Flags — none. Tracker detected: 2 persons.
+- (frame 480) VLM observation: A man in a blue shirt appears to be handling papers at a desk, while two others are browsing display cases. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 3 persons.
+- (frame 540) VLM observation: A man in an orange beanie appears to be reaching into a display case, while another person in a blue jacket is leaning over a desk. Flags — reaching display case: yes.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "Scene escalates with repeated reaching into display cases",
+  "key_moments": [
+    "subject reaches into display case",
+    "another person handles papers at desk",
+    "individual in orange beanie also reaches into display case"
+  ],
+  "concern": "medium"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.09,
+  "label": "normal",
+  "reason": "Scene escalates with repeated reaching into display cases",
+  "key_moments": [
+    "subject reaches into display case",
+    "another person handles papers at desk",
+    "individual in orange beanie also reaches into display case"
+  ]
+}
+
+======================================================
+VLM frame 600 (window 480-600)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+EARLIER observations (oldest → most recent):
+- (frame 240) VLM observation: Three individuals are inside a jewelry store, with one standing behind the counter and two others browsing the displays. Flags — face concealed: yes. Tracker detected: 3 persons.
+- (frame 300) VLM observation: Three people are standing near display cases, one appears to be reaching into a case. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 360) VLM observation: Two men are standing near display cases in a jewelry store, one appears to be pointing at items in a case. Flags — none. Tracker detected: 2 persons.
+- (frame 480) VLM observation: A man in a blue shirt appears to be handling papers at a desk, while two others are browsing display cases. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 3 persons.
+- (frame 540) VLM observation: A man in an orange beanie appears to be reaching into a display case, while another person in a blue jacket is leaning over a desk. Flags — reaching display case: yes.
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 480) VLM observation: A man in a blue shirt appears to be handling papers at a desk, while two others are browsing display cases. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 3 persons.
+- (frame 540) VLM observation: A man in an orange beanie appears to be reaching into a display case, while another person in a blue jacket is leaning over a desk. Flags — reaching display case: yes.
+- (frame 600) VLM observation: A person wearing an orange head covering is bending over a desk, while another person in a pink head covering and dark clothing interacts with someone near display cases. Flags — reaching behind counter: yes.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "Scene escalates with reaching behind counter",
+  "key_moments": [
+    "person in orange head covering bends over a desk",
+    "individual in pink head covering interacts with someone near displays",
+    "reaching behind counter detected, a forbidden action"
   ],
   "concern": "high"
 }
 
 FINAL RESULT (code-scored):
 {
-  "anomaly_score": 0.15000000000000002,
-  "label": "normal",
-  "reason": "Scene escalates with potential weapon near office area",
+  "anomaly_score": 0.6,
+  "label": "suspicious",
+  "reason": "Scene escalates with reaching behind counter",
   "key_moments": [
-    "man in blue jacket stands near office area with possible weapon",
-    "individuals browse store, one near display case",
-    "aggression and weapon presence remain unclear"
+    "person in orange head covering bends over a desk",
+    "individual in pink head covering interacts with someone near displays",
+    "reaching behind counter detected, a forbidden action"
   ]
 }
 
@@ -1229,55 +1247,41 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 
 Here is the scene, in chronological order:
 
-Business context (from NestJS):
-- Store: Royal Diamond Jewelry (jewelry_store)
-Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
-Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
-Sensitivity: high; scoring: aggressive; interaction: high
-Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
-Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
-Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
-  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
 EARLIER observations (oldest → most recent):
-- (frame 0) VLM observation: A man wearing an orange beanie and gray attire appears to be handling items near the display case, while another individual in a black garment stands nearby, and a third person sits at a desk. Flags — reaching display case: yes. Tracker detected: 4 persons.
-- (frame 60) VLM observation: A man in an orange head covering is standing near a display case, while another man in a black robe and a third individual are present in the store. Flags — face concealed: yes. Tracker detected: 5 persons.
-- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing at a display case in a jewelry store, while another man sits at a desk in the background, and a woman in a black garment and white head covering browses near the front door. Flags — reaching display case: yes; hands up: yes; face concealed: yes; aggression: unclear. Tracker detected: 4 persons.
-- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing appears to be approaching or standing near a display case, while two other individuals are in the store. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 240) VLM observation: Three individuals are present in a jewelry store, with one wearing a robe and another an orange beanie, standing near display cases. Flags — face concealed: yes. Tracker detected: 3 persons.
-- (frame 300) VLM observation: Three individuals are in a jewelry store, two are near the display cases and one is behind the counter. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 360) VLM observation: Two individuals are standing near display cases in a jewelry store, with one appearing to gesture towards the cases. Flags — aggression: unclear. Tracker detected: 2 persons.
-- (frame 420) VLM observation: A man in a blue jacket and grey hat is standing near the office area with what appears to be a weapon in his hand, while two other individuals are browsing the store. Flags — gun: unclear; knife: unclear; aggression: unclear.
-- (frame 480) VLM observation: A man in a blue jacket and grey cap appears to be interacting with the cashier, while two other individuals are browsing the store, one near a display case. Flags — reaching display case: yes.
+- (frame 240) VLM observation: Three individuals are inside a jewelry store, with one standing behind the counter and two others browsing the displays. Flags — face concealed: yes. Tracker detected: 3 persons.
+- (frame 300) VLM observation: Three people are standing near display cases, one appears to be reaching into a case. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 360) VLM observation: Two men are standing near display cases in a jewelry store, one appears to be pointing at items in a case. Flags — none. Tracker detected: 2 persons.
+- (frame 480) VLM observation: A man in a blue shirt appears to be handling papers at a desk, while two others are browsing display cases. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 3 persons.
+- (frame 540) VLM observation: A man in an orange beanie appears to be reaching into a display case, while another person in a blue jacket is leaning over a desk. Flags — reaching display case: yes.
+- (frame 600) VLM observation: A person wearing an orange head covering is bending over a desk, while another person in a pink head covering and dark clothing interacts with someone near display cases. Flags — reaching behind counter: yes.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 540) VLM observation: Man in orange hat appears to be interacting with display case, while another person in blue jacket is near the desk area. Flags — reaching display case: yes.
-- (frame 600) VLM observation: A person wearing an orange head covering appears to be reaching into a display case. Flags — reaching display case: yes.
-- (frame 660) VLM observation: Two individuals are standing at a display case, one appears to be handling items on the counter. Flags — reaching display case: yes; face concealed: yes.
+- (frame 540) VLM observation: A man in an orange beanie appears to be reaching into a display case, while another person in a blue jacket is leaning over a desk. Flags — reaching display case: yes.
+- (frame 600) VLM observation: A person wearing an orange head covering is bending over a desk, while another person in a pink head covering and dark clothing interacts with someone near display cases. Flags — reaching behind counter: yes.
+- (frame 660) VLM observation: A man wearing a black outfit and a head covering appears to be reaching into a display case with the help of a store employee. Flags — reaching display case: yes; face concealed: yes.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Individuals interacting with display cases, potential reaching and handling items",
+  "reason": "Scene escalates with reaching behind counter and display cases",
   "key_moments": [
-    "person in orange hat interacts with display case",
-    "individual in blue jacket near desk area",
-    "person reaches into display case",
-    "two individuals stand at display case, one handling items"
+    "person in orange head covering bends over desk",
+    "individual in pink head covering interacts near display cases",
+    "man in black outfit reaches into display case with employee assistance"
   ],
-  "concern": "medium"
+  "concern": "high"
 }
 
 FINAL RESULT (code-scored):
 {
-  "anomaly_score": 0.2,
-  "label": "normal",
-  "reason": "Individuals interacting with display cases, potential reaching and handling items",
+  "anomaly_score": 0.48,
+  "label": "suspicious",
+  "reason": "Scene escalates with reaching behind counter and display cases",
   "key_moments": [
-    "person in orange hat interacts with display case",
-    "individual in blue jacket near desk area",
-    "person reaches into display case",
-    "two individuals stand at display case, one handling items"
+    "person in orange head covering bends over desk",
+    "individual in pink head covering interacts near display cases",
+    "man in black outfit reaches into display case with employee assistance"
   ]
 }
 
@@ -1364,43 +1368,42 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 
 Here is the scene, in chronological order:
 
-Business context (from NestJS):
-- Store: Royal Diamond Jewelry (jewelry_store)
-Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
-Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
-Sensitivity: high; scoring: aggressive; interaction: high
-Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
-Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
-Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
-  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
+EARLIER observations (oldest → most recent):
+- (frame 240) VLM observation: Three individuals are inside a jewelry store, with one standing behind the counter and two others browsing the displays. Flags — face concealed: yes. Tracker detected: 3 persons.
+- (frame 300) VLM observation: Three people are standing near display cases, one appears to be reaching into a case. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 360) VLM observation: Two men are standing near display cases in a jewelry store, one appears to be pointing at items in a case. Flags — none. Tracker detected: 2 persons.
+- (frame 480) VLM observation: A man in a blue shirt appears to be handling papers at a desk, while two others are browsing display cases. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 3 persons.
+- (frame 540) VLM observation: A man in an orange beanie appears to be reaching into a display case, while another person in a blue jacket is leaning over a desk. Flags — reaching display case: yes.
+- (frame 600) VLM observation: A person wearing an orange head covering is bending over a desk, while another person in a pink head covering and dark clothing interacts with someone near display cases. Flags — reaching behind counter: yes.
+- (frame 660) VLM observation: A man wearing a black outfit and a head covering appears to be reaching into a display case with the help of a store employee. Flags — reaching display case: yes; face concealed: yes.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 600) VLM observation: A person wearing an orange head covering appears to be reaching into a display case. Flags — reaching display case: yes.
-- (frame 660) VLM observation: Two individuals are standing at a display case, one appears to be handling items on the counter. Flags — reaching display case: yes; face concealed: yes.
-- (frame 720) VLM observation: A person is holding what appears to be a long, thin object, possibly a rifle or shotgun, in a store while another person stands nearby, and a third person is browsing in the background. Flags — gun: unclear; aggression: unclear.
+- (frame 600) VLM observation: A person wearing an orange head covering is bending over a desk, while another person in a pink head covering and dark clothing interacts with someone near display cases. Flags — reaching behind counter: yes.
+- (frame 660) VLM observation: A man wearing a black outfit and a head covering appears to be reaching into a display case with the help of a store employee. Flags — reaching display case: yes; face concealed: yes.
+- (frame 720) VLM observation: A man in a white cap and apron appears to be holding a long object, possibly a rifle or shotgun, while another man in dark clothing stands near the front of the store. Weapon note: The man in the white cap and apron is holding a long object that appears to be a rifle or shotgun.. Flags — gun: unclear; aggression: unclear.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Scene escalates with potential weapon and concealed face",
+  "reason": "Scene escalates with potential weapon appearance",
   "key_moments": [
-    "person reaches into display case",
-    "individual handles items on counter with face concealed",
-    "long, thin object appears, possibly a firearm"
+    "subject appears to be holding a long object, possibly a rifle or shotgun",
+    "store employee previously assisted a customer reaching into a display case",
+    "earlier flag indicated reaching behind the counter"
   ],
   "concern": "high"
 }
 
 FINAL RESULT (code-scored):
 {
-  "anomaly_score": 0.366,
+  "anomaly_score": 0.7,
   "label": "suspicious",
-  "reason": "Scene escalates with potential weapon and concealed face",
+  "reason": "Scene escalates with potential weapon appearance",
   "key_moments": [
-    "person reaches into display case",
-    "individual handles items on counter with face concealed",
-    "long, thin object appears, possibly a firearm"
+    "subject appears to be holding a long object, possibly a rifle or shotgun",
+    "store employee previously assisted a customer reaching into a display case",
+    "earlier flag indicated reaching behind the counter"
   ]
 }
 
@@ -1487,45 +1490,43 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 
 Here is the scene, in chronological order:
 
-Business context (from NestJS):
-- Store: Royal Diamond Jewelry (jewelry_store)
-Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
-Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
-Sensitivity: high; scoring: aggressive; interaction: high
-Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
-Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
-Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
-  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
 EARLIER observations (oldest → most recent):
-- (frame 720) VLM observation: A person is holding what appears to be a long, thin object, possibly a rifle or shotgun, in a store while another person stands nearby, and a third person is browsing in the background. Flags — gun: unclear; aggression: unclear.
+- (frame 240) VLM observation: Three individuals are inside a jewelry store, with one standing behind the counter and two others browsing the displays. Flags — face concealed: yes. Tracker detected: 3 persons.
+- (frame 300) VLM observation: Three people are standing near display cases, one appears to be reaching into a case. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 360) VLM observation: Two men are standing near display cases in a jewelry store, one appears to be pointing at items in a case. Flags — none. Tracker detected: 2 persons.
+- (frame 480) VLM observation: A man in a blue shirt appears to be handling papers at a desk, while two others are browsing display cases. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 3 persons.
+- (frame 540) VLM observation: A man in an orange beanie appears to be reaching into a display case, while another person in a blue jacket is leaning over a desk. Flags — reaching display case: yes.
+- (frame 600) VLM observation: A person wearing an orange head covering is bending over a desk, while another person in a pink head covering and dark clothing interacts with someone near display cases. Flags — reaching behind counter: yes.
+- (frame 660) VLM observation: A man wearing a black outfit and a head covering appears to be reaching into a display case with the help of a store employee. Flags — reaching display case: yes; face concealed: yes.
+- (frame 720) VLM observation: A man in a white cap and apron appears to be holding a long object, possibly a rifle or shotgun, while another man in dark clothing stands near the front of the store. Weapon note: The man in the white cap and apron is holding a long object that appears to be a rifle or shotgun.. Flags — gun: unclear; aggression: unclear.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 660) VLM observation: Two individuals are standing at a display case, one appears to be handling items on the counter. Flags — reaching display case: yes; face concealed: yes.
-- (frame 720) VLM observation: A person is holding what appears to be a long, thin object, possibly a rifle or shotgun, in a store while another person stands nearby, and a third person is browsing in the background. Flags — gun: unclear; aggression: unclear.
-- (frame 780) VLM observation: A man in a white hat and black jacket appears to be physically confronting or restraining a woman in a white apron near the counter. Flags — hands up: unclear; aggression: yes.
+- (frame 660) VLM observation: A man wearing a black outfit and a head covering appears to be reaching into a display case with the help of a store employee. Flags — reaching display case: yes; face concealed: yes.
+- (frame 720) VLM observation: A man in a white cap and apron appears to be holding a long object, possibly a rifle or shotgun, while another man in dark clothing stands near the front of the store. Weapon note: The man in the white cap and apron is holding a long object that appears to be a rifle or shotgun.. Flags — gun: unclear; aggression: unclear.
+- (frame 780) VLM observation: A man in a white cap and black clothing appears to be physically confronting or restraining a person in a white apron near the counter area of a jewelry store. Weapon note: The person in the background appears to be holding a gun. Flags — gun: unclear; reaching behind counter: yes; hands up: unclear; aggression: yes.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Physical confrontation near counter, potential weapon earlier",
+  "reason": "Confrontation near counter with possible gun",
   "key_moments": [
-    "subject appears to be physically confronting or restraining a staff member",
-    "earlier observation of a possible long, thin object, potentially a firearm",
-    "individual handling items on the counter, with face concealed"
+    "man in white cap and black clothing physically confronts person in white apron",
+    "person in background appears to be holding a gun",
+    "aggression flag triggered"
   ],
   "concern": "high"
 }
 
 FINAL RESULT (code-scored):
 {
-  "anomaly_score": 0.49399999999999994,
+  "anomaly_score": 0.7,
   "label": "suspicious",
-  "reason": "Physical confrontation near counter, potential weapon earlier",
+  "reason": "Confrontation near counter with possible gun",
   "key_moments": [
-    "subject appears to be physically confronting or restraining a staff member",
-    "earlier observation of a possible long, thin object, potentially a firearm",
-    "individual handling items on the counter, with face concealed"
+    "man in white cap and black clothing physically confronts person in white apron",
+    "person in background appears to be holding a gun",
+    "aggression flag triggered"
   ]
 }
 
@@ -1612,45 +1613,256 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 
 Here is the scene, in chronological order:
 
-Business context (from NestJS):
-- Store: Royal Diamond Jewelry (jewelry_store)
-Description: Luxury jewelry store specializing in gold, diamonds, engagement rings, luxury watches, and custom jewelry design. The store includes a public showroom, cashier desk, display cases with high-value items, and a private storage room for inventory. Security cameras monitor customer interactions, cashier activity, display areas, and employee movement to detect suspicious or criminal behavior such as theft, unauthorized access, aggressive behavior, or fraudulent transactions. The store is located in a busy tourist area with high pedestrian traffic.
-Location: Avenida Atlântica 1702, Copacabana, Rio de Janeiro, Brazil, Rio de Janeiro
-Sensitivity: high; scoring: aggressive; interaction: high
-Allowed behaviors: Customers browsing jewelry displays, Employees carrying jewelry boxes, Cashier processing payments, Customers trying on jewelry, Employees opening display cases, Staff cleaning display areas, Customers speaking with employees, Security guard patrolling the store, Employees transferring jewelry between counters, Customers waiting near the cashier line, Tourists taking photos inside the store
-Forbidden behaviors: Entering employee-only storage area, Reaching behind cashier counter, Attempting to open display cases without employee, Hiding jewelry inside clothing or bags, Running inside the store, Physical aggression toward staff, Leaving store without payment, Tampering with security cameras, Suspicious loitering near high-value displays, Multiple people distracting employees during purchase, Employee accessing safe outside business hours, Unattended bags left near cashier, Attempting to bypass checkout process, Wearing masks or helmets inside the store without authorization
-Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
-  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
-EARLIER observations (oldest → most recent):
-- (frame 720) VLM observation: A person is holding what appears to be a long, thin object, possibly a rifle or shotgun, in a store while another person stands nearby, and a third person is browsing in the background. Flags — gun: unclear; aggression: unclear.
-- (frame 780) VLM observation: A man in a white hat and black jacket appears to be physically confronting or restraining a woman in a white apron near the counter. Flags — hands up: unclear; aggression: yes.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 720) VLM observation: A person is holding what appears to be a long, thin object, possibly a rifle or shotgun, in a store while another person stands nearby, and a third person is browsing in the background. Flags — gun: unclear; aggression: unclear.
-- (frame 780) VLM observation: A man in a white hat and black jacket appears to be physically confronting or restraining a woman in a white apron near the counter. Flags — hands up: unclear; aggression: yes.
-- (frame 840) VLM observation: Two individuals are interacting near the counter in a jewelry store, with one appearing to lean over the counter. Flags — reaching behind counter: yes.
+- (frame 720) VLM observation: A man in a white cap and apron appears to be holding a long object, possibly a rifle or shotgun, while another man in dark clothing stands near the front of the store. Weapon note: The man in the white cap and apron is holding a long object that appears to be a rifle or shotgun.. Flags — gun: unclear; aggression: unclear.
+- (frame 780) VLM observation: A man in a white cap and black clothing appears to be physically confronting or restraining a person in a white apron near the counter area of a jewelry store. Weapon note: The person in the background appears to be holding a gun. Flags — gun: unclear; reaching behind counter: yes; hands up: unclear; aggression: yes.
+- (frame 840) VLM observation: Two individuals are interacting near the counter, with one possibly reaching into a display case or handling items Flags — reaching display case: yes.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Confrontation escalates near counter",
+  "reason": "Confrontation near counter with possible gun",
   "key_moments": [
-    "man in white hat physically confronts woman",
-    "individual leans over counter",
-    "reaching behind counter detected"
+    "man in white cap and black clothing physically confronts person in white apron",
+    "person in background appears to be holding a gun",
+    "individual reaches into display case"
   ],
   "concern": "high"
 }
 
 FINAL RESULT (code-scored):
 {
-  "anomaly_score": 0.55,
+  "anomaly_score": 0.7,
   "label": "suspicious",
-  "reason": "Confrontation escalates near counter",
+  "reason": "Confrontation near counter with possible gun",
   "key_moments": [
-    "man in white hat physically confronts woman",
-    "individual leans over counter",
-    "reaching behind counter detected"
+    "man in white cap and black clothing physically confronts person in white apron",
+    "person in background appears to be holding a gun",
+    "individual reaches into display case"
   ]
+}
+
+======================================================
+VLM frame 900 (window 780-900)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 780) VLM observation: A man in a white cap and black clothing appears to be physically confronting or restraining a person in a white apron near the counter area of a jewelry store. Weapon note: The person in the background appears to be holding a gun. Flags — gun: unclear; reaching behind counter: yes; hands up: unclear; aggression: yes.
+- (frame 840) VLM observation: Two individuals are interacting near the counter, with one possibly reaching into a display case or handling items Flags — reaching display case: yes.
+- (frame 900) VLM observation: A person in a black hoodie appears to be reaching over the counter into the employee-only space behind the cashier register. Flags — reaching behind counter: yes; aggression: unclear.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "Confrontation near counter with possible gun",
+  "key_moments": [
+    "man in white cap physically confronts person in white apron",
+    "person in background appears to hold a gun",
+    "individual reaches into display case or handles items",
+    "person in black hoodie reaches into employee-only space"
+  ],
+  "concern": "high"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.7,
+  "label": "suspicious",
+  "reason": "Confrontation near counter with possible gun",
+  "key_moments": [
+    "man in white cap physically confronts person in white apron",
+    "person in background appears to hold a gun",
+    "individual reaches into display case or handles items",
+    "person in black hoodie reaches into employee-only space"
+  ]
+}
+
+======================================================
+VLM frame 960 (window 840-960)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 840) VLM observation: Two individuals are interacting near the counter, with one possibly reaching into a display case or handling items Flags — reaching display case: yes.
+- (frame 900) VLM observation: A person in a black hoodie appears to be reaching over the counter into the employee-only space behind the cashier register. Flags — reaching behind counter: yes; aggression: unclear.
+- (frame 960) VLM observation: Two men are interacting near the counter area of a jewelry store, one wearing a white hat. Flags — none.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "Failed to parse model JSON output",
+  "key_moments": [],
+  "concern": "",
+  "raw_output": "{\n  \"reason\": \"Individual reaches behind counter, escalating interaction\",\n  \"key_moments\": \"subject reaches over counter into employee space\", \"interaction near counter becomes more aggressive\", \"reaching behind counter flagged\",\n  \"concern\": \"high\"\n}"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.45,
+  "label": "suspicious",
+  "reason": "Failed to parse model JSON output",
+  "key_moments": []
 }
