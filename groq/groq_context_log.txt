@@ -83,144 +83,23 @@ Here is the scene, in chronological order:
 
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 0) VLM observation: A man in an orange head covering appears to be interacting with a store employee while another individual in a black outfit stands nearby, near display cases. Flags — none. Tracker detected: 4 persons.
+- (frame 0) VLM observation: A man wearing an orange head covering and gray clothing appears to be reaching over a display case, while another man in a black garment stands nearby. Flags — reaching display case: yes. Tracker detected: 4 persons.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Scene is stable with customers interacting with employee",
-  "key_moments": [
-    "man in orange head covering interacts with employee",
-    "individual in black outfit stands near display cases"
-  ],
-  "concern": "low"
+  "reason": "Man reaches over display case",
+  "key_moments": "man reaches over display case",
+  "concern": "medium"
 }
 
 FINAL RESULT (code-scored):
 {
-  "anomaly_score": 0.05,
+  "anomaly_score": 0.1,
   "label": "normal",
-  "reason": "Scene is stable with customers interacting with employee",
-  "key_moments": [
-    "man in orange head covering interacts with employee",
-    "individual in black outfit stands near display cases"
-  ]
-}
-
-======================================================
-VLM frame 60 (window 0-60)
-======================================================
-INPUT TO GROQ:
-You are a security analyst reviewing a sequence of camera observations from a store, in
-chronological order. Your job is to write a short narrative of what is happening and how the
-scene has changed — so a human reader instantly understands whether the situation is
-escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
-deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
-from the structured evidence. Your only job is the narrative and your honest read of concern.
-
-You receive:
-1. Business context — this store's specific allowed and forbidden behaviors.
-2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
-   oldest first.
-3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
-
-==================== HOW TO WRITE THE NARRATIVE ====================
-
-### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
-Look at what changed between the earlier observations and now: movement, positioning, new
-people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
-toward the counter, closing distance, escalating from browsing to something else? Say so.
-
-### 2. Ground every claim in the evidence you were given — do not invent motion
-Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
-context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
-(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
-escalation, movement, or a weapon that isn't supported by the text just to make the narrative
-more dramatic. A stable, boring scene deserves a stable, boring narrative.
-
-### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
-Before writing, check which specific Allowed/Forbidden list item each described action actually
-matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
-nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
-matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
-is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
-a Forbidden item like "Reaching behind cashier counter" actually describes.
-
-### 4. Appearance is context only
-Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
-headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
-as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
-plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
-from appearance words alone.
-
-### 5. Weapons and forbidden actions are the strongest signal
-If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
-lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
-escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
-not treat it as confirmed either.
-
-==================== OUTPUT FORMAT (STRICT) ====================
-Output EXACTLY one JSON object with these keys — no extra text before or after:
-- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
-  has changed since the earlier observations — write it the way a human security analyst would
-  describe the situation to a colleague, not a restated flag.
-- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
-  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
-  isolated flag names, never appearance alone, never raw tracker/technical data.
-- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
-  moment is. This is advisory only: the actual anomaly score and label are computed separately
-  from the structured evidence, not from this field, so answer honestly rather than trying to
-  guess a target number.
-
-Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
-
-Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
-- "Capped male enters and moves directly toward the counter with limited browsing behavior."
-- "Subject reaches the counter area and body language becomes more assertive, though weapon
-  visibility is still uncertain."
-- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
-
-Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
-- "Reaching display case"
-- "Face concealed, reaching display case"
-- "person wearing a hood" (appearance stated with no action)
-- Any mention of tracker IDs, confidence scores, or bounding boxes
-
-==============================================================
-
-Here is the scene, in chronological order:
-
-EARLIER observations (oldest → most recent):
-- (frame 0) VLM observation: A man in an orange head covering appears to be interacting with a store employee while another individual in a black outfit stands nearby, near display cases. Flags — none. Tracker detected: 4 persons.
-
-NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 0) VLM observation: A man in an orange head covering appears to be interacting with a store employee while another individual in a black outfit stands nearby, near display cases. Flags — none. Tracker detected: 4 persons.
-- (frame 60) VLM observation: One person is standing in front of a display case looking at items, another person stands at the entrance of the store, and one person sits at a desk with their back to the camera. Flags — reaching display case: yes. Tracker detected: 5 persons.
-
-Respond with exactly one JSON object and nothing else.
-
-RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
-{
-  "reason": "Scene remains stable with customers browsing",
-  "key_moments": [
-    "person stands in front of a display case looking at items",
-    "another person stands at the entrance of the store",
-    "one person sits at a desk with their back to the camera"
-  ],
-  "concern": "low"
-}
-
-FINAL RESULT (code-scored):
-{
-  "anomaly_score": 0.05,
-  "label": "normal",
-  "reason": "Scene remains stable with customers browsing",
-  "key_moments": [
-    "person stands in front of a display case looking at items",
-    "another person stands at the entrance of the store",
-    "one person sits at a desk with their back to the camera"
-  ]
+  "reason": "Man reaches over display case",
+  "key_moments": "man reaches over display case"
 }
 
 ======================================================
@@ -307,23 +186,22 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 Here is the scene, in chronological order:
 
 EARLIER observations (oldest → most recent):
-- (frame 0) VLM observation: A man in an orange head covering appears to be interacting with a store employee while another individual in a black outfit stands nearby, near display cases. Flags — none. Tracker detected: 4 persons.
-- (frame 60) VLM observation: One person is standing in front of a display case looking at items, another person stands at the entrance of the store, and one person sits at a desk with their back to the camera. Flags — reaching display case: yes. Tracker detected: 5 persons.
+- (frame 0) VLM observation: A man wearing an orange head covering and gray clothing appears to be reaching over a display case, while another man in a black garment stands nearby. Flags — reaching display case: yes. Tracker detected: 4 persons.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 0) VLM observation: A man in an orange head covering appears to be interacting with a store employee while another individual in a black outfit stands nearby, near display cases. Flags — none. Tracker detected: 4 persons.
-- (frame 60) VLM observation: One person is standing in front of a display case looking at items, another person stands at the entrance of the store, and one person sits at a desk with their back to the camera. Flags — reaching display case: yes. Tracker detected: 5 persons.
-- (frame 120) VLM observation: A person wearing a mask and orange head covering appears to be interacting with a store employee, who is seated at a desk. Flags — face concealed: yes. Tracker detected: 4 persons.
+- (frame 0) VLM observation: A man wearing an orange head covering and gray clothing appears to be reaching over a display case, while another man in a black garment stands nearby. Flags — reaching display case: yes. Tracker detected: 4 persons.
+- (frame 60) VLM observation: A man in an orange head covering appears to be handling items on a display case, while another individual in a black outfit and white head covering looks on, near a store employee at a desk. Flags — reaching display case: yes. Tracker detected: 5 persons.
+- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing over a display case, while another person in a black garment and white head covering browses near the entrance. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 4 persons.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Scene escalates with face concealment",
+  "reason": "Man continues reaching over display case, face now concealed",
   "key_moments": [
-    "person approaches store employee with face concealed",
-    "interaction occurs at the desk area",
-    "number of people detected decreases"
+    "subject continues to handle items on display case",
+    "face becomes concealed with a black face mask",
+    "another individual browses near the entrance"
   ],
   "concern": "medium"
 }
@@ -332,11 +210,11 @@ FINAL RESULT (code-scored):
 {
   "anomaly_score": 0.2,
   "label": "normal",
-  "reason": "Scene escalates with face concealment",
+  "reason": "Man continues reaching over display case, face now concealed",
   "key_moments": [
-    "person approaches store employee with face concealed",
-    "interaction occurs at the desk area",
-    "number of people detected decreases"
+    "subject continues to handle items on display case",
+    "face becomes concealed with a black face mask",
+    "another individual browses near the entrance"
   ]
 }
 
@@ -424,24 +302,23 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 Here is the scene, in chronological order:
 
 EARLIER observations (oldest → most recent):
-- (frame 0) VLM observation: A man in an orange head covering appears to be interacting with a store employee while another individual in a black outfit stands nearby, near display cases. Flags — none. Tracker detected: 4 persons.
-- (frame 60) VLM observation: One person is standing in front of a display case looking at items, another person stands at the entrance of the store, and one person sits at a desk with their back to the camera. Flags — reaching display case: yes. Tracker detected: 5 persons.
-- (frame 120) VLM observation: A person wearing a mask and orange head covering appears to be interacting with a store employee, who is seated at a desk. Flags — face concealed: yes. Tracker detected: 4 persons.
+- (frame 0) VLM observation: A man wearing an orange head covering and gray clothing appears to be reaching over a display case, while another man in a black garment stands nearby. Flags — reaching display case: yes. Tracker detected: 4 persons.
+- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing over a display case, while another person in a black garment and white head covering browses near the entrance. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 4 persons.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 60) VLM observation: One person is standing in front of a display case looking at items, another person stands at the entrance of the store, and one person sits at a desk with their back to the camera. Flags — reaching display case: yes. Tracker detected: 5 persons.
-- (frame 120) VLM observation: A person wearing a mask and orange head covering appears to be interacting with a store employee, who is seated at a desk. Flags — face concealed: yes. Tracker detected: 4 persons.
-- (frame 180) VLM observation: Man wearing orange headwear and gray clothing appears to be handling something near the display case while another individual in a black outfit and white headwear browses nearby. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 60) VLM observation: A man in an orange head covering appears to be handling items on a display case, while another individual in a black outfit and white head covering looks on, near a store employee at a desk. Flags — reaching display case: yes. Tracker detected: 5 persons.
+- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing over a display case, while another person in a black garment and white head covering browses near the entrance. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 4 persons.
+- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing is standing at a display case, while another person in a black outfit and white head covering browses nearby, and a third individual walks towards the entrance. Flags — reaching display case: yes. Tracker detected: 2 persons.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Scene remains stable with customers browsing",
+  "reason": "Scene remains stable with customer handling items",
   "key_moments": [
-    "subject handles something near the display case",
+    "subject continues to handle items on display case",
     "another individual browses nearby",
-    "person interacts with store employee"
+    "third person walks towards the entrance"
   ],
   "concern": "low"
 }
@@ -450,11 +327,11 @@ FINAL RESULT (code-scored):
 {
   "anomaly_score": 0.03,
   "label": "normal",
-  "reason": "Scene remains stable with customers browsing",
+  "reason": "Scene remains stable with customer handling items",
   "key_moments": [
-    "subject handles something near the display case",
+    "subject continues to handle items on display case",
     "another individual browses nearby",
-    "person interacts with store employee"
+    "third person walks towards the entrance"
   ]
 }
 
@@ -542,38 +419,37 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 Here is the scene, in chronological order:
 
 EARLIER observations (oldest → most recent):
-- (frame 0) VLM observation: A man in an orange head covering appears to be interacting with a store employee while another individual in a black outfit stands nearby, near display cases. Flags — none. Tracker detected: 4 persons.
-- (frame 60) VLM observation: One person is standing in front of a display case looking at items, another person stands at the entrance of the store, and one person sits at a desk with their back to the camera. Flags — reaching display case: yes. Tracker detected: 5 persons.
-- (frame 120) VLM observation: A person wearing a mask and orange head covering appears to be interacting with a store employee, who is seated at a desk. Flags — face concealed: yes. Tracker detected: 4 persons.
-- (frame 180) VLM observation: Man wearing orange headwear and gray clothing appears to be handling something near the display case while another individual in a black outfit and white headwear browses nearby. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 0) VLM observation: A man wearing an orange head covering and gray clothing appears to be reaching over a display case, while another man in a black garment stands nearby. Flags — reaching display case: yes. Tracker detected: 4 persons.
+- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing over a display case, while another person in a black garment and white head covering browses near the entrance. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 4 persons.
+- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing is standing at a display case, while another person in a black outfit and white head covering browses nearby, and a third individual walks towards the entrance. Flags — reaching display case: yes. Tracker detected: 2 persons.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 120) VLM observation: A person wearing a mask and orange head covering appears to be interacting with a store employee, who is seated at a desk. Flags — face concealed: yes. Tracker detected: 4 persons.
-- (frame 180) VLM observation: Man wearing orange headwear and gray clothing appears to be handling something near the display case while another individual in a black outfit and white headwear browses nearby. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 240) VLM observation: Three individuals are inside a jewelry store, one appears to be reaching for something behind the counter Flags — reaching behind counter: yes. Tracker detected: 3 persons.
+- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing over a display case, while another person in a black garment and white head covering browses near the entrance. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 4 persons.
+- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing is standing at a display case, while another person in a black outfit and white head covering browses nearby, and a third individual walks towards the entrance. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 240) VLM observation: Three individuals are present in a jewelry store, with one wearing a helmet and another wearing a long black robe, while a store employee sits at a desk. Flags — face concealed: yes. Tracker detected: 3 persons.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Scene escalates as individual reaches behind counter",
+  "reason": "Scene changes with new individuals and face concealment",
   "key_moments": [
-    "subject moves closer to the counter",
-    "reaching behavior shifts from display case to behind counter",
-    "number of individuals in the store decreases"
+    "new individuals enter the store",
+    "a person wears a helmet and another a long black robe",
+    "face concealment flag is present"
   ],
-  "concern": "high"
+  "concern": "medium"
 }
 
 FINAL RESULT (code-scored):
 {
-  "anomaly_score": 0.7,
-  "label": "suspicious",
-  "reason": "Scene escalates as individual reaches behind counter",
+  "anomaly_score": 0.2,
+  "label": "normal",
+  "reason": "Scene changes with new individuals and face concealment",
   "key_moments": [
-    "subject moves closer to the counter",
-    "reaching behavior shifts from display case to behind counter",
-    "number of individuals in the store decreases"
+    "new individuals enter the store",
+    "a person wears a helmet and another a long black robe",
+    "face concealment flag is present"
   ]
 }
 
@@ -661,160 +537,38 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 Here is the scene, in chronological order:
 
 EARLIER observations (oldest → most recent):
-- (frame 0) VLM observation: A man in an orange head covering appears to be interacting with a store employee while another individual in a black outfit stands nearby, near display cases. Flags — none. Tracker detected: 4 persons.
-- (frame 60) VLM observation: One person is standing in front of a display case looking at items, another person stands at the entrance of the store, and one person sits at a desk with their back to the camera. Flags — reaching display case: yes. Tracker detected: 5 persons.
-- (frame 120) VLM observation: A person wearing a mask and orange head covering appears to be interacting with a store employee, who is seated at a desk. Flags — face concealed: yes. Tracker detected: 4 persons.
-- (frame 180) VLM observation: Man wearing orange headwear and gray clothing appears to be handling something near the display case while another individual in a black outfit and white headwear browses nearby. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 240) VLM observation: Three individuals are inside a jewelry store, one appears to be reaching for something behind the counter Flags — reaching behind counter: yes. Tracker detected: 3 persons.
+- (frame 0) VLM observation: A man wearing an orange head covering and gray clothing appears to be reaching over a display case, while another man in a black garment stands nearby. Flags — reaching display case: yes. Tracker detected: 4 persons.
+- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing over a display case, while another person in a black garment and white head covering browses near the entrance. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 4 persons.
+- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing is standing at a display case, while another person in a black outfit and white head covering browses nearby, and a third individual walks towards the entrance. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 240) VLM observation: Three individuals are present in a jewelry store, with one wearing a helmet and another wearing a long black robe, while a store employee sits at a desk. Flags — face concealed: yes. Tracker detected: 3 persons.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 180) VLM observation: Man wearing orange headwear and gray clothing appears to be handling something near the display case while another individual in a black outfit and white headwear browses nearby. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 240) VLM observation: Three individuals are inside a jewelry store, one appears to be reaching for something behind the counter Flags — reaching behind counter: yes. Tracker detected: 3 persons.
-- (frame 300) VLM observation: Three individuals are in a jewelry store, with two near the display cases and one behind the counter. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing is standing at a display case, while another person in a black outfit and white head covering browses nearby, and a third individual walks towards the entrance. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 240) VLM observation: Three individuals are present in a jewelry store, with one wearing a helmet and another wearing a long black robe, while a store employee sits at a desk. Flags — face concealed: yes. Tracker detected: 3 persons.
+- (frame 300) VLM observation: Three individuals are in a jewelry store, with two near the display cases and one behind the counter, one person appears to be reaching into a display case. Flags — reaching display case: yes. Tracker detected: 2 persons.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Scene escalates as individual reaches behind counter",
+  "reason": "Scene escalates with reaching into display case",
   "key_moments": [
-    "subject reaches behind the counter",
-    "individuals gather near display cases",
-    "person handling something near the display case"
+    "subject reaches into a display case",
+    "individual moves behind the counter",
+    "face concealment noted earlier persists"
   ],
-  "concern": "high"
+  "concern": "medium"
 }
 
 FINAL RESULT (code-scored):
 {
-  "anomaly_score": 0.35,
-  "label": "suspicious",
-  "reason": "Scene escalates as individual reaches behind counter",
-  "key_moments": [
-    "subject reaches behind the counter",
-    "individuals gather near display cases",
-    "person handling something near the display case"
-  ]
-}
-
-======================================================
-VLM frame 360 (window 240-360)
-======================================================
-INPUT TO GROQ:
-You are a security analyst reviewing a sequence of camera observations from a store, in
-chronological order. Your job is to write a short narrative of what is happening and how the
-scene has changed — so a human reader instantly understands whether the situation is
-escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
-deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
-from the structured evidence. Your only job is the narrative and your honest read of concern.
-
-You receive:
-1. Business context — this store's specific allowed and forbidden behaviors.
-2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
-   oldest first.
-3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
-
-==================== HOW TO WRITE THE NARRATIVE ====================
-
-### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
-Look at what changed between the earlier observations and now: movement, positioning, new
-people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
-toward the counter, closing distance, escalating from browsing to something else? Say so.
-
-### 2. Ground every claim in the evidence you were given — do not invent motion
-Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
-context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
-(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
-escalation, movement, or a weapon that isn't supported by the text just to make the narrative
-more dramatic. A stable, boring scene deserves a stable, boring narrative.
-
-### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
-Before writing, check which specific Allowed/Forbidden list item each described action actually
-matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
-nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
-matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
-is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
-a Forbidden item like "Reaching behind cashier counter" actually describes.
-
-### 4. Appearance is context only
-Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
-headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
-as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
-plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
-from appearance words alone.
-
-### 5. Weapons and forbidden actions are the strongest signal
-If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
-lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
-escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
-not treat it as confirmed either.
-
-==================== OUTPUT FORMAT (STRICT) ====================
-Output EXACTLY one JSON object with these keys — no extra text before or after:
-- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
-  has changed since the earlier observations — write it the way a human security analyst would
-  describe the situation to a colleague, not a restated flag.
-- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
-  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
-  isolated flag names, never appearance alone, never raw tracker/technical data.
-- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
-  moment is. This is advisory only: the actual anomaly score and label are computed separately
-  from the structured evidence, not from this field, so answer honestly rather than trying to
-  guess a target number.
-
-Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
-
-Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
-- "Capped male enters and moves directly toward the counter with limited browsing behavior."
-- "Subject reaches the counter area and body language becomes more assertive, though weapon
-  visibility is still uncertain."
-- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
-
-Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
-- "Reaching display case"
-- "Face concealed, reaching display case"
-- "person wearing a hood" (appearance stated with no action)
-- Any mention of tracker IDs, confidence scores, or bounding boxes
-
-==============================================================
-
-Here is the scene, in chronological order:
-
-EARLIER observations (oldest → most recent):
-- (frame 0) VLM observation: A man in an orange head covering appears to be interacting with a store employee while another individual in a black outfit stands nearby, near display cases. Flags — none. Tracker detected: 4 persons.
-- (frame 60) VLM observation: One person is standing in front of a display case looking at items, another person stands at the entrance of the store, and one person sits at a desk with their back to the camera. Flags — reaching display case: yes. Tracker detected: 5 persons.
-- (frame 120) VLM observation: A person wearing a mask and orange head covering appears to be interacting with a store employee, who is seated at a desk. Flags — face concealed: yes. Tracker detected: 4 persons.
-- (frame 180) VLM observation: Man wearing orange headwear and gray clothing appears to be handling something near the display case while another individual in a black outfit and white headwear browses nearby. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 240) VLM observation: Three individuals are inside a jewelry store, one appears to be reaching for something behind the counter Flags — reaching behind counter: yes. Tracker detected: 3 persons.
-- (frame 300) VLM observation: Three individuals are in a jewelry store, with two near the display cases and one behind the counter. Flags — reaching display case: yes. Tracker detected: 2 persons.
-
-NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 240) VLM observation: Three individuals are inside a jewelry store, one appears to be reaching for something behind the counter Flags — reaching behind counter: yes. Tracker detected: 3 persons.
-- (frame 300) VLM observation: Three individuals are in a jewelry store, with two near the display cases and one behind the counter. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 360) VLM observation: Two men are standing near display cases in a jewelry store, one appears to be interacting with an employee. Flags — none. Tracker detected: 2 persons.
-
-Respond with exactly one JSON object and nothing else.
-
-RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
-{
-  "reason": "Scene stabilizes with individuals near display cases",
-  "key_moments": [
-    "subject stops reaching behind counter",
-    "individuals gather near display cases",
-    "interaction with employee continues"
-  ],
-  "concern": "low"
-}
-
-FINAL RESULT (code-scored):
-{
-  "anomaly_score": 0.11,
+  "anomaly_score": 0.08,
   "label": "normal",
-  "reason": "Scene stabilizes with individuals near display cases",
+  "reason": "Scene escalates with reaching into display case",
   "key_moments": [
-    "subject stops reaching behind counter",
-    "individuals gather near display cases",
-    "interaction with employee continues"
+    "subject reaches into a display case",
+    "individual moves behind the counter",
+    "face concealment noted earlier persists"
   ]
 }
 
@@ -902,28 +656,26 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 Here is the scene, in chronological order:
 
 EARLIER observations (oldest → most recent):
-- (frame 0) VLM observation: A man in an orange head covering appears to be interacting with a store employee while another individual in a black outfit stands nearby, near display cases. Flags — none. Tracker detected: 4 persons.
-- (frame 60) VLM observation: One person is standing in front of a display case looking at items, another person stands at the entrance of the store, and one person sits at a desk with their back to the camera. Flags — reaching display case: yes. Tracker detected: 5 persons.
-- (frame 120) VLM observation: A person wearing a mask and orange head covering appears to be interacting with a store employee, who is seated at a desk. Flags — face concealed: yes. Tracker detected: 4 persons.
-- (frame 180) VLM observation: Man wearing orange headwear and gray clothing appears to be handling something near the display case while another individual in a black outfit and white headwear browses nearby. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 240) VLM observation: Three individuals are inside a jewelry store, one appears to be reaching for something behind the counter Flags — reaching behind counter: yes. Tracker detected: 3 persons.
-- (frame 300) VLM observation: Three individuals are in a jewelry store, with two near the display cases and one behind the counter. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 360) VLM observation: Two men are standing near display cases in a jewelry store, one appears to be interacting with an employee. Flags — none. Tracker detected: 2 persons.
+- (frame 0) VLM observation: A man wearing an orange head covering and gray clothing appears to be reaching over a display case, while another man in a black garment stands nearby. Flags — reaching display case: yes. Tracker detected: 4 persons.
+- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing over a display case, while another person in a black garment and white head covering browses near the entrance. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 4 persons.
+- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing is standing at a display case, while another person in a black outfit and white head covering browses nearby, and a third individual walks towards the entrance. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 240) VLM observation: Three individuals are present in a jewelry store, with one wearing a helmet and another wearing a long black robe, while a store employee sits at a desk. Flags — face concealed: yes. Tracker detected: 3 persons.
+- (frame 300) VLM observation: Three individuals are in a jewelry store, with two near the display cases and one behind the counter, one person appears to be reaching into a display case. Flags — reaching display case: yes. Tracker detected: 2 persons.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 300) VLM observation: Three individuals are in a jewelry store, with two near the display cases and one behind the counter. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 360) VLM observation: Two men are standing near display cases in a jewelry store, one appears to be interacting with an employee. Flags — none. Tracker detected: 2 persons.
-- (frame 420) VLM observation: A man wearing a blue jacket and grey cap is holding a long object near the office area, while two other individuals are browsing the store. Weapon note: The man in the blue jacket appears to be holding a long object. Flags — gun: unclear; knife: unclear; reaching behind counter: yes; aggression: unclear. Tracker detected: 2 persons.
+- (frame 300) VLM observation: Three individuals are in a jewelry store, with two near the display cases and one behind the counter, one person appears to be reaching into a display case. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 360) VLM observation: Two individuals are standing near display cases in a jewelry store, while a third person sits at a desk. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 420) VLM observation: A man in a blue jacket and gray hat is standing near the office area with what appears to be a long object in his hand, while two other individuals are browsing the display cases. Weapon note: The man in the blue jacket appears to be holding a long object. Flags — gun: unclear; knife: unclear; aggression: unclear. Tracker detected: 2 persons.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Scene escalates with potential weapon and reaching behind counter",
+  "reason": "Scene escalates with potential weapon",
   "key_moments": [
-    "man in blue jacket holds long object near office area",
-    "individuals browse store while one reaches behind counter",
-    "aggression and weapon presence are unclear but concerning"
+    "subject approaches office area",
+    "long object appears in subject's hand",
+    "unclear weapon flags raised"
   ],
   "concern": "high"
 }
@@ -932,11 +684,11 @@ FINAL RESULT (code-scored):
 {
   "anomaly_score": 0.7,
   "label": "suspicious",
-  "reason": "Scene escalates with potential weapon and reaching behind counter",
+  "reason": "Scene escalates with potential weapon",
   "key_moments": [
-    "man in blue jacket holds long object near office area",
-    "individuals browse store while one reaches behind counter",
-    "aggression and weapon presence are unclear but concerning"
+    "subject approaches office area",
+    "long object appears in subject's hand",
+    "unclear weapon flags raised"
   ]
 }
 
@@ -1024,29 +776,27 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 Here is the scene, in chronological order:
 
 EARLIER observations (oldest → most recent):
-- (frame 0) VLM observation: A man in an orange head covering appears to be interacting with a store employee while another individual in a black outfit stands nearby, near display cases. Flags — none. Tracker detected: 4 persons.
-- (frame 60) VLM observation: One person is standing in front of a display case looking at items, another person stands at the entrance of the store, and one person sits at a desk with their back to the camera. Flags — reaching display case: yes. Tracker detected: 5 persons.
-- (frame 120) VLM observation: A person wearing a mask and orange head covering appears to be interacting with a store employee, who is seated at a desk. Flags — face concealed: yes. Tracker detected: 4 persons.
-- (frame 180) VLM observation: Man wearing orange headwear and gray clothing appears to be handling something near the display case while another individual in a black outfit and white headwear browses nearby. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 240) VLM observation: Three individuals are inside a jewelry store, one appears to be reaching for something behind the counter Flags — reaching behind counter: yes. Tracker detected: 3 persons.
-- (frame 300) VLM observation: Three individuals are in a jewelry store, with two near the display cases and one behind the counter. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 360) VLM observation: Two men are standing near display cases in a jewelry store, one appears to be interacting with an employee. Flags — none. Tracker detected: 2 persons.
-- (frame 420) VLM observation: A man wearing a blue jacket and grey cap is holding a long object near the office area, while two other individuals are browsing the store. Weapon note: The man in the blue jacket appears to be holding a long object. Flags — gun: unclear; knife: unclear; reaching behind counter: yes; aggression: unclear. Tracker detected: 2 persons.
+- (frame 0) VLM observation: A man wearing an orange head covering and gray clothing appears to be reaching over a display case, while another man in a black garment stands nearby. Flags — reaching display case: yes. Tracker detected: 4 persons.
+- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing over a display case, while another person in a black garment and white head covering browses near the entrance. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 4 persons.
+- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing is standing at a display case, while another person in a black outfit and white head covering browses nearby, and a third individual walks towards the entrance. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 240) VLM observation: Three individuals are present in a jewelry store, with one wearing a helmet and another wearing a long black robe, while a store employee sits at a desk. Flags — face concealed: yes. Tracker detected: 3 persons.
+- (frame 300) VLM observation: Three individuals are in a jewelry store, with two near the display cases and one behind the counter, one person appears to be reaching into a display case. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 420) VLM observation: A man in a blue jacket and gray hat is standing near the office area with what appears to be a long object in his hand, while two other individuals are browsing the display cases. Weapon note: The man in the blue jacket appears to be holding a long object. Flags — gun: unclear; knife: unclear; aggression: unclear. Tracker detected: 2 persons.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 360) VLM observation: Two men are standing near display cases in a jewelry store, one appears to be interacting with an employee. Flags — none. Tracker detected: 2 persons.
-- (frame 420) VLM observation: A man wearing a blue jacket and grey cap is holding a long object near the office area, while two other individuals are browsing the store. Weapon note: The man in the blue jacket appears to be holding a long object. Flags — gun: unclear; knife: unclear; reaching behind counter: yes; aggression: unclear. Tracker detected: 2 persons.
-- (frame 480) VLM observation: Man in blue jacket appears to be reaching over a display case, while two other individuals are present in the store. Flags — reaching display case: yes. Tracker detected: 3 persons.
+- (frame 360) VLM observation: Two individuals are standing near display cases in a jewelry store, while a third person sits at a desk. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 420) VLM observation: A man in a blue jacket and gray hat is standing near the office area with what appears to be a long object in his hand, while two other individuals are browsing the display cases. Weapon note: The man in the blue jacket appears to be holding a long object. Flags — gun: unclear; knife: unclear; aggression: unclear. Tracker detected: 2 persons.
+- (frame 480) VLM observation: A man in a blue jacket and grey cap appears to be interacting with the cashier, while two other individuals are browsing the store. Flags — reaching display case: yes. Tracker detected: 3 persons.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Man in blue jacket reaches over display case, potential weapon nearby",
+  "reason": "Man approaches counter with potential weapon",
   "key_moments": [
-    "man in blue jacket holds long object near office area",
-    "reaching behind counter flagged in previous observation",
-    "subject now reaches over display case"
+    "subject moves near office area with long object",
+    "individual interacts with cashier",
+    "reaching display case behavior continues"
   ],
   "concern": "medium"
 }
@@ -1055,11 +805,11 @@ FINAL RESULT (code-scored):
 {
   "anomaly_score": 0.7,
   "label": "suspicious",
-  "reason": "Man in blue jacket reaches over display case, potential weapon nearby",
+  "reason": "Man approaches counter with potential weapon",
   "key_moments": [
-    "man in blue jacket holds long object near office area",
-    "reaching behind counter flagged in previous observation",
-    "subject now reaches over display case"
+    "subject moves near office area with long object",
+    "individual interacts with cashier",
+    "reaching display case behavior continues"
   ]
 }
 
@@ -1147,30 +897,28 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 Here is the scene, in chronological order:
 
 EARLIER observations (oldest → most recent):
-- (frame 0) VLM observation: A man in an orange head covering appears to be interacting with a store employee while another individual in a black outfit stands nearby, near display cases. Flags — none. Tracker detected: 4 persons.
-- (frame 60) VLM observation: One person is standing in front of a display case looking at items, another person stands at the entrance of the store, and one person sits at a desk with their back to the camera. Flags — reaching display case: yes. Tracker detected: 5 persons.
-- (frame 120) VLM observation: A person wearing a mask and orange head covering appears to be interacting with a store employee, who is seated at a desk. Flags — face concealed: yes. Tracker detected: 4 persons.
-- (frame 180) VLM observation: Man wearing orange headwear and gray clothing appears to be handling something near the display case while another individual in a black outfit and white headwear browses nearby. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 240) VLM observation: Three individuals are inside a jewelry store, one appears to be reaching for something behind the counter Flags — reaching behind counter: yes. Tracker detected: 3 persons.
-- (frame 300) VLM observation: Three individuals are in a jewelry store, with two near the display cases and one behind the counter. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 360) VLM observation: Two men are standing near display cases in a jewelry store, one appears to be interacting with an employee. Flags — none. Tracker detected: 2 persons.
-- (frame 420) VLM observation: A man wearing a blue jacket and grey cap is holding a long object near the office area, while two other individuals are browsing the store. Weapon note: The man in the blue jacket appears to be holding a long object. Flags — gun: unclear; knife: unclear; reaching behind counter: yes; aggression: unclear. Tracker detected: 2 persons.
-- (frame 480) VLM observation: Man in blue jacket appears to be reaching over a display case, while two other individuals are present in the store. Flags — reaching display case: yes. Tracker detected: 3 persons.
+- (frame 0) VLM observation: A man wearing an orange head covering and gray clothing appears to be reaching over a display case, while another man in a black garment stands nearby. Flags — reaching display case: yes. Tracker detected: 4 persons.
+- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing over a display case, while another person in a black garment and white head covering browses near the entrance. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 4 persons.
+- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing is standing at a display case, while another person in a black outfit and white head covering browses nearby, and a third individual walks towards the entrance. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 240) VLM observation: Three individuals are present in a jewelry store, with one wearing a helmet and another wearing a long black robe, while a store employee sits at a desk. Flags — face concealed: yes. Tracker detected: 3 persons.
+- (frame 300) VLM observation: Three individuals are in a jewelry store, with two near the display cases and one behind the counter, one person appears to be reaching into a display case. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 420) VLM observation: A man in a blue jacket and gray hat is standing near the office area with what appears to be a long object in his hand, while two other individuals are browsing the display cases. Weapon note: The man in the blue jacket appears to be holding a long object. Flags — gun: unclear; knife: unclear; aggression: unclear. Tracker detected: 2 persons.
+- (frame 480) VLM observation: A man in a blue jacket and grey cap appears to be interacting with the cashier, while two other individuals are browsing the store. Flags — reaching display case: yes. Tracker detected: 3 persons.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 480) VLM observation: Man in blue jacket appears to be reaching over a display case, while two other individuals are present in the store. Flags — reaching display case: yes. Tracker detected: 3 persons.
-- (frame 540) VLM observation: A man in an orange beanie appears to be interacting with display cases while another person in a blue jacket is near the desk area. Flags — reaching display case: yes.
-- (frame 600) VLM observation: A person wearing an orange hat appears to be reaching into the employee-only space behind the counter. Flags — reaching behind counter: yes.
+- (frame 480) VLM observation: A man in a blue jacket and grey cap appears to be interacting with the cashier, while two other individuals are browsing the store. Flags — reaching display case: yes. Tracker detected: 3 persons.
+- (frame 540) VLM observation: A man in an orange beanie appears to be interacting with display cases while another person in a blue jacket is near the counter. Flags — reaching display case: yes.
+- (frame 600) VLM observation: A person wearing an orange head covering is bending over a desk, while another person in a white garment and pink head covering interacts with a third individual near display cases. Flags — reaching behind counter: yes.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Scene escalates as individual reaches behind counter",
+  "reason": "Scene escalates with reaching behind counter",
   "key_moments": [
-    "person in orange hat reaches into employee-only space",
-    "previous reaching over display case",
-    "individual in blue jacket was near desk area"
+    "person in orange head covering bends over a desk",
+    "reaching behind counter detected",
+    "individual in white garment interacts with another near display cases"
   ],
   "concern": "high"
 }
@@ -1179,11 +927,11 @@ FINAL RESULT (code-scored):
 {
   "anomaly_score": 0.7,
   "label": "suspicious",
-  "reason": "Scene escalates as individual reaches behind counter",
+  "reason": "Scene escalates with reaching behind counter",
   "key_moments": [
-    "person in orange hat reaches into employee-only space",
-    "previous reaching over display case",
-    "individual in blue jacket was near desk area"
+    "person in orange head covering bends over a desk",
+    "reaching behind counter detected",
+    "individual in white garment interacts with another near display cases"
   ]
 }
 
@@ -1271,30 +1019,29 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 Here is the scene, in chronological order:
 
 EARLIER observations (oldest → most recent):
-- (frame 60) VLM observation: One person is standing in front of a display case looking at items, another person stands at the entrance of the store, and one person sits at a desk with their back to the camera. Flags — reaching display case: yes. Tracker detected: 5 persons.
-- (frame 120) VLM observation: A person wearing a mask and orange head covering appears to be interacting with a store employee, who is seated at a desk. Flags — face concealed: yes. Tracker detected: 4 persons.
-- (frame 180) VLM observation: Man wearing orange headwear and gray clothing appears to be handling something near the display case while another individual in a black outfit and white headwear browses nearby. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 240) VLM observation: Three individuals are inside a jewelry store, one appears to be reaching for something behind the counter Flags — reaching behind counter: yes. Tracker detected: 3 persons.
-- (frame 300) VLM observation: Three individuals are in a jewelry store, with two near the display cases and one behind the counter. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 360) VLM observation: Two men are standing near display cases in a jewelry store, one appears to be interacting with an employee. Flags — none. Tracker detected: 2 persons.
-- (frame 420) VLM observation: A man wearing a blue jacket and grey cap is holding a long object near the office area, while two other individuals are browsing the store. Weapon note: The man in the blue jacket appears to be holding a long object. Flags — gun: unclear; knife: unclear; reaching behind counter: yes; aggression: unclear. Tracker detected: 2 persons.
-- (frame 480) VLM observation: Man in blue jacket appears to be reaching over a display case, while two other individuals are present in the store. Flags — reaching display case: yes. Tracker detected: 3 persons.
-- (frame 600) VLM observation: A person wearing an orange hat appears to be reaching into the employee-only space behind the counter. Flags — reaching behind counter: yes.
+- (frame 0) VLM observation: A man wearing an orange head covering and gray clothing appears to be reaching over a display case, while another man in a black garment stands nearby. Flags — reaching display case: yes. Tracker detected: 4 persons.
+- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing over a display case, while another person in a black garment and white head covering browses near the entrance. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 4 persons.
+- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing is standing at a display case, while another person in a black outfit and white head covering browses nearby, and a third individual walks towards the entrance. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 240) VLM observation: Three individuals are present in a jewelry store, with one wearing a helmet and another wearing a long black robe, while a store employee sits at a desk. Flags — face concealed: yes. Tracker detected: 3 persons.
+- (frame 300) VLM observation: Three individuals are in a jewelry store, with two near the display cases and one behind the counter, one person appears to be reaching into a display case. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 420) VLM observation: A man in a blue jacket and gray hat is standing near the office area with what appears to be a long object in his hand, while two other individuals are browsing the display cases. Weapon note: The man in the blue jacket appears to be holding a long object. Flags — gun: unclear; knife: unclear; aggression: unclear. Tracker detected: 2 persons.
+- (frame 480) VLM observation: A man in a blue jacket and grey cap appears to be interacting with the cashier, while two other individuals are browsing the store. Flags — reaching display case: yes. Tracker detected: 3 persons.
+- (frame 600) VLM observation: A person wearing an orange head covering is bending over a desk, while another person in a white garment and pink head covering interacts with a third individual near display cases. Flags — reaching behind counter: yes.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 540) VLM observation: A man in an orange beanie appears to be interacting with display cases while another person in a blue jacket is near the desk area. Flags — reaching display case: yes.
-- (frame 600) VLM observation: A person wearing an orange hat appears to be reaching into the employee-only space behind the counter. Flags — reaching behind counter: yes.
-- (frame 660) VLM observation: A person wearing a black mask and white hat appears to be handling items on a display case, while another individual in a black jacket and mask stands nearby. Flags — reaching display case: yes; face concealed: yes.
+- (frame 540) VLM observation: A man in an orange beanie appears to be interacting with display cases while another person in a blue jacket is near the counter. Flags — reaching display case: yes.
+- (frame 600) VLM observation: A person wearing an orange head covering is bending over a desk, while another person in a white garment and pink head covering interacts with a third individual near display cases. Flags — reaching behind counter: yes.
+- (frame 660) VLM observation: A man wearing a black attire and a white head covering appears to be reaching into a display case with the help of a store employee. Flags — reaching display case: yes; face concealed: yes.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Scene escalates with reaching behind counter and face concealment",
+  "reason": "Scene escalates with reaching behind counter and display cases",
   "key_moments": [
-    "person in orange hat reaches into employee-only space",
-    "individual in black mask handles items on display case",
-    "face concealment and reaching display case continue"
+    "person in orange head covering bends over a desk",
+    "individual in blue jacket approaches the counter",
+    "man in black attire reaches into a display case with employee assistance"
   ],
   "concern": "high"
 }
@@ -1303,11 +1050,11 @@ FINAL RESULT (code-scored):
 {
   "anomaly_score": 0.58,
   "label": "suspicious",
-  "reason": "Scene escalates with reaching behind counter and face concealment",
+  "reason": "Scene escalates with reaching behind counter and display cases",
   "key_moments": [
-    "person in orange hat reaches into employee-only space",
-    "individual in black mask handles items on display case",
-    "face concealment and reaching display case continue"
+    "person in orange head covering bends over a desk",
+    "individual in blue jacket approaches the counter",
+    "man in black attire reaches into a display case with employee assistance"
   ]
 }
 
@@ -1395,43 +1142,43 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 Here is the scene, in chronological order:
 
 EARLIER observations (oldest → most recent):
-- (frame 120) VLM observation: A person wearing a mask and orange head covering appears to be interacting with a store employee, who is seated at a desk. Flags — face concealed: yes. Tracker detected: 4 persons.
-- (frame 180) VLM observation: Man wearing orange headwear and gray clothing appears to be handling something near the display case while another individual in a black outfit and white headwear browses nearby. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 240) VLM observation: Three individuals are inside a jewelry store, one appears to be reaching for something behind the counter Flags — reaching behind counter: yes. Tracker detected: 3 persons.
-- (frame 300) VLM observation: Three individuals are in a jewelry store, with two near the display cases and one behind the counter. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 360) VLM observation: Two men are standing near display cases in a jewelry store, one appears to be interacting with an employee. Flags — none. Tracker detected: 2 persons.
-- (frame 420) VLM observation: A man wearing a blue jacket and grey cap is holding a long object near the office area, while two other individuals are browsing the store. Weapon note: The man in the blue jacket appears to be holding a long object. Flags — gun: unclear; knife: unclear; reaching behind counter: yes; aggression: unclear. Tracker detected: 2 persons.
-- (frame 480) VLM observation: Man in blue jacket appears to be reaching over a display case, while two other individuals are present in the store. Flags — reaching display case: yes. Tracker detected: 3 persons.
-- (frame 600) VLM observation: A person wearing an orange hat appears to be reaching into the employee-only space behind the counter. Flags — reaching behind counter: yes.
-- (frame 660) VLM observation: A person wearing a black mask and white hat appears to be handling items on a display case, while another individual in a black jacket and mask stands nearby. Flags — reaching display case: yes; face concealed: yes.
+- (frame 0) VLM observation: A man wearing an orange head covering and gray clothing appears to be reaching over a display case, while another man in a black garment stands nearby. Flags — reaching display case: yes. Tracker detected: 4 persons.
+- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing over a display case, while another person in a black garment and white head covering browses near the entrance. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 4 persons.
+- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing is standing at a display case, while another person in a black outfit and white head covering browses nearby, and a third individual walks towards the entrance. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 240) VLM observation: Three individuals are present in a jewelry store, with one wearing a helmet and another wearing a long black robe, while a store employee sits at a desk. Flags — face concealed: yes. Tracker detected: 3 persons.
+- (frame 300) VLM observation: Three individuals are in a jewelry store, with two near the display cases and one behind the counter, one person appears to be reaching into a display case. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 420) VLM observation: A man in a blue jacket and gray hat is standing near the office area with what appears to be a long object in his hand, while two other individuals are browsing the display cases. Weapon note: The man in the blue jacket appears to be holding a long object. Flags — gun: unclear; knife: unclear; aggression: unclear. Tracker detected: 2 persons.
+- (frame 480) VLM observation: A man in a blue jacket and grey cap appears to be interacting with the cashier, while two other individuals are browsing the store. Flags — reaching display case: yes. Tracker detected: 3 persons.
+- (frame 600) VLM observation: A person wearing an orange head covering is bending over a desk, while another person in a white garment and pink head covering interacts with a third individual near display cases. Flags — reaching behind counter: yes.
+- (frame 660) VLM observation: A man wearing a black attire and a white head covering appears to be reaching into a display case with the help of a store employee. Flags — reaching display case: yes; face concealed: yes.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 600) VLM observation: A person wearing an orange hat appears to be reaching into the employee-only space behind the counter. Flags — reaching behind counter: yes.
-- (frame 660) VLM observation: A person wearing a black mask and white hat appears to be handling items on a display case, while another individual in a black jacket and mask stands nearby. Flags — reaching display case: yes; face concealed: yes.
-- (frame 720) VLM observation: A person in a white hat and apron appears to be handling a long, thin object, possibly a tool or weapon, near the back office, while another person stands near the display cases. Weapon note: The person near the back office is handling a long, thin object that could be a tool or a weapon.. Flags — gun: unclear; knife: unclear; reaching behind counter: yes; aggression: unclear.
+- (frame 600) VLM observation: A person wearing an orange head covering is bending over a desk, while another person in a white garment and pink head covering interacts with a third individual near display cases. Flags — reaching behind counter: yes.
+- (frame 660) VLM observation: A man wearing a black attire and a white head covering appears to be reaching into a display case with the help of a store employee. Flags — reaching display case: yes; face concealed: yes.
+- (frame 720) VLM observation: A store employee appears to be threatened by a person holding what looks like a bow and arrow, while another customer stands in the background. Weapon note: The person is holding what appears to be a bow and arrow.. Flags — aggression: yes.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Scene escalates with potential weapon and reaching behind counter",
+  "reason": "Scene escalates with apparent threat",
   "key_moments": [
-    "person in orange hat reaches into employee-only space",
-    "individual in black mask handles display case items",
-    "person in white hat and apron handles long, thin object near back office"
+    "person appears to be holding a bow and arrow",
+    "store employee appears to be threatened",
+    "aggression flag is now confirmed"
   ],
   "concern": "high"
 }
 
 FINAL RESULT (code-scored):
 {
-  "anomaly_score": 0.7,
+  "anomaly_score": 0.68,
   "label": "suspicious",
-  "reason": "Scene escalates with potential weapon and reaching behind counter",
+  "reason": "Scene escalates with apparent threat",
   "key_moments": [
-    "person in orange hat reaches into employee-only space",
-    "individual in black mask handles display case items",
-    "person in white hat and apron handles long, thin object near back office"
+    "person appears to be holding a bow and arrow",
+    "store employee appears to be threatened",
+    "aggression flag is now confirmed"
   ]
 }
 
@@ -1519,30 +1266,30 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 Here is the scene, in chronological order:
 
 EARLIER observations (oldest → most recent):
-- (frame 180) VLM observation: Man wearing orange headwear and gray clothing appears to be handling something near the display case while another individual in a black outfit and white headwear browses nearby. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 240) VLM observation: Three individuals are inside a jewelry store, one appears to be reaching for something behind the counter Flags — reaching behind counter: yes. Tracker detected: 3 persons.
-- (frame 300) VLM observation: Three individuals are in a jewelry store, with two near the display cases and one behind the counter. Flags — reaching display case: yes. Tracker detected: 2 persons.
-- (frame 360) VLM observation: Two men are standing near display cases in a jewelry store, one appears to be interacting with an employee. Flags — none. Tracker detected: 2 persons.
-- (frame 420) VLM observation: A man wearing a blue jacket and grey cap is holding a long object near the office area, while two other individuals are browsing the store. Weapon note: The man in the blue jacket appears to be holding a long object. Flags — gun: unclear; knife: unclear; reaching behind counter: yes; aggression: unclear. Tracker detected: 2 persons.
-- (frame 480) VLM observation: Man in blue jacket appears to be reaching over a display case, while two other individuals are present in the store. Flags — reaching display case: yes. Tracker detected: 3 persons.
-- (frame 600) VLM observation: A person wearing an orange hat appears to be reaching into the employee-only space behind the counter. Flags — reaching behind counter: yes.
-- (frame 660) VLM observation: A person wearing a black mask and white hat appears to be handling items on a display case, while another individual in a black jacket and mask stands nearby. Flags — reaching display case: yes; face concealed: yes.
-- (frame 720) VLM observation: A person in a white hat and apron appears to be handling a long, thin object, possibly a tool or weapon, near the back office, while another person stands near the display cases. Weapon note: The person near the back office is handling a long, thin object that could be a tool or a weapon.. Flags — gun: unclear; knife: unclear; reaching behind counter: yes; aggression: unclear.
+- (frame 120) VLM observation: A man wearing an orange head covering and a black face mask is standing over a display case, while another person in a black garment and white head covering browses near the entrance. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 4 persons.
+- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing is standing at a display case, while another person in a black outfit and white head covering browses nearby, and a third individual walks towards the entrance. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 240) VLM observation: Three individuals are present in a jewelry store, with one wearing a helmet and another wearing a long black robe, while a store employee sits at a desk. Flags — face concealed: yes. Tracker detected: 3 persons.
+- (frame 300) VLM observation: Three individuals are in a jewelry store, with two near the display cases and one behind the counter, one person appears to be reaching into a display case. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 420) VLM observation: A man in a blue jacket and gray hat is standing near the office area with what appears to be a long object in his hand, while two other individuals are browsing the display cases. Weapon note: The man in the blue jacket appears to be holding a long object. Flags — gun: unclear; knife: unclear; aggression: unclear. Tracker detected: 2 persons.
+- (frame 480) VLM observation: A man in a blue jacket and grey cap appears to be interacting with the cashier, while two other individuals are browsing the store. Flags — reaching display case: yes. Tracker detected: 3 persons.
+- (frame 600) VLM observation: A person wearing an orange head covering is bending over a desk, while another person in a white garment and pink head covering interacts with a third individual near display cases. Flags — reaching behind counter: yes.
+- (frame 660) VLM observation: A man wearing a black attire and a white head covering appears to be reaching into a display case with the help of a store employee. Flags — reaching display case: yes; face concealed: yes.
+- (frame 720) VLM observation: A store employee appears to be threatened by a person holding what looks like a bow and arrow, while another customer stands in the background. Weapon note: The person is holding what appears to be a bow and arrow.. Flags — aggression: yes.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 660) VLM observation: A person wearing a black mask and white hat appears to be handling items on a display case, while another individual in a black jacket and mask stands nearby. Flags — reaching display case: yes; face concealed: yes.
-- (frame 720) VLM observation: A person in a white hat and apron appears to be handling a long, thin object, possibly a tool or weapon, near the back office, while another person stands near the display cases. Weapon note: The person near the back office is handling a long, thin object that could be a tool or a weapon.. Flags — gun: unclear; knife: unclear; reaching behind counter: yes; aggression: unclear.
-- (frame 780) VLM observation: Two masked individuals are in a jewelry store, one near the counter and the other walking around. Flags — reaching behind counter: yes; face concealed: yes.
+- (frame 660) VLM observation: A man wearing a black attire and a white head covering appears to be reaching into a display case with the help of a store employee. Flags — reaching display case: yes; face concealed: yes.
+- (frame 720) VLM observation: A store employee appears to be threatened by a person holding what looks like a bow and arrow, while another customer stands in the background. Weapon note: The person is holding what appears to be a bow and arrow.. Flags — aggression: yes.
+- (frame 780) VLM observation: Two individuals in ski masks are in a jewelry store with a third person behind the counter. Flags — reaching behind counter: yes; face concealed: yes.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Scene escalates with masked individuals and potential weapon",
+  "reason": "Scene escalates with a bow and arrow, and reaching behind counter",
   "key_moments": [
-    "person in white hat and apron handles long, thin object near back office",
-    "masked individuals approach counter",
-    "reaching behind counter flag persists"
+    "person holds a bow and arrow, threatening a store employee",
+    "individuals in ski masks reach behind the counter",
+    "aggression and face concealment increase"
   ],
   "concern": "high"
 }
@@ -1551,11 +1298,11 @@ FINAL RESULT (code-scored):
 {
   "anomaly_score": 0.7,
   "label": "suspicious",
-  "reason": "Scene escalates with masked individuals and potential weapon",
+  "reason": "Scene escalates with a bow and arrow, and reaching behind counter",
   "key_moments": [
-    "person in white hat and apron handles long, thin object near back office",
-    "masked individuals approach counter",
-    "reaching behind counter flag persists"
+    "person holds a bow and arrow, threatening a store employee",
+    "individuals in ski masks reach behind the counter",
+    "aggression and face concealment increase"
   ]
 }
 
@@ -1642,34 +1389,44 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 
 Here is the scene, in chronological order:
 
+EARLIER observations (oldest → most recent):
+- (frame 180) VLM observation: A man wearing an orange head covering and gray clothing is standing at a display case, while another person in a black outfit and white head covering browses nearby, and a third individual walks towards the entrance. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 240) VLM observation: Three individuals are present in a jewelry store, with one wearing a helmet and another wearing a long black robe, while a store employee sits at a desk. Flags — face concealed: yes. Tracker detected: 3 persons.
+- (frame 300) VLM observation: Three individuals are in a jewelry store, with two near the display cases and one behind the counter, one person appears to be reaching into a display case. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 420) VLM observation: A man in a blue jacket and gray hat is standing near the office area with what appears to be a long object in his hand, while two other individuals are browsing the display cases. Weapon note: The man in the blue jacket appears to be holding a long object. Flags — gun: unclear; knife: unclear; aggression: unclear. Tracker detected: 2 persons.
+- (frame 480) VLM observation: A man in a blue jacket and grey cap appears to be interacting with the cashier, while two other individuals are browsing the store. Flags — reaching display case: yes. Tracker detected: 3 persons.
+- (frame 600) VLM observation: A person wearing an orange head covering is bending over a desk, while another person in a white garment and pink head covering interacts with a third individual near display cases. Flags — reaching behind counter: yes.
+- (frame 660) VLM observation: A man wearing a black attire and a white head covering appears to be reaching into a display case with the help of a store employee. Flags — reaching display case: yes; face concealed: yes.
+- (frame 720) VLM observation: A store employee appears to be threatened by a person holding what looks like a bow and arrow, while another customer stands in the background. Weapon note: The person is holding what appears to be a bow and arrow.. Flags — aggression: yes.
+- (frame 780) VLM observation: Two individuals in ski masks are in a jewelry store with a third person behind the counter. Flags — reaching behind counter: yes; face concealed: yes.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 720) VLM observation: A person in a white hat and apron appears to be handling a long, thin object, possibly a tool or weapon, near the back office, while another person stands near the display cases. Weapon note: The person near the back office is handling a long, thin object that could be a tool or a weapon.. Flags — gun: unclear; knife: unclear; reaching behind counter: yes; aggression: unclear.
-- (frame 780) VLM observation: Two masked individuals are in a jewelry store, one near the counter and the other walking around. Flags — reaching behind counter: yes; face concealed: yes.
-- (frame 840) VLM observation: A man in an orange beanie appears to be interacting with a store employee behind the counter, while another person in a red head covering is bent over near the office area. Flags — none.
+- (frame 720) VLM observation: A store employee appears to be threatened by a person holding what looks like a bow and arrow, while another customer stands in the background. Weapon note: The person is holding what appears to be a bow and arrow.. Flags — aggression: yes.
+- (frame 780) VLM observation: Two individuals in ski masks are in a jewelry store with a third person behind the counter. Flags — reaching behind counter: yes; face concealed: yes.
+- (frame 840) VLM observation: Two individuals are interacting near the counter of a jewelry store, with one possibly reaching into a display case. Flags — reaching display case: yes.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Scene escalates with potential weapon and suspicious behavior",
+  "reason": "Scene escalates with potential threat",
   "key_moments": [
-    "person handles long, thin object near back office",
-    "individuals reach behind counter",
-    "masked persons appear, increasing uncertainty"
+    "person holds what appears to be a bow and arrow, threatening a store employee",
+    "individuals in ski masks enter the store, reaching behind the counter",
+    "face concealment and potential display case tampering continue"
   ],
   "concern": "high"
 }
 
 FINAL RESULT (code-scored):
 {
-  "anomaly_score": 0.7,
+  "anomaly_score": 0.53,
   "label": "suspicious",
-  "reason": "Scene escalates with potential weapon and suspicious behavior",
+  "reason": "Scene escalates with potential threat",
   "key_moments": [
-    "person handles long, thin object near back office",
-    "individuals reach behind counter",
-    "masked persons appear, increasing uncertainty"
+    "person holds what appears to be a bow and arrow, threatening a store employee",
+    "individuals in ski masks enter the store, reaching behind the counter",
+    "face concealment and potential display case tampering continue"
   ]
 }
 
@@ -1757,22 +1514,30 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 Here is the scene, in chronological order:
 
 EARLIER observations (oldest → most recent):
-- (frame 840) VLM observation: A man in an orange beanie appears to be interacting with a store employee behind the counter, while another person in a red head covering is bent over near the office area. Flags — none.
+- (frame 240) VLM observation: Three individuals are present in a jewelry store, with one wearing a helmet and another wearing a long black robe, while a store employee sits at a desk. Flags — face concealed: yes. Tracker detected: 3 persons.
+- (frame 300) VLM observation: Three individuals are in a jewelry store, with two near the display cases and one behind the counter, one person appears to be reaching into a display case. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 420) VLM observation: A man in a blue jacket and gray hat is standing near the office area with what appears to be a long object in his hand, while two other individuals are browsing the display cases. Weapon note: The man in the blue jacket appears to be holding a long object. Flags — gun: unclear; knife: unclear; aggression: unclear. Tracker detected: 2 persons.
+- (frame 480) VLM observation: A man in a blue jacket and grey cap appears to be interacting with the cashier, while two other individuals are browsing the store. Flags — reaching display case: yes. Tracker detected: 3 persons.
+- (frame 600) VLM observation: A person wearing an orange head covering is bending over a desk, while another person in a white garment and pink head covering interacts with a third individual near display cases. Flags — reaching behind counter: yes.
+- (frame 660) VLM observation: A man wearing a black attire and a white head covering appears to be reaching into a display case with the help of a store employee. Flags — reaching display case: yes; face concealed: yes.
+- (frame 720) VLM observation: A store employee appears to be threatened by a person holding what looks like a bow and arrow, while another customer stands in the background. Weapon note: The person is holding what appears to be a bow and arrow.. Flags — aggression: yes.
+- (frame 780) VLM observation: Two individuals in ski masks are in a jewelry store with a third person behind the counter. Flags — reaching behind counter: yes; face concealed: yes.
+- (frame 840) VLM observation: Two individuals are interacting near the counter of a jewelry store, with one possibly reaching into a display case. Flags — reaching display case: yes.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 780) VLM observation: Two masked individuals are in a jewelry store, one near the counter and the other walking around. Flags — reaching behind counter: yes; face concealed: yes.
-- (frame 840) VLM observation: A man in an orange beanie appears to be interacting with a store employee behind the counter, while another person in a red head covering is bent over near the office area. Flags — none.
-- (frame 900) VLM observation: A person in a dark hoodie appears to be reaching over the counter into the employee-only space, while another person stands nearby. Flags — reaching behind counter: yes; aggression: unclear.
+- (frame 780) VLM observation: Two individuals in ski masks are in a jewelry store with a third person behind the counter. Flags — reaching behind counter: yes; face concealed: yes.
+- (frame 840) VLM observation: Two individuals are interacting near the counter of a jewelry store, with one possibly reaching into a display case. Flags — reaching display case: yes.
+- (frame 900) VLM observation: A person with a dark hoodie appears to be reaching over the counter towards the cashier. Flags — reaching behind counter: yes; aggression: unclear.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Scene escalates with reaching behind counter",
+  "reason": "Scene escalates with reaching over counter",
   "key_moments": [
-    "individual reaches behind the counter",
-    "face concealment observed",
-    "aggression level becomes unclear"
+    "subject reaches over the counter towards the cashier",
+    "aggression flag is unclear, indicating potential developing concern",
+    "individuals interact near the counter with possible display case reach"
   ],
   "concern": "high"
 }
@@ -1781,11 +1546,11 @@ FINAL RESULT (code-scored):
 {
   "anomaly_score": 0.7,
   "label": "suspicious",
-  "reason": "Scene escalates with reaching behind counter",
+  "reason": "Scene escalates with reaching over counter",
   "key_moments": [
-    "individual reaches behind the counter",
-    "face concealment observed",
-    "aggression level becomes unclear"
+    "subject reaches over the counter towards the cashier",
+    "aggression flag is unclear, indicating potential developing concern",
+    "individuals interact near the counter with possible display case reach"
   ]
 }
 
@@ -1873,35 +1638,42 @@ Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
 Here is the scene, in chronological order:
 
 EARLIER observations (oldest → most recent):
-- (frame 840) VLM observation: A man in an orange beanie appears to be interacting with a store employee behind the counter, while another person in a red head covering is bent over near the office area. Flags — none.
-- (frame 900) VLM observation: A person in a dark hoodie appears to be reaching over the counter into the employee-only space, while another person stands nearby. Flags — reaching behind counter: yes; aggression: unclear.
+- (frame 300) VLM observation: Three individuals are in a jewelry store, with two near the display cases and one behind the counter, one person appears to be reaching into a display case. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 420) VLM observation: A man in a blue jacket and gray hat is standing near the office area with what appears to be a long object in his hand, while two other individuals are browsing the display cases. Weapon note: The man in the blue jacket appears to be holding a long object. Flags — gun: unclear; knife: unclear; aggression: unclear. Tracker detected: 2 persons.
+- (frame 480) VLM observation: A man in a blue jacket and grey cap appears to be interacting with the cashier, while two other individuals are browsing the store. Flags — reaching display case: yes. Tracker detected: 3 persons.
+- (frame 600) VLM observation: A person wearing an orange head covering is bending over a desk, while another person in a white garment and pink head covering interacts with a third individual near display cases. Flags — reaching behind counter: yes.
+- (frame 660) VLM observation: A man wearing a black attire and a white head covering appears to be reaching into a display case with the help of a store employee. Flags — reaching display case: yes; face concealed: yes.
+- (frame 720) VLM observation: A store employee appears to be threatened by a person holding what looks like a bow and arrow, while another customer stands in the background. Weapon note: The person is holding what appears to be a bow and arrow.. Flags — aggression: yes.
+- (frame 780) VLM observation: Two individuals in ski masks are in a jewelry store with a third person behind the counter. Flags — reaching behind counter: yes; face concealed: yes.
+- (frame 840) VLM observation: Two individuals are interacting near the counter of a jewelry store, with one possibly reaching into a display case. Flags — reaching display case: yes.
+- (frame 900) VLM observation: A person with a dark hoodie appears to be reaching over the counter towards the cashier. Flags — reaching behind counter: yes; aggression: unclear.
 
 NOW — current window (oldest → most recent; compare against EARLIER):
-- (frame 840) VLM observation: A man in an orange beanie appears to be interacting with a store employee behind the counter, while another person in a red head covering is bent over near the office area. Flags — none.
-- (frame 900) VLM observation: A person in a dark hoodie appears to be reaching over the counter into the employee-only space, while another person stands nearby. Flags — reaching behind counter: yes; aggression: unclear.
-- (frame 960) VLM observation: Two individuals in black clothing are near the counter, one appears to be reaching into a display case. Flags — reaching display case: yes; reaching behind counter: yes.
+- (frame 840) VLM observation: Two individuals are interacting near the counter of a jewelry store, with one possibly reaching into a display case. Flags — reaching display case: yes.
+- (frame 900) VLM observation: A person with a dark hoodie appears to be reaching over the counter towards the cashier. Flags — reaching behind counter: yes; aggression: unclear.
+- (frame 960) VLM observation: Two individuals wearing black clothing and one with a white cap are inside a jewelry store, with one person appearing to interact with display cases. Flags — reaching display case: yes.
 
 Respond with exactly one JSON object and nothing else.
 
 RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
 {
-  "reason": "Scene escalates with multiple individuals reaching into restricted areas",
+  "reason": "Scene escalates with reaching behind counter",
   "key_moments": [
-    "person in dark hoodie reaches behind counter",
-    "another individual reaches into a display case",
-    "multiple people near the counter, increasing activity"
+    "subject reaches over the counter towards the cashier",
+    "aggression flag becomes unclear after previous confirmation",
+    "individuals interact near the counter with display case access"
   ],
   "concern": "high"
 }
 
 FINAL RESULT (code-scored):
 {
-  "anomaly_score": 0.7,
+  "anomaly_score": 0.42,
   "label": "suspicious",
-  "reason": "Scene escalates with multiple individuals reaching into restricted areas",
+  "reason": "Scene escalates with reaching behind counter",
   "key_moments": [
-    "person in dark hoodie reaches behind counter",
-    "another individual reaches into a display case",
-    "multiple people near the counter, increasing activity"
+    "subject reaches over the counter towards the cashier",
+    "aggression flag becomes unclear after previous confirmation",
+    "individuals interact near the counter with display case access"
   ]
 }

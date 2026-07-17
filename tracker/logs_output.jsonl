@@ -490,13 +490,3 @@
 {"type": "tracker_frame", "frame_index": 2440, "video_time_ms": 81333, "frame_size": {"w": 640, "h": 360}, "tracks": [], "motion_detected": false}
 {"type": "tracker_frame", "frame_index": 2445, "video_time_ms": 81500, "frame_size": {"w": 640, "h": 360}, "tracks": [], "motion_detected": false}
 {"type": "tracker_frame", "frame_index": 2450, "video_time_ms": 81666, "frame_size": {"w": 640, "h": 360}, "tracks": [], "motion_detected": false}
-{"type": "tracker_frame", "frame_index": 2455, "video_time_ms": 81833, "frame_size": {"w": 640, "h": 360}, "tracks": [], "motion_detected": false}
-{"type": "tracker_frame", "frame_index": 2460, "video_time_ms": 82000, "frame_size": {"w": 640, "h": 360}, "tracks": [], "motion_detected": false}
-{"type": "tracker_frame", "frame_index": 2465, "video_time_ms": 82166, "frame_size": {"w": 640, "h": 360}, "tracks": [], "motion_detected": false}
-{"type": "tracker_frame", "frame_index": 2470, "video_time_ms": 82333, "frame_size": {"w": 640, "h": 360}, "tracks": [], "motion_detected": false}
-{"type": "tracker_frame", "frame_index": 2475, "video_time_ms": 82500, "frame_size": {"w": 640, "h": 360}, "tracks": [], "motion_detected": false}
-{"type": "tracker_frame", "frame_index": 2480, "video_time_ms": 82666, "frame_size": {"w": 640, "h": 360}, "tracks": [], "motion_detected": false}
-{"type": "tracker_frame", "frame_index": 2485, "video_time_ms": 82833, "frame_size": {"w": 640, "h": 360}, "tracks": [], "motion_detected": false}
-{"type": "tracker_frame", "frame_index": 2490, "video_time_ms": 83000, "frame_size": {"w": 640, "h": 360}, "tracks": [], "motion_detected": false}
-{"type": "tracker_frame", "frame_index": 2495, "video_time_ms": 83166, "frame_size": {"w": 640, "h": 360}, "tracks": [], "motion_detected": false}
-{"type": "tracker_frame", "frame_index": 2500, "video_time_ms": 83333, "frame_size": {"w": 640, "h": 360}, "tracks": [], "motion_detected": false}
