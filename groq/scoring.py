@@ -19,15 +19,16 @@ observations (raw 3-state yes/no/unclear values, oldest -> newest) into an
     evidence sum above, so a single stale/decayed signal can never manufacture a fake
     multi-frame streak (see score_from_cues for why this separation matters).
 
-Pure functions only — no I/O, no ZMQ, no LLM calls — so this is directly unit-testable and
-importable by eval/run_eval.py without pulling in the live worker's dependencies.
+Pure functions only — no I/O, no ZMQ, no LLM calls — so this is directly unit-testable in
+isolation, without pulling in the live worker's dependencies.
 """
 
 from typing import Dict, List, Tuple
 
 # ------------------------------------------------------------------
-# Evidence tiers & weights (starting values — tune against CRIMENO-Backend/mocks
-# via eval/run_eval.py rather than guessing further).
+# Evidence tiers & weights (starting values — tune against CRIMENO-Backend/mocks'
+# hand-labeled ground truth rather than guessing further; see eval/score_logs.py to compare
+# real pipeline output against that ground truth).
 # ------------------------------------------------------------------
 
 # Cues that alone confirm a weapon and can justify "criminal" on a single frame.

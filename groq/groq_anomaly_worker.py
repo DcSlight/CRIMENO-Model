@@ -198,8 +198,8 @@ def call_groq_for_anomaly(client: Groq, model_name: str, prompt: str) -> Dict[st
 # ============================================================
 # The anomaly_score/label are no longer decided by Groq — see groq/scoring.py.
 # apply_scoring / score_from_cues are imported at the top of this file and re-exported
-# here (via that import) for callers that still do `from groq_anomaly_worker import
-# apply_scoring` (e.g. eval/run_eval.py's older call sites).
+# here (via that import) for any external caller that does
+# `from groq_anomaly_worker import apply_scoring`.
 
 
 # ============================================================
@@ -435,12 +435,12 @@ async def main_async():
             # produced from different (though overlapping) evidence views, so they CAN
             # legitimately disagree — but a "high"/"normal" or "low"/"criminal" pairing is
             # worth a look, since it either means the narrative is overreacting or the
-            # scoring weights need retuning against eval/run_eval.py.
+            # scoring weights need retuning against CRIMENO-Backend/mocks' ground truth.
             groq_concern = str(groq_result.get("concern", "")).strip().lower()
             if (groq_concern == "high" and label == "normal") or (groq_concern == "low" and label == "criminal"):
                 print(f"[WARN] Concern/label mismatch at frame {frame_idx}: "
                       f"concern={groq_concern!r} but label={label!r} (score={score:.2f}) — "
-                      f"worth a look via eval/run_eval.py.")
+                      f"worth a look via eval/score_logs.py.")
 
             with open(CONTEXT_LOG_FILE, "a", encoding="utf-8") as f:
                 f.write(f"\n{'='*54}\n")

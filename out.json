@@ -1,0 +1,26 @@
+{
+  "confusion_matrix": {
+    "normal": {
+      "normal": 7,
+      "suspicious": 3,
+      "criminal": 0
+    },
+    "suspicious": {
+      "normal": 0,
+      "suspicious": 6,
+      "criminal": 0
+    },
+    "criminal": {
+      "normal": 0,
+      "suspicious": 0,
+      "criminal": 0
+    }
+  },
+  "accuracy": 0.8125,
+  "under_call_count": 0,
+  "under_calls": [],
+  "over_call_count": 3,
+  "score_mae": 0.170625,
+  "avg_similarity": 0.29570219365799755,
+  "parse_failure_count": 1
+}
