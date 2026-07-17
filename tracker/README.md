@@ -1,8 +1,8 @@
 # tracker/ — YOLO Detection & Tracking Worker
 
-This folder contains the real-time multi-model detection and tracking layer.
-It runs three YOLO models per frame to detect people, objects, weapons, and
-appearance cues, then streams bounding-box payloads to both React (via WebSocket)
+This folder contains the real-time detection and tracking layer.
+It runs a single YOLO model per frame to detect people and robbery-relevant
+objects, then streams bounding-box payloads to both React (via WebSocket)
 and the Groq anomaly worker (via ZMQ PUSH).
 
 ## Files
@@ -10,33 +10,25 @@ and the Groq anomaly worker (via ZMQ PUSH).
 | File | Purpose |
 |---|---|
 | `tracker_worker.py` | Main worker: ZMQ subscriber, IOU tracker, reset handshake, WS + Groq dispatch |
-| `detection.py` | Detection utilities: `Track`, `MotionDetector`, `run_yolo`, IOU helpers, frame encode/decode, debug visualisation |
-| `config.py` | All detection constants — class thresholds, object allowlist, open-vocab prompts. **Edit here to tune without touching code.** |
+| `detection.py` | Detection utilities: `Track`, `run_yolo`, IOU helpers, frame encode/decode, debug visualisation |
+| `config.py` | Detection constants — object allowlist. **Edit here to tune without touching code.** |
 | `yolo26s.pt` | General object detection (COCO, 26s) |
-| `yoloe-26s-seg.pt` | Open-vocabulary appearance + weapon detection (YOLOE-26) |
 | `yolov8s.pt` | Legacy weights (kept for reference) |
-| `Suspicious_Activities_nano.pt` | Custom classifier: Fighting, Man_With_Gun, Man_with_Knife, Theaf_Robbery |
 | `logs_output.jsonl` | Auto-generated log of every tracker payload sent to NestJS (one JSON object per line; `overlay_jpg_b64` omitted) |
 
 ## How it works
 
-Each frame goes through three models in sequence:
+1. **YOLO26** — general object detection. Only robbery-relevant classes are kept (defined in `config.py → ROBBERY_OBJECT_CLASSES`), plus `person` which is always kept.
+2. A simple **IOU tracker** assigns stable `track_id`s across frames.
 
-1. **YOLO26** — general object detection. Only robbery-relevant classes are kept (defined in `config.py → ROBBERY_OBJECT_CLASSES`).
-2. **Suspicious nano model** — custom Fighting/robbery classifier. Per-class confidence floors in `config.py → SUSPICIOUS_CLASS_THRESHOLDS`. Weapon classes are additionally gated to detections that overlap a person bbox.
-3. **YOLOE-26 open-vocab** — runs the prompts in `config.py → YOLOE_PROMPTS` to detect appearance tags (hood, mask…) and weapons (gun, knife…). Weapon hits go through the same person-gate + temporal confirmation as the nano model. Appearance hits are attached to the nearest person track after `--appearance_confirm` frames.
-
-A simple **IOU tracker** assigns stable `track_id`s across frames. Motion fallback (MOG2 background subtraction) fires when YOLO finds nothing.
+Weapon detection for the system as a whole is handled independently by a
+separate VLM worker — it is not part of this tracker.
 
 ## Tuning — edit `config.py` only
 
 | What to change | Where in `config.py` |
 |---|---|
 | Robbery-relevant COCO classes to keep | `ROBBERY_OBJECT_CLASSES` |
-| Confidence floor per suspicious class | `SUSPICIOUS_CLASS_THRESHOLDS` |
-| Appearance prompts (what YOLOE looks for) | `APPEARANCE_PROMPTS` |
-| Weapon prompts (open-vocab) | `WEAPON_PROMPTS` |
-| Classes that require person-overlap gating | `WEAPON_SUSPICIOUS_CLASSES` |
 
 No changes to `detection.py` or `tracker_worker.py` needed.
 

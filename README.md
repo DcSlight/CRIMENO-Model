@@ -80,32 +80,16 @@ python vlm/vlm_worker.py \
 ## Eval harness
 
 ```bash
-py eval/run_eval.py            # fast, free, no API calls
-py eval/run_eval.py --live     # calls real Groq API, small cost
+py eval/score_logs.py                   # compare real logs against the mock ground truth
+py eval/score_logs.py --json out.json   # also write the summary metrics to JSON
 ```
 
-Anomaly score/label are no longer decided by Groq — they're computed deterministically from
-the VLM's cue history by `groq/scoring.py` (`score_from_cues()`). Groq's only remaining job is
-the `reason`/`key_moments` narrative. That split changes what each eval mode actually tests:
-
-**`py eval/run_eval.py`** (no `--live`)
-- Doesn't call any AI model at all.
-- Replays each store's `vlm_mock.jsonl` cue sequence through the real `score_from_cues()` (the
-  same code the live worker uses) and compares the resulting label/score against
-  `groq_mock.jsonl`'s ground truth.
-- It's checking: "does the deterministic scoring logic (weights/persistence/criminal-gate)
-  reach the right verdict?" — a real accuracy test, and it's free because scoring is code, not
-  an LLM call.
-- Free, instant, no API key needed.
-
-**`py eval/run_eval.py --live`**
-- Does everything the fast mode does, PLUS calls the real Groq model at each step to fetch its
-  narrative `reason`, printed next to the mock's ground-truth reason.
-- It's checking: "does Groq's prose actually read like an analyst narrating a trajectory, or
-  like a robot echoing a cue?" — a manual spot-check, not a pass/fail number.
-- Costs a small number of real API calls, needs `GROQ_API_KEY`.
-
-Short version: **fast mode tests the score, live mode spot-checks the narrative.**
+Pure stdlib, no Groq/API calls. Compares a real pipeline output log (default:
+`groq/logs_output.jsonl`) against a hand-authored mock (default: the jewelry-store mock in
+`CRIMENO-Backend/mocks/`), aligning entries by frame range. Reports a normal/suspicious/criminal
+confusion matrix, accuracy, under-calls (real less severe than mock — missed events, the
+dangerous direction) vs. over-calls (false alarms), score error, and a text-similarity score
+between the mock's and the real `reason` narrative.
 
 ---
 
