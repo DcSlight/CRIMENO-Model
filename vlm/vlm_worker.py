@@ -82,7 +82,17 @@ async def main_async():
                              "and strong at structured/OCR-style output, which matches this "
                              "worker's schema-constrained JSON use case. gemma3:12b is the "
                              "fallback if needed. Do NOT use qwen2-vl (no '.5') — different, "
-                             "buggier model.")
+                             "buggier model. NOTE: on Pascal-class GPUs (e.g. Tesla/GRID P40, "
+                             "compute capability 6.1) qwen2.5vl also crashed with "
+                             "`exit 0xc0000005` — that was NOT the model's fault, it was "
+                             "Ollama's CUDA backend segfaulting on Pascal in the new engine. "
+                             "Fix: set env var CUDA_VISIBLE_DEVICES=-1 (persist with "
+                             "`setx CUDA_VISIBLE_DEVICES -1`, then fully restart the Ollama "
+                             "service). This hides the device from the CUDA backend only — "
+                             "Ollama then falls back to its Vulkan backend, which supports "
+                             "Pascal correctly and still runs on GPU (confirmed: 29/29 layers "
+                             "offloaded, flash attention enabled, no crash). Do not mistake "
+                             "this for a CPU fallback.")
     parser.add_argument("--ollama-host", "--ollama_host", dest="ollama_host", default="",
                         help="Ollama server URL (or set OLLAMA_HOST env var). "
                              "Defaults to http://localhost:11434.")

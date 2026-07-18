@@ -10,6 +10,13 @@ One-time setup (VLM now runs locally via Ollama, not a cloud API):
 
 Before each run: check Ollama's tray icon is running (it should auto-start). No API key needed for VLM anymore.
 
+----Fix Ollama----
+(if VLM warm-up fails with "exit status 0xc0000005")
+1. Get-Process ollama* | Stop-Process -Force
+2. $env:CUDA_VISIBLE_DEVICES = "-1"
+3. ollama serve
+   (leave this terminal open, then continue with Steps 1-4 below in their own terminals)
+
 Step 1 - Broadcaster:
   python video_broadcaster.py videos/shop.mp4
 
