@@ -63,9 +63,10 @@ async def main_async():
                         help="ZeroMQ PUSH endpoint of the Groq anomaly worker.")
     parser.add_argument("--ws-url", "--ws_url", dest="ws_url", default="none",
                         help="WebSocket URL for forwarding VLM records (or 'none').")
-    parser.add_argument("--vlm_model", default="meta-llama/llama-4-scout-17b-16e-instruct",
-                        help="Groq vision model id (e.g. meta-llama/llama-4-scout-17b-16e-instruct, "
-                             "qwen/qwen3.6-27b).")
+    parser.add_argument("--vlm_model", default="qwen/qwen3.6-27b",
+                        help="Groq vision model id (e.g. qwen/qwen3.6-27b). "
+                             "meta-llama/llama-4-scout-17b-16e-instruct was deprecated by Groq "
+                             "on the free/developer tier — do not default back to it.")
     parser.add_argument("--groq-api-key", "--groq_api_key", dest="groq_api_key", default="",
                         help="Groq API key (or set GROQ_API_KEY env var).")
     parser.add_argument("--process_every_n_frames", "--every", dest="process_every_n_frames",

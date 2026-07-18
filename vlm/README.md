@@ -1,7 +1,7 @@
 # vlm/ — Vision-Language Model Worker
 
 This folder contains the VLM scene-analysis layer.
-It calls **Groq's vision API** (default `meta-llama/llama-4-scout-17b-16e-instruct`) to produce structured
+It calls **Groq's vision API** (default `qwen/qwen3.6-27b`) to produce structured
 scene analysis for each video frame, which the Groq anomaly worker uses as its
 primary decision anchor. Requires a `GROQ_API_KEY` (see `.env.example`) — the same
 key used by `groq/groq_anomaly_worker.py`, so both share one quota.
@@ -44,7 +44,7 @@ key used by `groq/groq_anomaly_worker.py`, so both share one quota.
     "aggression": "no"
   },
   "summary": "Scene: A person stands at the store counter. People: ...",
-  "meta": { "generated_at_unix_ms": 1730000000000, "model": "meta-llama/llama-4-scout-17b-16e-instruct" }
+  "meta": { "generated_at_unix_ms": 1730000000000, "model": "qwen/qwen3.6-27b" }
 }
 ```
 
@@ -72,10 +72,11 @@ The fallback dict, binary-key detection, sanitizer, and summary builder all upda
 
 | Model | Notes |
 |---|---|
-| `meta-llama/llama-4-scout-17b-16e-instruct` *(default)* | Groq's primary vision model, JSON mode, ≤5 images/request |
-| `qwen/qwen3.6-27b` | newer 27B multimodal alternate |
+| `qwen/qwen3.6-27b` *(default)* | Groq's current vision model, JSON mode, ≤20MB/image, ≤5 images/request |
+| `meta-llama/llama-4-scout-17b-16e-instruct` | deprecated by Groq on free/dev tier (Jul 2026) — do not use |
 
 > Llama 4 Maverick was deprecated on Groq (Feb 2026) and is now text-only — not usable here.
+> Llama 4 Scout followed the same path (deprecated Jul 2026) — this worker now defaults to `qwen/qwen3.6-27b` instead.
 
 ## Launch command
 

@@ -69,8 +69,8 @@ python vlm/vlm_worker.py \
 
 | Flag | Model | Notes |
 |---|---|---|
-| *(default)* | `meta-llama/llama-4-scout-17b-16e-instruct` | Groq's primary vision model |
-| `--vlm_model qwen/qwen3.6-27b` | newer 27B multimodal alternate |
+| *(default)* | `qwen/qwen3.6-27b` | Groq's current vision model (free/dev tier) |
+| `--vlm_model meta-llama/llama-4-scout-17b-16e-instruct` | deprecated by Groq on free/dev tier — do not use |
 
 > **`--ws-url none`** — use this unless the NestJS backend exposes a `/ws/vlm` route
 > (it does **not** by default). A missing route causes a hang on retry.
@@ -210,7 +210,7 @@ The nearest tracker frame is automatically attached as enrichment context.
 
 #### `vlm/vlm_worker.py`
 - Processes one full frame every N frames (default: 60).
-- Calls **Groq vision** (default `meta-llama/llama-4-scout-17b-16e-instruct`) via API — uses the same `GROQ_API_KEY` as the anomaly worker.
+- Calls **Groq vision** (default `qwen/qwen3.6-27b`) via API — uses the same `GROQ_API_KEY` as the anomaly worker.
 - Returns a single structured JSON per frame:
   - Scene description, people actions, appearance, weapon description.
   - Binary cues (yes/no/unclear): `gun`, `knife`, `reaching_display_case`, `reaching_behind_counter`, `hands_up`, `face_concealed`, `aggression`.
