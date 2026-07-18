@@ -131,6 +131,10 @@ def analyze_frame(client: "Groq", model_id: str, jpg_bytes: bytes,
             temperature=0.0,
             max_tokens=max_new_tokens,
             response_format={"type": "json_object"},
+            # Qwen3.6-27B is a reasoning model — without this it burns max_tokens on
+            # internal <think> tokens before ever writing the JSON, so JSON mode gets
+            # an empty completion and Groq rejects it (json_validate_failed).
+            reasoning_effort="none",
         )
         raw_text = (resp.choices[0].message.content or "").strip()
     except Exception as e:
