@@ -6,3 +6,15 @@ PS C:\Users\idan.noyshul\Documents\GitHub\CRIMENO-Model\vlm> python vlm_worker.p
 error loading model: unknown model architecture: 'mllama' (status code: 500)
 [VLM] ⚠️ Ollama call failed (attempt 2/3): llama-server process has terminated: exit status 1: error loading model: unknown model architecture: 'mllama'
 error loading model: unknown model architecture: 'mllama' (status code: 500)
+[VLM] ⚠️ Ollama call failed (attempt 3/3): llama-server process has terminated: exit status 1: error loading model: unknown model architecture: 'mllama'
+error loading model: unknown model architecture: 'mllama' (status code: 500)
+[VLM] ⚠️ Ollama call failed after 3 attempts: llama-server process has terminated: exit status 1: error loading model: unknown model architecture: 'mllama'
+error loading model: unknown model architecture: 'mllama' (status code: 500)
+[VLM] Warm-up result: Description: Scene analysis unavailable.. People Actions: -. Appearance: -. Weapon: none. Gun: no. Knife: no. Reaching Display Case: no. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no.
+[VLM] ✓ Model ready
+🔗 [VLM] Connected to broadcaster on tcp://127.0.0.1:5560
+🔗 [VLM] Connected to anomaly worker via ZMQ PUSH on tcp://127.0.0.1:5581
+[WS] Connected: ws://127.0.0.1:3000/ws/vlm
+[VLM] Reset received — draining stale frames
+[VLM] ⚠️ Ollama call failed (attempt 1/3): llama-server process has terminated: exit status 1: error loading model: unknown model architecture: 'mllama'
+error loading model: unknown model architecture: 'mllama' (status code: 500)
