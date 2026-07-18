@@ -1,38 +1,9 @@
-PS C:\Users\idan.noyshul\Documents\GitHub\CRIMENO-Model> nvidia-smi
-Sat Jul 18 16:26:17 2026
-+---------------------------------------------------------------------------------------+
-| NVIDIA-SMI 538.46                 Driver Version: 538.46       CUDA Version: 12.2     |
-|-----------------------------------------+----------------------+----------------------+
-| GPU  Name                     TCC/WDDM  | Bus-Id        Disp.A | Volatile Uncorr. ECC |
-| Fan  Temp   Perf          Pwr:Usage/Cap |         Memory-Usage | GPU-Util  Compute M. |
-|                                         |                      |               MIG M. |
-|=========================================+======================+======================|
-|   0  GRID P40-24Q                 WDDM  | 00000000:02:00.0  On |                  N/A |
-| N/A    0C    P8              N/A /  N/A |   1718MiB / 24576MiB |      0%      Default |
-|                                         |                      |                  N/A |
-+-----------------------------------------+----------------------+----------------------+
-
-+---------------------------------------------------------------------------------------+
-| Processes:                                                                            |
-|  GPU   GI   CI        PID   Type   Process name                            GPU Memory |
-|        ID   ID                                                             Usage      |
-|=======================================================================================|
-|    0   N/A  N/A      2108    C+G   ...on\150.0.4078.65\msedgewebview2.exe    N/A      |
-|    0   N/A  N/A      5412    C+G   ...siveControlPanel\SystemSettings.exe    N/A      |
-|    0   N/A  N/A      5524    C+G   ...Desktop\app-3.6.2\GitHubDesktop.exe    N/A      |
-|    0   N/A  N/A      6252    C+G   C:\Windows\System32\ShellHost.exe         N/A      |
-|    0   N/A  N/A      8124    C+G   C:\Windows\explorer.exe                   N/A      |
-|    0   N/A  N/A      8480    C+G   ...cw5n1h2txyewy\CrossDeviceResume.exe    N/A      |
-|    0   N/A  N/A     10128    C+G   ...ekyb3d8bbwe\PhoneExperienceHost.exe    N/A      |
-|    0   N/A  N/A     10764    C+G   ...2txyewy\StartMenuExperienceHost.exe    N/A      |
-|    0   N/A  N/A     10800    C+G   ...nt.CBS_cw5n1h2txyewy\SearchHost.exe    N/A      |
-|    0   N/A  N/A     11748    C+G   ...on\150.0.4078.48\msedgewebview2.exe    N/A      |
-|    0   N/A  N/A     12592    C+G   ...t.LockApp_cw5n1h2txyewy\LockApp.exe    N/A      |
-|    0   N/A  N/A     12704    C+G   ...5n1h2txyewy\ShellExperienceHost.exe    N/A      |
-|    0   N/A  N/A     14208    C+G   ..._x64__8wekyb3d8bbwe\M365Copilot.exe    N/A      |
-|    0   N/A  N/A     16536    C+G   ...crosoft\Edge\Application\msedge.exe    N/A      |
-|    0   N/A  N/A     17016    C+G   ...s\System32\ApplicationFrameHost.exe    N/A      |
-|    0   N/A  N/A     17116    C+G   ...__8wekyb3d8bbwe\WindowsTerminal.exe    N/A      |
-+---------------------------------------------------------------------------------------+
-
-
+PS C:\Users\idan.noyshul\Documents\GitHub\CRIMENO-Model\vlm> python vlm_worker.py --every 60 --ws-url ws://127.0.0.1:3000/ws/vlm --anomaly-endpoint tcp://127.0.0.1:5581
+[VLM] Schema loaded — 11 fields, binary: ['aggression', 'face_concealed', 'gun', 'hands_up', 'knife', 'reaching_behind_counter', 'reaching_display_case']
+✅ [VLM] Ollama client ready — model=minicpm-v4.5 @ http://localhost:11434
+🔗 [VLM] Connected to broadcaster on tcp://127.0.0.1:5560
+🔗 [VLM] Connected to anomaly worker via ZMQ PUSH on tcp://127.0.0.1:5581
+[WS] Connected: ws://127.0.0.1:3000/ws/vlm
+[VLM] Reset received — draining stale frames
+[VLM] ⚠️ Ollama call failed (attempt 1/3): llama-server process has terminated: exit status 0xc0000005: The instruction at 0xp referenced memory at 0xp. The memory could not be s. (status code: 500)
+Traceback (most recent call last):
