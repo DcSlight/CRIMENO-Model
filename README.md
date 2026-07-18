@@ -6,21 +6,30 @@
 
 ## How to Run
 
-### Prerequisites (one-time setup)
+### Prerequisites (one-time setup — never repeat these)
 
-```bash
-pip install -r requirements.txt
-```
+1. Install Python deps:
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. Create a `.env` file in the project root (use `.env.example` as a template):
+   ```
+   GROQ_API_KEY=gsk_YOUR_KEY_HERE
+   ```
+   Only `GROQ_API_KEY` is needed (used by the anomaly worker, Step 2).
+3. Install [Ollama](https://ollama.com/download) — it sets itself up to auto-start in the
+   background (system tray) whenever Windows boots, so you won't need to launch it manually later.
+4. Pull the local vision model (~7.8 GB, downloaded once):
+   ```bash
+   ollama pull llama3.2-vision:11b
+   ```
 
-Create a `.env` file in the project root (use `.env.example` as a template):
+### Before each run
 
-```
-GROQ_API_KEY=gsk_YOUR_KEY_HERE
-```
-
-> `GROQ_API_KEY` is used by the anomaly worker (Step 2). The VLM worker (Step 4) needs no API
-> key — it runs vision analysis locally via [Ollama](https://ollama.com/download) on your GPU.
-> One-time setup: install Ollama, then `ollama pull minicpm-v4.5` (~6.1 GB).
+- Confirm Ollama is running — look for its icon in the system tray. It normally auto-starts with
+  Windows, so this is usually already true. If it's missing, just open the Ollama app once.
+- That's it — no API key, no other setup. The VLM worker (Step 4) talks to Ollama on
+  `http://localhost:11434`.
 
 ### Launch order
 
@@ -71,15 +80,22 @@ python vlm/vlm_worker.py \
 
 | Flag | Model | Notes |
 |---|---|---|
-| *(default)* | `minicpm-v4.5` | 8B, "GPT-4o-level" vision, ~6.1 GB — `ollama pull minicpm-v4.5` |
-| `--vlm_model minicpm-v4.6` | lighter/faster decoder — try this if per-frame latency is too high |
+| *(default)* | `llama3.2-vision:11b` | Meta's vision model, ~7.8 GB — `ollama pull llama3.2-vision:11b` |
+| `--vlm_model llava` | older, lighter alternative if 11b is too slow on your GPU |
 
 > Vision analysis moved off every hosted free tier after each one failed in practice: Groq
 > deprecated `meta-llama/llama-4-scout-17b-16e-instruct` on the free/dev tier (Jun 2026);
 > Groq's remaining free vision model, `qwen/qwen3.6-27b`, is a slow preview reasoning model
 > that returned empty completions here; and Gemini's free tier caps out at **5 requests/minute**
 > per key — far below what `--every 60` demands. The VLM worker now runs the vision model
-> locally via Ollama instead, with no quota at all. The Groq anomaly worker (Step 2) is
+> locally via Ollama instead, with no quota at all.
+>
+> `minicpm-v4.5`/`minicpm-v4.6` were tried and dropped too — they crash official Ollama's
+> `llama-server` backend (`exit status 0xc0000005`/`0xc0000409`) because that model family
+> isn't actually supported by mainline Ollama; it needs an unofficial fork
+> ([tc-mb/ollama](https://github.com/tc-mb/ollama)) to run. `llama3.2-vision:11b` is natively
+> supported and is the model Ollama's own docs use to demonstrate structured JSON output with
+> images, which is exactly what this worker relies on. The Groq anomaly worker (Step 2) is
 > unaffected and still runs on `llama-3.3-70b-versatile`.
 
 > **`--ws-url none`** — use this unless the NestJS backend exposes a `/ws/vlm` route
@@ -220,7 +236,7 @@ The nearest tracker frame is automatically attached as enrichment context.
 
 #### `vlm/vlm_worker.py`
 - Processes one full frame every N frames (default: 60).
-- Calls a **local Ollama vision model** (default `minicpm-v4.5`) on your GPU — no API key, no quota.
+- Calls a **local Ollama vision model** (default `llama3.2-vision:11b`) on your GPU — no API key, no quota.
 - Returns a single structured JSON per frame:
   - Scene description, people actions, appearance, weapon description.
   - Binary cues (yes/no/unclear): `gun`, `knife`, `reaching_display_case`, `reaching_behind_counter`, `hands_up`, `face_concealed`, `aggression`.

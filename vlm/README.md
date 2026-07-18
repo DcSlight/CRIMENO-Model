@@ -2,25 +2,31 @@
 
 This folder contains the VLM scene-analysis layer.
 It calls a **local vision model via [Ollama](https://ollama.com/download)** (default
-`minicpm-v4.5`) to produce structured scene analysis for each video frame, which the
+`llama3.2-vision:11b`) to produce structured scene analysis for each video frame, which the
 Groq anomaly worker uses as its primary decision anchor. Runs entirely on your GPU —
 no API key, no quota, no per-request cost.
 
-**One-time setup:** install Ollama, then `ollama pull minicpm-v4.5` (~6.1 GB). The Ollama
-server runs in the background on `http://localhost:11434` and must be running before you
-start `vlm_worker.py`.
+**One-time setup:** install Ollama, then `ollama pull llama3.2-vision:11b` (~7.8 GB). The
+Ollama server runs in the background on `http://localhost:11434` and must be running before
+you start `vlm_worker.py`.
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `vlm_worker.py` | Main worker: ZMQ subscriber, frame throttling, result dispatch to Groq + NestJS |
+| `vlm_worker.py` | Main worker: ZMQ subscriber, model warm-up, frame throttling, result dispatch to Groq + NestJS |
 | `vlm_model.py` | Ollama client, inference call (with retry/backoff), JSON parsing, output sanitization, summary building |
 | `prompt.txt` | Instruction sent to the vision model — edit here to change what the model analyses |
 | `logs_output.jsonl` | Auto-generated log of every VLM record sent to NestJS (one JSON object per line) |
 
 ## How it works
 
+0. **Warms up** the model with one dummy frame right after startup — loads it into VRAM and
+   surfaces any load/compatibility crash immediately, before the rest of the pipeline
+   (broadcaster/tracker/anomaly worker) is running. Mirrors `tracker/tracker_worker.py`'s
+   YOLO warm-up. Watch for the `[VLM] Warm-up result: ...` line: a real scene description
+   means the model is working; "Scene analysis unavailable" means something's wrong (wrong
+   model tag, Ollama not running, or the model doesn't support this Ollama build — see below).
 1. **Subscribes** to the broadcaster PUB socket (`tcp://127.0.0.1:5560`) for `frame` and `reset` topics.
 2. **Throttles** — processes one frame every `--every` frames (default 60) to bound inference rate.
 3. **Runs inference** via a single structured-JSON Ollama chat call (prompt from `prompt.txt`), sending the JPEG bytes directly and passing the schema (derived from `prompt.txt`) as a `format` constraint so the model is forced to emit valid JSON with every key; retries up to 3 times with backoff on transient errors or empty completions before falling back.
@@ -48,7 +54,7 @@ start `vlm_worker.py`.
     "aggression": "no"
   },
   "summary": "Scene: A person stands at the store counter. People: ...",
-  "meta": { "generated_at_unix_ms": 1730000000000, "model": "minicpm-v4.5" }
+  "meta": { "generated_at_unix_ms": 1730000000000, "model": "llama3.2-vision:11b" }
 }
 ```
 
@@ -77,8 +83,8 @@ The fallback dict, binary-key detection, sanitizer, and summary builder all upda
 
 | Model | Notes |
 |---|---|
-| `minicpm-v4.5` *(default)* | 8B, "GPT-4o-level" vision, ~6.1 GB — good quality/speed balance |
-| `minicpm-v4.6` | lighter/faster decoder — try this if per-frame latency is too high |
+| `llama3.2-vision:11b` *(default)* | Meta's vision model, ~7.8 GB — natively supported by Ollama |
+| `llava` | older, lighter alternative if 11b is too slow on your GPU |
 
 > Vision analysis moved off every hosted free tier after each failed in practice: Groq
 > deprecated `meta-llama/llama-4-scout-17b-16e-instruct` on the free/dev tier (Jun 2026),
@@ -87,6 +93,14 @@ The fallback dict, binary-key detection, sanitizer, and summary builder all upda
 > internal `<think>` tokens before writing any JSON; and Gemini's free tier caps out at
 > **5 requests/minute** per key, far below what `--every 60` demands. Running locally via
 > Ollama removes the quota problem entirely — throughput is now bounded only by your GPU.
+>
+> **Avoid `minicpm-v4.5`/`minicpm-v4.6`** — they crash official Ollama's `llama-server`
+> backend on load/inference (`exit status 0xc0000005` / `0xc0000409`, an access violation).
+> That model family isn't actually supported by mainline Ollama; running it requires an
+> unofficial fork ([tc-mb/ollama](https://github.com/tc-mb/ollama)) that isn't merged
+> upstream. `llama3.2-vision:11b` is natively supported and is the exact model Ollama's own
+> docs use to demonstrate structured JSON output with images — the same `format=` mechanism
+> this worker relies on (see `_RESPONSE_SCHEMA` in `vlm_model.py`).
 
 ## Launch command
 

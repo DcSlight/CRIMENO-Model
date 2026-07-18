@@ -1,10 +1,13 @@
 import argparse
 import asyncio
+import io
 import json
 import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+from PIL import Image
 
 _HERE = Path(__file__).resolve().parent
 _PROJECT_ROOT = _HERE.parent
@@ -63,13 +66,17 @@ async def main_async():
                         help="ZeroMQ PUSH endpoint of the Groq anomaly worker.")
     parser.add_argument("--ws-url", "--ws_url", dest="ws_url", default="none",
                         help="WebSocket URL for forwarding VLM records (or 'none').")
-    parser.add_argument("--vlm_model", default="minicpm-v4.5",
-                        help="Ollama vision model tag (e.g. minicpm-v4.5, minicpm-v4.6). Runs "
-                             "locally via Ollama — pull it first with `ollama pull <tag>`. "
-                             "Hosted vision was dropped after every free tier failed in practice: "
-                             "Groq deprecated Llama 4 Scout (Jun 2026), Groq's remaining free "
-                             "option (qwen/qwen3.6-27b) is a flaky preview reasoning model, and "
-                             "Gemini's free tier caps out at 5 requests/minute.")
+    parser.add_argument("--vlm_model", default="llama3.2-vision:11b",
+                        help="Ollama vision model tag. Runs locally via Ollama — pull it first "
+                             "with `ollama pull <tag>`. Hosted vision was dropped after every "
+                             "free tier failed in practice: Groq deprecated Llama 4 Scout "
+                             "(Jun 2026), Groq's remaining free option (qwen/qwen3.6-27b) is a "
+                             "flaky preview reasoning model, and Gemini's free tier caps out at "
+                             "5 requests/minute. minicpm-v4.5/4.6 were tried but crash official "
+                             "Ollama (exit 0xc0000005/0xc0000409) — that model family needs an "
+                             "unofficial fork (github.com/tc-mb/ollama) to run at all, so this "
+                             "worker defaults to llama3.2-vision:11b instead, which is natively "
+                             "supported.")
     parser.add_argument("--ollama-host", "--ollama_host", dest="ollama_host", default="",
                         help="Ollama server URL (or set OLLAMA_HOST env var). "
                              "Defaults to http://localhost:11434.")
@@ -80,6 +87,18 @@ async def main_async():
     args = parser.parse_args()
 
     client = load_vlm(args.vlm_model, args.ollama_host)
+
+    # Loads the model into VRAM and surfaces load/architecture-compatibility errors here,
+    # before the rest of the pipeline (broadcaster/tracker/anomaly worker) is up and running —
+    # mirrors tracker_worker.py's model warm-up.
+    print("[VLM] Warming up model...")
+    _warmup_jpg = io.BytesIO()
+    Image.new("RGB", (64, 64)).save(_warmup_jpg, format="JPEG")
+    _warmup_qa = await asyncio.to_thread(
+        analyze_frame, client, args.vlm_model, _warmup_jpg.getvalue(), args.max_new_tokens
+    )
+    print(f"[VLM] Warm-up result: {build_summary(_warmup_qa)}")
+    print("[VLM] ✓ Model ready")
 
     context = zmq.Context()
 
