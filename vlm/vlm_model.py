@@ -1,14 +1,14 @@
-import base64
 import io
 import json
 import os
 import re
 import time
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from PIL import Image
-from groq import Groq
+from google import genai
+from google.genai import types
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -100,12 +100,32 @@ def _fallback_dict(raw_text: str) -> Dict[str, str]:
 # Model loading
 # ============================================================
 
+# Surveillance frames legitimately contain weapons/aggression cues — Gemini's default
+# safety filters can block or empty out the response on exactly the frames that matter,
+# so the harm categories relevant to this analysis are relaxed to BLOCK_NONE.
+_SAFETY_SETTINGS = [
+    types.SafetySetting(category=cat, threshold=types.HarmBlockThreshold.BLOCK_NONE)
+    for cat in (
+        types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+        types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+        types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+    )
+]
+
+# Bounded retry for transient failures (503 overloaded, 429 rate limit, timeouts) and
+# for empty completions — previously a single hiccup dropped straight to the
+# "Scene analysis unavailable" fallback for that frame.
+_MAX_ATTEMPTS = 3
+_RETRY_BACKOFF_S = (0.5, 1.0, 2.0)
+
+
 def load_vlm(model_id: str, api_key: str = ""):
-    api_key = api_key or os.environ.get("GROQ_API_KEY", "")
+    api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
-        raise ValueError("GROQ_API_KEY not set. Pass --groq-api-key or set env var GROQ_API_KEY.")
-    client = Groq(api_key=api_key)
-    print(f"✅ [VLM] Groq client ready — model={model_id}")
+        raise ValueError("GEMINI_API_KEY not set. Pass --gemini-api-key or set env var GEMINI_API_KEY.")
+    client = genai.Client(api_key=api_key)
+    print(f"✅ [VLM] Gemini client ready — model={model_id}")
     return client
 
 
@@ -113,32 +133,44 @@ def load_vlm(model_id: str, api_key: str = ""):
 # Inference
 # ============================================================
 
-def analyze_frame(client: "Groq", model_id: str, jpg_bytes: bytes,
+def analyze_frame(client: "genai.Client", model_id: str, jpg_bytes: bytes,
                   max_new_tokens: int = 256) -> Dict[str, str]:
-    """Single Groq vision call → structured dict. Safe fallback on API/parse failure."""
-    try:
-        b64 = base64.b64encode(jpg_bytes).decode("ascii")
-        resp = client.chat.completions.create(
-            model=model_id,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": _PROMPT_TEXT},
-                    {"type": "image_url",
-                     "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+    """Single Gemini vision call → structured dict. Retries transient failures /
+    empty completions a few times before falling back to the schema default."""
+    raw_text = ""
+    last_err: Optional[Exception] = None
+
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            resp = client.models.generate_content(
+                model=model_id,
+                contents=[
+                    types.Part.from_bytes(data=jpg_bytes, mime_type="image/jpeg"),
+                    _PROMPT_TEXT,
                 ],
-            }],
-            temperature=0.0,
-            max_tokens=max_new_tokens,
-            response_format={"type": "json_object"},
-            # Qwen3.6-27B is a reasoning model — without this it burns max_tokens on
-            # internal <think> tokens before ever writing the JSON, so JSON mode gets
-            # an empty completion and Groq rejects it (json_validate_failed).
-            reasoning_effort="none",
-        )
-        raw_text = (resp.choices[0].message.content or "").strip()
-    except Exception as e:
-        print(f"[VLM] ⚠️ Groq API call failed: {e}")
+                config=types.GenerateContentConfig(
+                    temperature=0.0,
+                    max_output_tokens=max_new_tokens,
+                    safety_settings=_SAFETY_SETTINGS,
+                ),
+            )
+            raw_text = (resp.text or "").strip()
+            if raw_text:
+                break
+            last_err = None
+            print(f"[VLM] ⚠️ Gemini returned an empty completion (attempt {attempt + 1}/{_MAX_ATTEMPTS})")
+        except Exception as e:
+            last_err = e
+            print(f"[VLM] ⚠️ Gemini API call failed (attempt {attempt + 1}/{_MAX_ATTEMPTS}): {e}")
+
+        if attempt < _MAX_ATTEMPTS - 1:
+            time.sleep(_RETRY_BACKOFF_S[attempt])
+
+    if not raw_text:
+        if last_err is not None:
+            print(f"[VLM] ⚠️ Gemini API call failed after {_MAX_ATTEMPTS} attempts: {last_err}")
+        else:
+            print(f"[VLM] ⚠️ Gemini returned no content after {_MAX_ATTEMPTS} attempts")
         return _fallback_dict("")
 
     return _parse_vlm_output(raw_text)

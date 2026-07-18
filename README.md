@@ -16,9 +16,11 @@ Create a `.env` file in the project root (use `.env.example` as a template):
 
 ```
 GROQ_API_KEY=gsk_YOUR_KEY_HERE
+GEMINI_API_KEY=YOUR_KEY_HERE
 ```
 
-> `GROQ_API_KEY` is shared by the anomaly worker (Step 2) and the VLM worker (Step 4).
+> `GROQ_API_KEY` is used by the anomaly worker (Step 2). `GEMINI_API_KEY` is used by the
+> VLM worker (Step 4) — get a free one at https://aistudio.google.com/apikey.
 
 ### Launch order
 
@@ -51,7 +53,7 @@ python tracker/tracker_worker.py \
   --anomaly-endpoint tcp://127.0.0.1:5581
 ```
 
-**Step 4 — VLM Scene Analyser** (Groq vision, uses `GROQ_API_KEY` — same key as Step 2)
+**Step 4 — VLM Scene Analyser** (Gemini vision, uses `GEMINI_API_KEY`)
 ```bash
 python vlm/vlm_worker.py \
   --every 60 \
@@ -62,15 +64,21 @@ python vlm/vlm_worker.py \
 > **VLM is the decision anchor.** Each VLM frame triggers a potential Groq call
 > (subject to `--decision-frames` throttle). Cost is fully decoupled from VLM speed:
 > running VLM faster gives fresher context but never increases API spend.
-> Note: the VLM's own Groq vision call and the anomaly worker's Groq text call
-> share the same `GROQ_API_KEY` quota.
+> The VLM's Gemini vision call and the anomaly worker's Groq text call use separate
+> keys/quotas — they no longer compete for the same budget.
 
 **Model options:**
 
 | Flag | Model | Notes |
 |---|---|---|
-| *(default)* | `qwen/qwen3.6-27b` | Groq's current vision model (free/dev tier) |
-| `--vlm_model meta-llama/llama-4-scout-17b-16e-instruct` | deprecated by Groq on free/dev tier — do not use |
+| *(default)* | `gemini-3.5-flash` | Fast, free-tier vision model |
+| `--vlm_model gemini-3.1-flash-lite` | higher free-tier quota, slightly lower quality |
+
+> Groq's `meta-llama/llama-4-scout-17b-16e-instruct` was deprecated on the free/dev tier
+> (Jun 2026); Groq's only remaining free vision model, `qwen/qwen3.6-27b`, is a slow
+> preview reasoning model that was unreliable here — the VLM worker now runs on Gemini
+> instead. The Groq anomaly worker (Step 2) is unaffected and still runs on
+> `llama-3.3-70b-versatile`.
 
 > **`--ws-url none`** — use this unless the NestJS backend exposes a `/ws/vlm` route
 > (it does **not** by default). A missing route causes a hang on retry.
@@ -210,7 +218,7 @@ The nearest tracker frame is automatically attached as enrichment context.
 
 #### `vlm/vlm_worker.py`
 - Processes one full frame every N frames (default: 60).
-- Calls **Groq vision** (default `qwen/qwen3.6-27b`) via API — uses the same `GROQ_API_KEY` as the anomaly worker.
+- Calls **Gemini vision** (default `gemini-3.5-flash`) via API — uses `GEMINI_API_KEY` (separate from the anomaly worker's `GROQ_API_KEY`).
 - Returns a single structured JSON per frame:
   - Scene description, people actions, appearance, weapon description.
   - Binary cues (yes/no/unclear): `gun`, `knife`, `reaching_display_case`, `reaching_behind_counter`, `hands_up`, `face_concealed`, `aggression`.
