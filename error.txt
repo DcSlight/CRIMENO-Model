@@ -1,41 +1,12 @@
-[VLM] ⚠️ Groq API call failed: Error code: 404 - {'error': {'message': 'The model `meta-llama/llama-4-scout-17b-16e-instruct` does not exist or you do not have access to it.', 'type': 'invalid_request_error', 'code': 'model_not_found'}}
-🤖 [VLM] frame 180 | Description: Scene analysis unavailable.. People Actions: -. Appearance: -. Weapon: none. Gun: no. Knife: no. Reaching Display Case: no. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no.
-[VLM] processed=4 last_frame=180
-[VLM] ⚠️ Groq API call failed: Error code: 404 - {'error': {'message': 'The model `meta-llama/llama-4-scout-17b-16e-instruct` does not exist or you do not have access to it.', 'type': 'invalid_request_error', 'code': 'model_not_found'}}
-🤖 [VLM] frame 240 | Description: Scene analysis unavailable.. People Actions: -. Appearance: -. Weapon: none. Gun: no. Knife: no. Reaching Display Case: no. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no.
-[VLM] ⚠️ Groq API call failed: Error code: 404 - {'error': {'message': 'The model `meta-llama/llama-4-scout-17b-16e-instruct` does not exist or you do not have access to it.', 'type': 'invalid_request_error', 'code': 'model_not_found'}}
-🤖 [VLM] frame 300 | Description: Scene analysis unavailable.. People Actions: -. Appearance: -. Weapon: none. Gun: no. Knife: no. Reaching Display Case: no. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no.
-[VLM] ⚠️ Groq API call failed: Error code: 404 - {'error': {'message': 'The model `meta-llama/llama-4-scout-17b-16e-instruct` does not exist or you do not have access to it.', 'type': 'invalid_request_error', 'code': 'model_not_found'}}
-🤖 [VLM] frame 360 | Description: Scene analysis unavailable.. People Actions: -. Appearance: -. Weapon: none. Gun: no. Knife: no. Reaching Display Case: no. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no.
-[VLM] processed=7 last_frame=360
-
-
-
-qroq
-
-
-- Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, and the jewelry display cases inside the store. It provides a wide-angle view of customer movement, employee activity, and interactions near the secured glass jewelry showcases.
-
-==================== Anomaly decision ====================
-VLM frame 0 | scoring_level=aggressive | multi_person_converge=True
-{
-  "anomaly_score": 0.15,
-  "label": "normal",
-  "reason": "Scene is unclear with multiple people present",
-  "key_moments": [
-    "Multiple people detected in the store",
-    "No specific actions or behaviors observed"
-  ]
-}
-=========================================================
-
-[WS] Sent anomaly result to NestJS
-[DEBUG] New event (VLM frame 60): VLM observation: Scene analysis unavailable. Flags — none. Tracker detected: 5 persons.
-[DEBUG] Cues: {'gun': 'no', 'knife': 'no', 'reaching_display_case': 'no', 'reaching_behind_counter': 'no', 'hands_up': 'no', 'face_concealed': 'no', 'aggression': 'no'} | hard=False | changed=False
-[DEBUG] All cues benign + unchanged → SKIP.
-[DEBUG] New event (VLM frame 120): VLM observation: Scene analysis unavailable. Flags — none. Tracker detected: 4 persons.
-[DEBUG] Cues: {'gun': 'no', 'knife': 'no', 'reaching_display_case': 'no', 'reaching_behind_counter': 'no', 'hands_up': 'no', 'face_concealed': 'no', 'aggression': 'no'} | hard=False | changed=False
-[DEBUG] All cues benign + unchanged → SKIP.
-[DEBUG] New event (VLM frame 180): VLM observation: Scene analysis unavailable. Flags — none. Tracker detected: 2 persons.
-[DEBUG] Cues: {'gun': 'no', 'knife': 'no', 'reaching_display_case': 'no', 'reaching_behind_counter': 'no', 'hands_up': 'no', 'face_concealed': 'no', 'aggression': 'no'} | hard=False | changed=False
-[DEBUG] All cues benign + unchanged → SKIP.
+PS C:\Users\idan.noyshul\Documents\GitHub\CRIMENO-Model\vlm> python vlm_worker.py --every 60 --ws-url ws://127.0.0.1:3000/ws/vlm --anomaly-endpoint tcp://127.0.0.1:5581
+[VLM] Schema loaded — 11 fields, binary: ['aggression', 'face_concealed', 'gun', 'hands_up', 'knife', 'reaching_behind_counter', 'reaching_display_case']
+✅ [VLM] Groq client ready — model=qwen/qwen3.6-27b
+🔗 [VLM] Connected to broadcaster on tcp://127.0.0.1:5560
+🔗 [VLM] Connected to anomaly worker via ZMQ PUSH on tcp://127.0.0.1:5581
+[WS] Connected: ws://127.0.0.1:3000/ws/vlm
+[VLM] Reset received — draining stale frames
+[VLM] ⚠️ Groq API call failed: Error code: 400 - {'error': {'message': "Failed to validate JSON. Please adjust your prompt. See 'failed_generation' for more details.", 'type': 'invalid_request_error', 'code': 'json_validate_failed', 'failed_generation': ''}}
+🤖 [VLM] frame 0 | Description: Scene analysis unavailable.. People Actions: -. Appearance: -. Weapon: none. Gun: no. Knife: no. Reaching Display Case: no. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no.
+[VLM] processed=1 last_frame=0
+[VLM] ⚠️ Groq API call failed: Error code: 400 - {'error': {'message': "Failed to validate JSON. Please adjust your prompt. See 'failed_generation' for more details.", 'type': 'invalid_request_error', 'code': 'json_validate_failed', 'failed_generation': ''}}
+🤖 [VLM] frame 60 | Description: Scene analysis unavailable.. People Actions: -. Appearance: -. Weapon: none. Gun: no. Knife: no. Reaching Display Case: no. Reaching Behind Counter: no. Hands Up: no. Face Concealed: no. Aggression: no.
