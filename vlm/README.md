@@ -2,11 +2,11 @@
 
 This folder contains the VLM scene-analysis layer.
 It calls a **local vision model via [Ollama](https://ollama.com/download)** (default
-`llama3.2-vision:11b`) to produce structured scene analysis for each video frame, which the
+`qwen2.5vl:7b`) to produce structured scene analysis for each video frame, which the
 Groq anomaly worker uses as its primary decision anchor. Runs entirely on your GPU —
 no API key, no quota, no per-request cost.
 
-**One-time setup:** install Ollama, then `ollama pull llama3.2-vision:11b` (~7.8 GB). The
+**One-time setup:** install Ollama, then `ollama pull qwen2.5vl:7b` (a few GB). The
 Ollama server runs in the background on `http://localhost:11434` and must be running before
 you start `vlm_worker.py`.
 
@@ -54,7 +54,7 @@ you start `vlm_worker.py`.
     "aggression": "no"
   },
   "summary": "Scene: A person stands at the store counter. People: ...",
-  "meta": { "generated_at_unix_ms": 1730000000000, "model": "llama3.2-vision:11b" }
+  "meta": { "generated_at_unix_ms": 1730000000000, "model": "qwen2.5vl:7b" }
 }
 ```
 
@@ -83,8 +83,12 @@ The fallback dict, binary-key detection, sanitizer, and summary builder all upda
 
 | Model | Notes |
 |---|---|
-| `llama3.2-vision:11b` *(default)* | Meta's vision model, ~7.8 GB — natively supported by Ollama |
-| `llava` | older, lighter alternative if 11b is too slow on your GPU |
+| `qwen2.5vl:7b` *(default)* | ~5 GB — natively supported by Ollama's current engine; strong at structured/OCR-style output, which matches this worker's schema-constrained JSON use case |
+| `gemma3:12b` | fallback — also natively supported by the current engine |
+| `llava` | last resort — loads reliably but weakest at structured JSON of the group |
+
+> **Do not confuse `qwen2.5vl` with `qwen2-vl`** (no `.5`) — the latter is an older model with a
+> known broken vision-projector (`mmproj`) bug in Ollama.
 
 > Vision analysis moved off every hosted free tier after each failed in practice: Groq
 > deprecated `meta-llama/llama-4-scout-17b-16e-instruct` on the free/dev tier (Jun 2026),
@@ -94,13 +98,36 @@ The fallback dict, binary-key detection, sanitizer, and summary builder all upda
 > **5 requests/minute** per key, far below what `--every 60` demands. Running locally via
 > Ollama removes the quota problem entirely — throughput is now bounded only by your GPU.
 >
-> **Avoid `minicpm-v4.5`/`minicpm-v4.6`** — they crash official Ollama's `llama-server`
-> backend on load/inference (`exit status 0xc0000005` / `0xc0000409`, an access violation).
-> That model family isn't actually supported by mainline Ollama; running it requires an
-> unofficial fork ([tc-mb/ollama](https://github.com/tc-mb/ollama)) that isn't merged
-> upstream. `llama3.2-vision:11b` is natively supported and is the exact model Ollama's own
-> docs use to demonstrate structured JSON output with images — the same `format=` mechanism
-> this worker relies on (see `_RESPONSE_SCHEMA` in `vlm_model.py`).
+> Two local models were tried and rejected before landing on `qwen2.5vl:7b`:
+> - **`minicpm-v4.5`/`minicpm-v4.6`** crash official Ollama's `llama-server` backend on
+>   load/inference (`exit status 0xc0000005`, an access violation). That architecture was never
+>   mainlined into Ollama at all; running it requires an unofficial fork
+>   ([tc-mb/ollama](https://github.com/tc-mb/ollama)) that isn't merged upstream.
+> - **`llama3.2-vision:11b`** fails to load (`unknown model architecture: 'mllama'`). Ollama's
+>   **new inference engine dropped `mllama` support** in its rewrite — it never existed in
+>   mainline llama.cpp, only ran on Ollama's own private patches, and there's no fix/ETA
+>   ([ollama/ollama#16490](https://github.com/ollama/ollama/issues/16490), open).
+>
+> The pattern: Ollama's current engine only **natively** supports a specific architecture set —
+> **Llama 4, Gemma 3, Qwen 2.5 VL, Mistral Small 3.1**. `qwen2.5vl:7b` is in that set and is the
+> exact kind of model Ollama's own docs use to demonstrate structured JSON output with images —
+> the same `format=` mechanism this worker relies on (see `_RESPONSE_SCHEMA` in `vlm_model.py`).
+
+### Before trying a different vision model
+
+Avoid repeating the cycle above — check *before* pulling a multi-GB model:
+
+1. Prefer one of the current engine's supported families: **Llama 4, Gemma 3, Qwen 2.5 VL,
+   Mistral Small 3.1**. Pull from the [official Ollama vision library](https://ollama.com/search?c=vision)
+   only — community-imported/fused GGUFs have their own `mmproj` wiring bugs.
+2. If unsure, check the model's Hugging Face `config.json` → `architectures` field first.
+   `mllama` and `MiniCPMV` are red flags; `Gemma3ForConditionalGeneration`,
+   `Qwen2_5_VLForConditionalGeneration`, `Mistral3ForConditionalGeneration` are green.
+3. On this project's GPU (P40/Pascal): stick to the default GGUF quant Ollama pulls (`Q4_K_M`) —
+   never a `-fp16`/`bf16` variant (Pascal has no BF16 and crippled FP16 throughput). Don't set
+   `OLLAMA_FLASH_ATTENTION=1` (Pascal can't use it; the default auto-fallback is correct). Watch
+   the `[VLM] Warm-up result: ...` startup log — the whole model should fit in 24 GB VRAM, so any
+   "offloaded N/M layers to CPU" line signals a problem.
 
 ## Launch command
 

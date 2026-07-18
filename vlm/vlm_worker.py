@@ -66,17 +66,23 @@ async def main_async():
                         help="ZeroMQ PUSH endpoint of the Groq anomaly worker.")
     parser.add_argument("--ws-url", "--ws_url", dest="ws_url", default="none",
                         help="WebSocket URL for forwarding VLM records (or 'none').")
-    parser.add_argument("--vlm_model", default="llama3.2-vision:11b",
+    parser.add_argument("--vlm_model", default="qwen2.5vl:7b",
                         help="Ollama vision model tag. Runs locally via Ollama — pull it first "
                              "with `ollama pull <tag>`. Hosted vision was dropped after every "
-                             "free tier failed in practice: Groq deprecated Llama 4 Scout "
-                             "(Jun 2026), Groq's remaining free option (qwen/qwen3.6-27b) is a "
-                             "flaky preview reasoning model, and Gemini's free tier caps out at "
-                             "5 requests/minute. minicpm-v4.5/4.6 were tried but crash official "
-                             "Ollama (exit 0xc0000005/0xc0000409) — that model family needs an "
-                             "unofficial fork (github.com/tc-mb/ollama) to run at all, so this "
-                             "worker defaults to llama3.2-vision:11b instead, which is natively "
-                             "supported.")
+                             "free tier failed in practice (Groq deprecated Llama 4 Scout, "
+                             "Groq's qwen/qwen3.6-27b is a flaky preview reasoning model, "
+                             "Gemini's free tier caps out at 5 requests/minute). Two local "
+                             "models were also tried and rejected: minicpm-v4.5/4.6 crash "
+                             "official Ollama (exit 0xc0000005) — that architecture needs an "
+                             "unofficial fork to run at all — and llama3.2-vision:11b fails to "
+                             "load (`unknown model architecture: 'mllama'`) because Ollama's "
+                             "new inference engine dropped mllama support with no fix/ETA. "
+                             "Ollama's new engine only natively supports Llama 4, Gemma 3, "
+                             "Qwen 2.5 VL, and Mistral Small 3.1 — qwen2.5vl:7b is in that set "
+                             "and strong at structured/OCR-style output, which matches this "
+                             "worker's schema-constrained JSON use case. gemma3:12b is the "
+                             "fallback if needed. Do NOT use qwen2-vl (no '.5') — different, "
+                             "buggier model.")
     parser.add_argument("--ollama-host", "--ollama_host", dest="ollama_host", default="",
                         help="Ollama server URL (or set OLLAMA_HOST env var). "
                              "Defaults to http://localhost:11434.")
