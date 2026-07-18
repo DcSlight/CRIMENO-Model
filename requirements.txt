@@ -8,11 +8,11 @@ websockets
 # YOLO tracker
 ultralytics
 
-# VLM (uses torch only for the tracker; inference is via Gemini below)
+# VLM (uses torch only for the tracker; vision inference is local via Ollama below)
 torch
 
-# VLM vision (Gemini API)
-google-genai
+# VLM vision — local inference via Ollama (requires the Ollama server running, see vlm/README.md)
+ollama
 
 # Groq (anomaly worker only)
 groq

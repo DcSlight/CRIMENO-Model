@@ -16,11 +16,11 @@ Create a `.env` file in the project root (use `.env.example` as a template):
 
 ```
 GROQ_API_KEY=gsk_YOUR_KEY_HERE
-GEMINI_API_KEY=YOUR_KEY_HERE
 ```
 
-> `GROQ_API_KEY` is used by the anomaly worker (Step 2). `GEMINI_API_KEY` is used by the
-> VLM worker (Step 4) — get a free one at https://aistudio.google.com/apikey.
+> `GROQ_API_KEY` is used by the anomaly worker (Step 2). The VLM worker (Step 4) needs no API
+> key — it runs vision analysis locally via [Ollama](https://ollama.com/download) on your GPU.
+> One-time setup: install Ollama, then `ollama pull minicpm-v4.5` (~6.1 GB).
 
 ### Launch order
 
@@ -53,7 +53,7 @@ python tracker/tracker_worker.py \
   --anomaly-endpoint tcp://127.0.0.1:5581
 ```
 
-**Step 4 — VLM Scene Analyser** (Gemini vision, uses `GEMINI_API_KEY`)
+**Step 4 — VLM Scene Analyser** (local Ollama vision — make sure Ollama is running first)
 ```bash
 python vlm/vlm_worker.py \
   --every 60 \
@@ -64,21 +64,23 @@ python vlm/vlm_worker.py \
 > **VLM is the decision anchor.** Each VLM frame triggers a potential Groq call
 > (subject to `--decision-frames` throttle). Cost is fully decoupled from VLM speed:
 > running VLM faster gives fresher context but never increases API spend.
-> The VLM's Gemini vision call and the anomaly worker's Groq text call use separate
-> keys/quotas — they no longer compete for the same budget.
+> Since the VLM runs locally, only the anomaly worker's Groq text call touches an
+> external quota.
 
 **Model options:**
 
 | Flag | Model | Notes |
 |---|---|---|
-| *(default)* | `gemini-3.5-flash` | Fast, free-tier vision model |
-| `--vlm_model gemini-3.1-flash-lite` | higher free-tier quota, slightly lower quality |
+| *(default)* | `minicpm-v4.5` | 8B, "GPT-4o-level" vision, ~6.1 GB — `ollama pull minicpm-v4.5` |
+| `--vlm_model minicpm-v4.6` | lighter/faster decoder — try this if per-frame latency is too high |
 
-> Groq's `meta-llama/llama-4-scout-17b-16e-instruct` was deprecated on the free/dev tier
-> (Jun 2026); Groq's only remaining free vision model, `qwen/qwen3.6-27b`, is a slow
-> preview reasoning model that was unreliable here — the VLM worker now runs on Gemini
-> instead. The Groq anomaly worker (Step 2) is unaffected and still runs on
-> `llama-3.3-70b-versatile`.
+> Vision analysis moved off every hosted free tier after each one failed in practice: Groq
+> deprecated `meta-llama/llama-4-scout-17b-16e-instruct` on the free/dev tier (Jun 2026);
+> Groq's remaining free vision model, `qwen/qwen3.6-27b`, is a slow preview reasoning model
+> that returned empty completions here; and Gemini's free tier caps out at **5 requests/minute**
+> per key — far below what `--every 60` demands. The VLM worker now runs the vision model
+> locally via Ollama instead, with no quota at all. The Groq anomaly worker (Step 2) is
+> unaffected and still runs on `llama-3.3-70b-versatile`.
 
 > **`--ws-url none`** — use this unless the NestJS backend exposes a `/ws/vlm` route
 > (it does **not** by default). A missing route causes a hang on retry.
@@ -218,7 +220,7 @@ The nearest tracker frame is automatically attached as enrichment context.
 
 #### `vlm/vlm_worker.py`
 - Processes one full frame every N frames (default: 60).
-- Calls **Gemini vision** (default `gemini-3.5-flash`) via API — uses `GEMINI_API_KEY` (separate from the anomaly worker's `GROQ_API_KEY`).
+- Calls a **local Ollama vision model** (default `minicpm-v4.5`) on your GPU — no API key, no quota.
 - Returns a single structured JSON per frame:
   - Scene description, people actions, appearance, weapon description.
   - Binary cues (yes/no/unclear): `gun`, `knife`, `reaching_display_case`, `reaching_behind_counter`, `hands_up`, `face_concealed`, `aggression`.

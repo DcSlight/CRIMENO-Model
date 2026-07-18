@@ -7,8 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 from PIL import Image
-from google import genai
-from google.genai import types
+import ollama
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -66,6 +65,15 @@ _SCHEMA_FIELDS, _SCHEMA_DEFAULTS, _BINARY_KEYS = _parse_schema(_PROMPT_TEXT)
 print(f"[VLM] Schema loaded — {len(_SCHEMA_FIELDS)} fields, "
       f"binary: {sorted(_BINARY_KEYS)}")
 
+# JSON schema built straight from prompt.txt's field list — passed to Ollama's `format`
+# for constrained decoding, so the model is forced to emit valid JSON with every key
+# instead of relying on it to follow the prompt's instructions unprompted.
+_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {key: {"type": "string"} for key in _SCHEMA_FIELDS},
+    "required": list(_SCHEMA_FIELDS),
+}
+
 
 # ============================================================
 # Utilities
@@ -100,32 +108,30 @@ def _fallback_dict(raw_text: str) -> Dict[str, str]:
 # Model loading
 # ============================================================
 
-# Surveillance frames legitimately contain weapons/aggression cues — Gemini's default
-# safety filters can block or empty out the response on exactly the frames that matter,
-# so the harm categories relevant to this analysis are relaxed to BLOCK_NONE.
-_SAFETY_SETTINGS = [
-    types.SafetySetting(category=cat, threshold=types.HarmBlockThreshold.BLOCK_NONE)
-    for cat in (
-        types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-        types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-        types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-        types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-    )
-]
+_DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 
-# Bounded retry for transient failures (503 overloaded, 429 rate limit, timeouts) and
+# Bounded retry for transient failures (server mid-load, momentary connection drop) and
 # for empty completions — previously a single hiccup dropped straight to the
-# "Scene analysis unavailable" fallback for that frame.
+# "Scene analysis unavailable" fallback for that frame. A local Ollama server doesn't
+# have the quota/rate-limit failure modes the hosted backends did, but can still hiccup.
 _MAX_ATTEMPTS = 3
 _RETRY_BACKOFF_S = (0.5, 1.0, 2.0)
 
 
-def load_vlm(model_id: str, api_key: str = ""):
-    api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY not set. Pass --gemini-api-key or set env var GEMINI_API_KEY.")
-    client = genai.Client(api_key=api_key)
-    print(f"✅ [VLM] Gemini client ready — model={model_id}")
+def load_vlm(model_id: str, host: str = ""):
+    host = host or os.environ.get("OLLAMA_HOST", "") or _DEFAULT_OLLAMA_HOST
+    client = ollama.Client(host=host)
+
+    try:
+        available = {m.model for m in client.list().models}
+        # Ollama tags are commonly reported with an implicit ":latest" suffix.
+        if model_id not in available and f"{model_id}:latest" not in available:
+            print(f"[VLM] ⚠️ Model '{model_id}' not found on {host}. "
+                  f"Run: ollama pull {model_id}")
+    except Exception as e:
+        print(f"[VLM] ⚠️ Could not reach Ollama at {host} to verify model: {e}")
+
+    print(f"✅ [VLM] Ollama client ready — model={model_id} @ {host}")
     return client
 
 
@@ -133,44 +139,42 @@ def load_vlm(model_id: str, api_key: str = ""):
 # Inference
 # ============================================================
 
-def analyze_frame(client: "genai.Client", model_id: str, jpg_bytes: bytes,
+def analyze_frame(client: "ollama.Client", model_id: str, jpg_bytes: bytes,
                   max_new_tokens: int = 256) -> Dict[str, str]:
-    """Single Gemini vision call → structured dict. Retries transient failures /
+    """Single local Ollama vision call → structured dict. Retries transient failures /
     empty completions a few times before falling back to the schema default."""
     raw_text = ""
     last_err: Optional[Exception] = None
 
     for attempt in range(_MAX_ATTEMPTS):
         try:
-            resp = client.models.generate_content(
+            resp = client.chat(
                 model=model_id,
-                contents=[
-                    types.Part.from_bytes(data=jpg_bytes, mime_type="image/jpeg"),
-                    _PROMPT_TEXT,
-                ],
-                config=types.GenerateContentConfig(
-                    temperature=0.0,
-                    max_output_tokens=max_new_tokens,
-                    safety_settings=_SAFETY_SETTINGS,
-                ),
+                messages=[{
+                    "role": "user",
+                    "content": _PROMPT_TEXT,
+                    "images": [jpg_bytes],
+                }],
+                format=_RESPONSE_SCHEMA,
+                options={"temperature": 0.0, "num_predict": max_new_tokens},
             )
-            raw_text = (resp.text or "").strip()
+            raw_text = (resp.message.content or "").strip()
             if raw_text:
                 break
             last_err = None
-            print(f"[VLM] ⚠️ Gemini returned an empty completion (attempt {attempt + 1}/{_MAX_ATTEMPTS})")
+            print(f"[VLM] ⚠️ Ollama returned an empty completion (attempt {attempt + 1}/{_MAX_ATTEMPTS})")
         except Exception as e:
             last_err = e
-            print(f"[VLM] ⚠️ Gemini API call failed (attempt {attempt + 1}/{_MAX_ATTEMPTS}): {e}")
+            print(f"[VLM] ⚠️ Ollama call failed (attempt {attempt + 1}/{_MAX_ATTEMPTS}): {e}")
 
         if attempt < _MAX_ATTEMPTS - 1:
             time.sleep(_RETRY_BACKOFF_S[attempt])
 
     if not raw_text:
         if last_err is not None:
-            print(f"[VLM] ⚠️ Gemini API call failed after {_MAX_ATTEMPTS} attempts: {last_err}")
+            print(f"[VLM] ⚠️ Ollama call failed after {_MAX_ATTEMPTS} attempts: {last_err}")
         else:
-            print(f"[VLM] ⚠️ Gemini returned no content after {_MAX_ATTEMPTS} attempts")
+            print(f"[VLM] ⚠️ Ollama returned no content after {_MAX_ATTEMPTS} attempts")
         return _fallback_dict("")
 
     return _parse_vlm_output(raw_text)
