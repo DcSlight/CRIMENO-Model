@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import json
+import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -8,6 +9,9 @@ from typing import Any, Dict, Optional
 _HERE = Path(__file__).resolve().parent
 _PROJECT_ROOT = _HERE.parent
 _OUTPUT_LOG = _HERE / "logs_output.jsonl"
+
+sys.path.insert(0, str(_PROJECT_ROOT))
+import session_log
 
 from dotenv import load_dotenv
 load_dotenv(_PROJECT_ROOT / ".env")
@@ -88,6 +92,11 @@ async def main_async():
 
     ws = await ws_connect_loop(args.ws_url)
 
+    # Resolve the current session's log path; falls back to the legacy flat file if
+    # no session exists yet (e.g. broadcaster hasn't played a video, or session_log
+    # hiccuped).
+    current_log = session_log.resolve_log_path("vlm") or _OUTPUT_LOG
+
     def _drain():
         drained = 0
         while True:
@@ -116,6 +125,8 @@ async def main_async():
             if topic == b"reset":
                 print("[VLM] Reset received — draining stale frames")
                 _drain()
+                # Broadcaster may have started a new business/session before this reset.
+                current_log = session_log.resolve_log_path("vlm") or _OUTPUT_LOG
                 continue
             if topic != b"frame" or len(parts) < 4:
                 continue
@@ -146,7 +157,7 @@ async def main_async():
 
             print(f"🤖 [VLM] frame {frame_idx} | {summary}")
 
-            with open(_OUTPUT_LOG, "a", encoding="utf-8") as f:
+            with open(current_log, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
             try:

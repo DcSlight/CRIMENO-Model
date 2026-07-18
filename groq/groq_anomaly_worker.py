@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import sys
 import zmq
 import asyncio
 import argparse
@@ -15,6 +16,9 @@ from scoring import apply_scoring, score_from_cues
 _HERE         = Path(__file__).resolve().parent
 _PROJECT_ROOT = _HERE.parent
 
+sys.path.insert(0, str(_PROJECT_ROOT))
+import session_log
+
 load_dotenv(_PROJECT_ROOT / ".env")
 
 # ============================================================
@@ -27,9 +31,21 @@ ZMQ_ENDPOINT    = "tcp://127.0.0.1:5581"
 MAX_QUEUE_SIZE    = 30
 MAX_EVENT_HISTORY = 10
 
-# Log files live next to this script (groq/ folder) regardless of CWD.
+# Log files live next to this script (groq/ folder) regardless of CWD. These are the
+# legacy fallback paths, used only when no session_log session exists yet.
 CONTEXT_LOG_FILE = str(_HERE / "groq_context_log.txt")
 OUTPUT_LOG_FILE  = _HERE / "logs_output.jsonl"
+
+
+def _resolve_log_paths():
+    """Resolve the current session's jsonl + plaintext-context log paths. Falls back
+    to the legacy flat files (CONTEXT_LOG_FILE/OUTPUT_LOG_FILE) if no session exists
+    yet — e.g. the broadcaster hasn't played a video, or session_log hiccuped."""
+    jsonl_log = session_log.resolve_log_path("groq")
+    if jsonl_log is None:
+        return OUTPUT_LOG_FILE, CONTEXT_LOG_FILE
+    context_name = jsonl_log.name.replace("groq_v", "groq_context_v").replace(".jsonl", ".txt")
+    return jsonl_log, jsonl_log.parent / context_name
 
 # Cue keys from the VLM's structured QA dict (vlm_worker.py → rec["qa"]). Sourced from
 # event_builder.CUE_LABELS so the worker, the prompt-text builder, and scoring.py can
@@ -265,6 +281,8 @@ async def main_async():
 
     ws = await ws_connect_loop(args.ws_url)
 
+    current_jsonl_log, current_context_log = _resolve_log_paths()
+
     # Long-term memory: one entry per past DECISION (a Groq call actually made), shown to
     # Groq as "EARLIER observations". Entries: {"frame_index": int, "text": str}.
     event_history: List[Dict[str, Any]] = []
@@ -300,6 +318,8 @@ async def main_async():
                 tracker_buffer.clear()
                 last_decision_frame = None
                 last_cues = None
+                # Broadcaster may have started a new business/session before this reset.
+                current_jsonl_log, current_context_log = _resolve_log_paths()
                 print("[GROQ] Reset — cleared event_history, vlm_frame_buffer, tracker_buffer, "
                       "last_decision_frame, last_cues")
                 continue
@@ -442,7 +462,7 @@ async def main_async():
                       f"concern={groq_concern!r} but label={label!r} (score={score:.2f}) — "
                       f"worth a look via eval/score_logs.py.")
 
-            with open(CONTEXT_LOG_FILE, "a", encoding="utf-8") as f:
+            with open(current_context_log, "a", encoding="utf-8") as f:
                 f.write(f"\n{'='*54}\n")
                 f.write(f"VLM frame {frame_idx} "
                         f"(window {now_window[0]['frame_index']}-{now_window[-1]['frame_index']})\n")
@@ -470,7 +490,7 @@ async def main_async():
                 "result": result,
             }
 
-            with open(OUTPUT_LOG_FILE, "a", encoding="utf-8") as f:
+            with open(current_jsonl_log, "a", encoding="utf-8") as f:
                 f.write(json.dumps(anomaly_payload, ensure_ascii=False) + "\n")
 
             try:
