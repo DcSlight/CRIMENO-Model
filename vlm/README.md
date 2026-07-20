@@ -2,11 +2,11 @@
 
 This folder contains the VLM scene-analysis layer.
 It calls a **local vision model via [Ollama](https://ollama.com/download)** (default
-`gemma3:12b`) to produce structured scene analysis for each video frame, which the
+`gemma3:4b`) to produce structured scene analysis for each video frame, which the
 Groq anomaly worker uses as its primary decision anchor. Runs entirely on your GPU —
 no API key, no quota, no per-request cost.
 
-**One-time setup:** install Ollama, then `ollama pull gemma3:12b` (~8 GB). The
+**One-time setup:** install Ollama, then `ollama pull gemma3:4b` (~3 GB). The
 Ollama server runs in the background on `http://localhost:11434` and must be running before
 you start `vlm_worker.py`.
 
@@ -54,7 +54,7 @@ you start `vlm_worker.py`.
     "aggression": "no"
   },
   "summary": "Scene: A person stands at the store counter. People: ...",
-  "meta": { "generated_at_unix_ms": 1730000000000, "model": "gemma3:12b" }
+  "meta": { "generated_at_unix_ms": 1730000000000, "model": "gemma3:4b" }
 }
 ```
 
@@ -83,8 +83,8 @@ The fallback dict, binary-key detection, sanitizer, and summary builder all upda
 
 | Model | Notes |
 |---|---|
-| `gemma3:12b` *(default)* | ~8 GB — natively supported by Ollama's current engine; strong at structured/OCR-style output, which matches this worker's schema-constrained JSON use case; per-frame cost is tolerable given `--every 60` |
-| `gemma3:4b` | lighter/faster fallback if 12b is too slow, still natively supported |
+| `gemma3:4b` *(default)* | ~3 GB — natively supported by Ollama's current engine; light enough to run alongside `tracker/tracker_worker.py`'s YOLO models on the same GPU without contention |
+| `gemma3:12b` | stronger at structured/OCR-style output, but too heavy to run concurrently with the tracker on this GPU — use for VLM-only runs or if you free up GPU headroom |
 | `qwen2.5vl:7b` | tried as the default first — loaded fine but was both slow and weak in practice on this project's Pascal/Vulkan GPU |
 | `llava` | last resort — loads reliably but weakest at structured JSON of the group |
 
@@ -99,7 +99,7 @@ The fallback dict, binary-key detection, sanitizer, and summary builder all upda
 > **5 requests/minute** per key, far below what `--every 60` demands. Running locally via
 > Ollama removes the quota problem entirely — throughput is now bounded only by your GPU.
 >
-> Three local models were tried before landing on `gemma3:12b`:
+> Several local models were tried before landing on `gemma3:4b`:
 > - **`minicpm-v4.5`/`minicpm-v4.6`** crash official Ollama's `llama-server` backend on
 >   load/inference (`exit status 0xc0000005`, an access violation). That architecture was never
 >   mainlined into Ollama at all; running it requires an unofficial fork
@@ -110,11 +110,15 @@ The fallback dict, binary-key detection, sanitizer, and summary builder all upda
 >   ([ollama/ollama#16490](https://github.com/ollama/ollama/issues/16490), open).
 > - **`qwen2.5vl:7b`** loaded and ran, but proved both slow and weak in practice on this
 >   project's GPU (Pascal/Vulkan — see below).
+> - **`gemma3:12b`** gave the strongest structured JSON output of the group, but is too heavy
+>   to run at the same time as `tracker/tracker_worker.py`'s YOLO models — both processes
+>   compete for the same GPU, and running VLM + tracker together was the actual requirement.
 >
 > The pattern: Ollama's current engine only **natively** supports a specific architecture set —
-> **Llama 4, Gemma 3, Qwen 2.5 VL, Mistral Small 3.1**. `gemma3:12b` is in that set and is
-> strong at structured JSON output with images — the same `format=` mechanism this worker
-> relies on (see `_RESPONSE_SCHEMA` in `vlm_model.py`).
+> **Llama 4, Gemma 3, Qwen 2.5 VL, Mistral Small 3.1**. `gemma3:4b` is in that set, small enough
+> to share the GPU with the tracker, and still uses the same `format=` structured-JSON
+> mechanism this worker relies on (see `_RESPONSE_SCHEMA` in `vlm_model.py`). If quality is
+> insufficient at 4b, `gemma3:12b` is the fallback for VLM-only runs.
 
 ### Before trying a different vision model
 

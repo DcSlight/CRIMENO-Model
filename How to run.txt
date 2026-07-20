@@ -1,13 +1,14 @@
 One-time setup (VLM now runs locally via Ollama, not a cloud API):
   1. Install Ollama: https://ollama.com/download  (auto-starts in tray on boot)
-  2. ollama pull gemma3:12b   (~8 GB, once)
+  2. ollama pull gemma3:4b   (~3 GB, once)
      NOTE: do NOT use minicpm-v4.5/4.6 (crash Ollama, exit 0xc0000005 - needs unofficial fork)
      or llama3.2-vision:11b (fails to load - "unknown model architecture: 'mllama'", Ollama's
-     new engine dropped support, no fix/ETA). qwen2.5vl:7b was tried as the default first but
-     was both slow and weak in practice on this GPU (Pascal/Vulkan). Ollama's current engine
-     only natively supports Llama 4 / Gemma 3 / Qwen 2.5 VL / Mistral Small 3.1 - gemma3:12b
-     is in that set. See vlm/README.md "Before trying a different vision model" before
-     swapping again.
+     new engine dropped support, no fix/ETA). qwen2.5vl:7b was tried as the default but was
+     both slow and weak in practice on this GPU (Pascal/Vulkan). gemma3:12b was stronger but
+     too heavy to run alongside tracker_worker.py's YOLO models - both compete for the same
+     GPU. gemma3:4b is light enough to run tracker + VLM together. Ollama's current engine
+     only natively supports Llama 4 / Gemma 3 / Qwen 2.5 VL / Mistral Small 3.1. See
+     vlm/README.md "Before trying a different vision model" before swapping again.
   3. pip install -r requirements.txt
 
 Before each run: check Ollama's tray icon is running (it should auto-start). No API key needed for VLM anymore.
@@ -31,7 +32,7 @@ Step 2 - Groq anomaly worker:
 Step 3 - YOLO Tracker:
   python tracker_worker.py --device cuda --ws_url ws://127.0.0.1:3000/ws/tracker --send_overlay 0 --send_every_n_frames 5 --anomaly-endpoint tcp://127.0.0.1:5581
 
-Step 4 - VLM layer (local Ollama, model=gemma3:12b; warms up on startup - watch for "[VLM] Warm-up result"):
+Step 4 - VLM layer (local Ollama, model=gemma3:4b; warms up on startup - watch for "[VLM] Warm-up result"):
   python vlm_worker.py --every 60 --ws-url ws://127.0.0.1:3000/ws/vlm --anomaly-endpoint tcp://127.0.0.1:5581
 
 Simple scorer (mock vs. real logs, no Groq needed):
