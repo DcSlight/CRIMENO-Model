@@ -1,35 +1,44 @@
 # vlm/ — Vision-Language Model Worker
 
-This folder contains the VLM scene-analysis layer.
-It calls a **local vision model via [Ollama](https://ollama.com/download)** (default
-`gemma3:4b`) to produce structured scene analysis for each video frame, which the
-Groq anomaly worker uses as its primary decision anchor. Runs entirely on your GPU —
-no API key, no quota, no per-request cost.
+This folder contains the VLM scene-analysis layer. It calls a vision model to produce
+structured scene analysis for each video frame, which the Groq anomaly worker uses as its
+primary decision anchor. Two interchangeable backends, picked with `--backend`:
 
-**One-time setup:** install Ollama, then `ollama pull gemma3:4b` (~3 GB). The
-Ollama server runs in the background on `http://localhost:11434` and must be running before
-you start `vlm_worker.py`.
+| `--backend` | Runs where | Setup | Tradeoff |
+|---|---|---|---|
+| `local` *(default)* | Your GPU, via [Ollama](https://ollama.com/download) | `ollama pull gemma3:4b` (~3 GB), Ollama server running on `http://localhost:11434` | No API key, no quota, no per-request cost — but bounded by local hardware (see the model table below for this project's GPU history) |
+| `online` | Gemini API | `GEMINI_API_KEY` in `.env` (get one at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)) | No local GPU/VRAM cost — but frames leave the device to Google, and you're subject to Gemini's rate limits/pricing |
+
+Both backends share the exact same schema parsing, JSON-fallback, sanitization, and
+summary-building code in `vlm_model.py` — only the model-loading and single-call inference
+functions differ per backend.
+
+**Set-and-forget via `.env`** — `--backend` and `--vlm_model` can be set as `VLM_BACKEND` /
+`VLM_MODEL` in `.env` instead of passing flags every run (same pattern as `OLLAMA_HOST` /
+`GEMINI_API_KEY` already use). A CLI flag always overrides the matching env var when both
+are given. See `.env.example` for the full set.
 
 ## Files
 
 | File | Purpose |
 |---|---|
 | `vlm_worker.py` | Main worker: ZMQ subscriber, model warm-up, frame throttling, result dispatch to Groq + NestJS |
-| `vlm_model.py` | Ollama client, inference call (with retry/backoff), JSON parsing, output sanitization, summary building |
+| `vlm_model.py` | Ollama + Gemini clients, per-backend inference call (with shared retry/backoff), JSON parsing, output sanitization, summary building |
 | `prompt.txt` | Instruction sent to the vision model — edit here to change what the model analyses |
 | `logs_output.jsonl` | Auto-generated log of every VLM record sent to NestJS (one JSON object per line) |
 
 ## How it works
 
-0. **Warms up** the model with one dummy frame right after startup — loads it into VRAM and
-   surfaces any load/compatibility crash immediately, before the rest of the pipeline
-   (broadcaster/tracker/anomaly worker) is running. Mirrors `tracker/tracker_worker.py`'s
-   YOLO warm-up. Watch for the `[VLM] Warm-up result: ...` line: a real scene description
-   means the model is working; "Scene analysis unavailable" means something's wrong (wrong
-   model tag, Ollama not running, or the model doesn't support this Ollama build — see below).
+0. **Warms up** the model with one dummy frame right after startup — loads it into VRAM
+   (`local`) or makes one live API call (`online`) and surfaces any load/compatibility/auth
+   error immediately, before the rest of the pipeline (broadcaster/tracker/anomaly worker) is
+   running. Mirrors `tracker/tracker_worker.py`'s YOLO warm-up. Watch for the
+   `[VLM] Warm-up result: ...` line: a real scene description means the backend is working;
+   "Scene analysis unavailable" means something's wrong (wrong model tag, Ollama not running,
+   missing `GEMINI_API_KEY`, or the model doesn't support this Ollama build — see below).
 1. **Subscribes** to the broadcaster PUB socket (`tcp://127.0.0.1:5560`) for `frame` and `reset` topics.
 2. **Throttles** — processes one frame every `--every` frames (default 60) to bound inference rate.
-3. **Runs inference** via a single structured-JSON Ollama chat call (prompt from `prompt.txt`), sending the JPEG bytes directly and passing the schema (derived from `prompt.txt`) as a `format` constraint so the model is forced to emit valid JSON with every key; retries up to 3 times with backoff on transient errors or empty completions before falling back.
+3. **Runs inference** via a single structured-JSON vision call (prompt from `prompt.txt`), sending the JPEG bytes directly. `local` passes the schema (derived from `prompt.txt`) as an Ollama `format` constraint so the model is forced to emit valid JSON with every key; `online` relies on the prompt's own JSON instructions plus relaxed safety settings (see below). Both retry up to 3 times with backoff on transient errors or empty completions before falling back.
 4. **Parses** the JSON response into a structured QA dict + a one-line `summary` string.
 5. **PUSHes** a `vlm_frame` record to the Groq anomaly worker (`tcp://127.0.0.1:5581`).
 6. **Optionally** forwards the same record to NestJS via WebSocket (disabled by default with `--ws-url none`).
@@ -54,7 +63,7 @@ you start `vlm_worker.py`.
     "aggression": "no"
   },
   "summary": "Scene: A person stands at the store counter. People: ...",
-  "meta": { "generated_at_unix_ms": 1730000000000, "model": "gemma3:4b" }
+  "meta": { "generated_at_unix_ms": 1730000000000, "model": "gemma3:4b", "backend": "local" }
 }
 ```
 
@@ -77,9 +86,10 @@ So to add a new field (e.g. `"loitering"`), just add it to the JSON block in `pr
 ```
 The fallback dict, binary-key detection, sanitizer, and summary builder all update automatically.
 
-- **Frame rate** → `--every` CLI flag (lower = more inference calls + fresher context for Groq, but higher load on your GPU — throughput is bounded by local inference speed now, not an external quota).
-- **Server** → `--ollama-host` flag or `OLLAMA_HOST` env var (default `http://localhost:11434`).
-- **Model** → `--vlm_model` flag (must be pulled first via `ollama pull <tag>`):
+- **Frame rate** → `--every` CLI flag (lower = more inference calls + fresher context for Groq; on `local` this means higher GPU load, on `online` it means more API requests/cost).
+- **Backend** → `--backend local|online` flag or `VLM_BACKEND` env var/`.env` (default `local`). See the table at the top of this file for the tradeoff. `online` requires `GEMINI_API_KEY` (`--gemini-api-key` flag or `.env`).
+- **Server (local only)** → `--ollama-host` flag or `OLLAMA_HOST` env var (default `http://localhost:11434`).
+- **Model** → `--vlm_model` flag or `VLM_MODEL` env var/`.env` (must be pulled first via `ollama pull <tag>` for `local`). Models available for `--backend local`:
 
 | Model | Notes |
 |---|---|
@@ -136,10 +146,39 @@ Avoid repeating the cycle above — check *before* pulling a multi-GB model:
    the `[VLM] Warm-up result: ...` startup log — the whole model should fit in 24 GB VRAM, so any
    "offloaded N/M layers to CPU" line signals a problem.
 
+### Model (`--backend online`)
+
+Defaults to `gemini-3.5-flash`. This backend previously ran as the project's *only* VLM
+option (before the move to local Ollama) and was abandoned for quota reasons, not quality —
+Gemini's free tier caps out at 5–30 requests/minute depending on model/tier, well below what
+continuous frame sampling needs unless you're on a paid tier. It's kept as a `--backend`
+option for whenever a Gemini API key with sufficient quota is available, or for testing
+without a capable local GPU.
+
+Two things carried over from the original implementation, both required for this to work
+correctly on surveillance footage:
+- **Safety settings are relaxed to `BLOCK_NONE`** for the dangerous-content/harassment/
+  hate-speech/sexual-content categories (see `_SAFETY_SETTINGS` in `vlm_model.py`). Without
+  this, Gemini's default filters silently blocked or emptied responses on exactly the frames
+  this worker exists to catch — visible weapons, aggression. Ollama has no equivalent filter.
+- **Verify the model tag before trusting it.** `gemini-2.0-flash` was shut down mid-project
+  (2026-06-01) while still the configured default, and Groq separately deprecated its own free
+  vision model out from under this project too. Check
+  [Google AI Studio](https://aistudio.google.com/) for the current model list before relying
+  on `gemini-3.5-flash` still being available — override with `--vlm_model <tag>` if not.
+
 ## Launch command
 
 ```bash
+# Local (default) — no API key needed, model runs on your GPU via Ollama
 python vlm/vlm_worker.py \
+  --every 60 \
+  --ws-url none \
+  --anomaly-endpoint tcp://127.0.0.1:5581
+
+# Online — needs GEMINI_API_KEY in .env (or --gemini-api-key)
+python vlm/vlm_worker.py \
+  --backend online \
   --every 60 \
   --ws-url none \
   --anomaly-endpoint tcp://127.0.0.1:5581

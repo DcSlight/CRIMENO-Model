@@ -16,9 +16,13 @@
    ```
    GROQ_API_KEY=gsk_YOUR_KEY_HERE
    ```
-   Only `GROQ_API_KEY` is needed (used by the anomaly worker, Step 2).
+   Only `GROQ_API_KEY` is needed (used by the anomaly worker, Step 2) — unless you plan to run
+   the VLM worker with `--backend online`, which additionally needs `GEMINI_API_KEY` (see
+   [vlm/README.md](vlm/README.md)).
 3. Install [Ollama](https://ollama.com/download) — it sets itself up to auto-start in the
    background (system tray) whenever Windows boots, so you won't need to launch it manually later.
+   Only needed for the VLM worker's default `--backend local`; skip if you'll only run
+   `--backend online`.
 4. Pull the local vision model (a few GB, downloaded once):
    ```bash
    ollama pull gemma3:4b
@@ -62,7 +66,7 @@ python tracker/tracker_worker.py \
   --anomaly-endpoint tcp://127.0.0.1:5581
 ```
 
-**Step 4 — VLM Scene Analyser** (local Ollama vision — make sure Ollama is running first)
+**Step 4 — VLM Scene Analyser** (default: local Ollama vision — make sure Ollama is running first)
 ```bash
 python vlm/vlm_worker.py \
   --every 60 \
@@ -70,13 +74,18 @@ python vlm/vlm_worker.py \
   --anomaly-endpoint tcp://127.0.0.1:5581
 ```
 
+Add `--backend online` (needs `GEMINI_API_KEY` in `.env`) to use the Gemini API instead of a
+local GPU model — see [vlm/README.md](vlm/README.md) for the tradeoffs and setup. Set
+`VLM_BACKEND`/`VLM_MODEL` in `.env` instead if you don't want to pass `--backend`/`--vlm_model`
+every run (see `.env.example`).
+
 > **VLM is the decision anchor.** Each VLM frame triggers a potential Groq call
 > (subject to `--decision-frames` throttle). Cost is fully decoupled from VLM speed:
 > running VLM faster gives fresher context but never increases API spend.
 > Since the VLM runs locally, only the anomaly worker's Groq text call touches an
 > external quota.
 
-**Model options:**
+**Model options (`--backend local`, the default — see [vlm/README.md](vlm/README.md) for `--backend online`/Gemini):**
 
 | Flag | Model | Notes |
 |---|---|---|
@@ -249,7 +258,7 @@ The nearest tracker frame is automatically attached as enrichment context.
 
 #### `vlm/vlm_worker.py`
 - Processes one full frame every N frames (default: 60).
-- Calls a **local Ollama vision model** (default `gemma3:4b`) on your GPU — no API key, no quota.
+- Calls a vision model — `--backend local` (default): **Ollama** on your GPU (`gemma3:4b`), no API key, no quota. `--backend online`: **Gemini API**, needs `GEMINI_API_KEY`.
 - Returns a single structured JSON per frame:
   - Scene description, people actions, appearance, weapon description.
   - Binary cues (yes/no/unclear): `gun`, `knife`, `reaching_display_case`, `reaching_behind_counter`, `hands_up`, `face_concealed`, `aggression`.

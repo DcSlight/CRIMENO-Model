@@ -1,4 +1,9 @@
-One-time setup (VLM now runs locally via Ollama, not a cloud API):
+VLM now supports two backends, picked with --backend local|online (default: local).
+Set VLM_BACKEND=local|online and/or VLM_MODEL=<tag> in .env to skip passing --backend/
+--vlm_model every run (a CLI flag still overrides the .env value if you pass one) - see
+.env.example.
+
+One-time setup for --backend local (Ollama, runs on your GPU, no API key):
   1. Install Ollama: https://ollama.com/download  (auto-starts in tray on boot)
   2. ollama pull gemma3:4b   (~3 GB, once)
      NOTE: do NOT use minicpm-v4.5/4.6 (crash Ollama, exit 0xc0000005 - needs unofficial fork)
@@ -11,7 +16,16 @@ One-time setup (VLM now runs locally via Ollama, not a cloud API):
      vlm/README.md "Before trying a different vision model" before swapping again.
   3. pip install -r requirements.txt
 
-Before each run: check Ollama's tray icon is running (it should auto-start). No API key needed for VLM anymore.
+One-time setup for --backend online (Gemini API, no local GPU needed):
+  1. Get a key: https://aistudio.google.com/apikey
+  2. Add to .env: GEMINI_API_KEY=your_key_here
+  3. pip install -r requirements.txt
+  Verify the model tag (default gemini-3.5-flash) is still current in AI Studio before
+  relying on it - gemini-2.0-flash was shut down mid-project while it was the default.
+  Frames leave the device to Google with this backend - local stays fully on-device.
+
+Before each run (--backend local): check Ollama's tray icon is running (it should auto-start).
+No API key needed for local VLM.
 
 ----Fix Ollama----
 (if VLM warm-up fails with "exit status 0xc0000005")
@@ -32,7 +46,13 @@ Step 2 - Groq anomaly worker:
 Step 3 - YOLO Tracker:
   python tracker_worker.py --device cuda --ws_url ws://127.0.0.1:3000/ws/tracker --send_overlay 0 --send_every_n_frames 5 --anomaly-endpoint tcp://127.0.0.1:5581
 
-Step 4 - VLM layer (local Ollama, model=gemma3:4b; warms up on startup - watch for "[VLM] Warm-up result"):
+Step 4 - VLM layer (default: local Ollama, model=gemma3:4b; warms up on startup - watch for "[VLM] Warm-up result"):
+  python vlm_worker.py --every 60 --ws-url ws://127.0.0.1:3000/ws/vlm --anomaly-endpoint tcp://127.0.0.1:5581
+
+  Or with the online Gemini backend (needs GEMINI_API_KEY in .env):
+  python vlm_worker.py --backend online --every 60 --ws-url ws://127.0.0.1:3000/ws/vlm --anomaly-endpoint tcp://127.0.0.1:5581
+
+  Or set VLM_BACKEND=online (and optionally VLM_MODEL=...) in .env and just run:
   python vlm_worker.py --every 60 --ws-url ws://127.0.0.1:3000/ws/vlm --anomaly-endpoint tcp://127.0.0.1:5581
 
 Simple scorer (mock vs. real logs, no Groq needed):

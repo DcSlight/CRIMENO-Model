@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import io
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -66,8 +67,32 @@ async def main_async():
                         help="ZeroMQ PUSH endpoint of the Groq anomaly worker.")
     parser.add_argument("--ws-url", "--ws_url", dest="ws_url", default="none",
                         help="WebSocket URL for forwarding VLM records (or 'none').")
-    parser.add_argument("--vlm_model", default="gemma3:4b",
-                        help="Ollama vision model tag. Runs locally via Ollama — pull it first "
+    parser.add_argument("--backend", choices=["local", "online"],
+                        default=os.environ.get("VLM_BACKEND", "local"),
+                        help="Vision backend. 'local' (default) runs a vision model on your "
+                             "GPU via Ollama — no API key, no quota, no per-request cost, but "
+                             "bounded by local hardware. 'online' calls the Gemini API instead "
+                             "— needs GEMINI_API_KEY (see --gemini-api-key / .env), has no "
+                             "local GPU/VRAM cost, but sends frames off-device to Google and "
+                             "is subject to Gemini's rate limits/pricing. See vlm/README.md "
+                             "for the tradeoffs and history behind each. Can be set via the "
+                             "VLM_BACKEND env var (.env) instead of passing this flag every "
+                             "run — this flag overrides the env var when both are given.")
+    parser.add_argument("--gemini-api-key", "--gemini_api_key", dest="gemini_api_key", default="",
+                        help="Gemini API key (or set GEMINI_API_KEY env var / .env). "
+                             "Only used with --backend online. Get one at "
+                             "https://aistudio.google.com/apikey")
+    parser.add_argument("--vlm_model", default=os.environ.get("VLM_MODEL") or None,
+                        help="Vision model id. Can be set via the VLM_MODEL env var (.env) "
+                             "instead of passing this flag every run — this flag overrides "
+                             "the env var when both are given. If neither is set, defaults to "
+                             "'gemma3:4b' for --backend local, or 'gemini-3.5-flash' for "
+                             "--backend online (verify this tag is "
+                             "still current in Google AI Studio before relying on it — this "
+                             "project has already been burned twice by silent model "
+                             "deprecations, Groq's Llama 4 Scout and gemini-2.0-flash). "
+                             "--- Notes for --backend local (Ollama) below. --- "
+                             "Runs locally via Ollama — pull it first "
                              "with `ollama pull <tag>`. Hosted vision was dropped after every "
                              "free tier failed in practice (Groq deprecated Llama 4 Scout, "
                              "Groq's qwen/qwen3.6-27b is a flaky preview reasoning model, "
@@ -99,24 +124,34 @@ async def main_async():
                              "29/29 layers offloaded, flash attention enabled, no crash). Do "
                              "not mistake this for a CPU fallback.")
     parser.add_argument("--ollama-host", "--ollama_host", dest="ollama_host", default="",
-                        help="Ollama server URL (or set OLLAMA_HOST env var). "
-                             "Defaults to http://localhost:11434.")
+                        help="Ollama server URL (or set OLLAMA_HOST env var). Only used with "
+                             "--backend local. Defaults to http://localhost:11434.")
     parser.add_argument("--process_every_n_frames", "--every", dest="process_every_n_frames",
                         type=int, default=60, help="Analyze one frame every N frames.")
     parser.add_argument("--max_new_tokens", "--max_output_tokens", dest="max_new_tokens",
                         type=int, default=512, help="Token budget for the structured JSON response.")
     args = parser.parse_args()
 
-    client = load_vlm(args.vlm_model, args.ollama_host)
+    # argparse only validates --backend against choices when it comes from argv — a typo'd
+    # VLM_BACKEND env value would silently fall through as "local" everywhere else, so check
+    # explicitly and fail fast rather than run the wrong backend without noticing.
+    if args.backend not in ("local", "online"):
+        parser.error(f"--backend / VLM_BACKEND must be 'local' or 'online', got {args.backend!r}")
+
+    if args.vlm_model is None:
+        args.vlm_model = "gemini-3.5-flash" if args.backend == "online" else "gemma3:4b"
+
+    connection_arg = args.gemini_api_key if args.backend == "online" else args.ollama_host
+    client = load_vlm(args.backend, args.vlm_model, connection_arg)
 
     # Loads the model into VRAM and surfaces load/architecture-compatibility errors here,
     # before the rest of the pipeline (broadcaster/tracker/anomaly worker) is up and running —
     # mirrors tracker_worker.py's model warm-up.
-    print("[VLM] Warming up model...")
+    print(f"[VLM] Warming up model (backend={args.backend})...")
     _warmup_jpg = io.BytesIO()
     Image.new("RGB", (64, 64)).save(_warmup_jpg, format="JPEG")
     _warmup_qa = await asyncio.to_thread(
-        analyze_frame, client, args.vlm_model, _warmup_jpg.getvalue(), args.max_new_tokens
+        analyze_frame, args.backend, client, args.vlm_model, _warmup_jpg.getvalue(), args.max_new_tokens
     )
     print(f"[VLM] Warm-up result: {build_summary(_warmup_qa)}")
     print("[VLM] ✓ Model ready")
@@ -187,7 +222,7 @@ async def main_async():
                 continue
 
             qa = await asyncio.to_thread(
-                analyze_frame, client, args.vlm_model, jpg_bytes, args.max_new_tokens
+                analyze_frame, args.backend, client, args.vlm_model, jpg_bytes, args.max_new_tokens
             )
             summary = build_summary(qa)
 
@@ -197,7 +232,11 @@ async def main_async():
                 "video_time_ms": video_time_ms,
                 "qa":            qa,
                 "summary":       summary,
-                "meta": {"generated_at_unix_ms": now_unix_ms(), "model": args.vlm_model},
+                "meta": {
+                    "generated_at_unix_ms": now_unix_ms(),
+                    "model": args.vlm_model,
+                    "backend": args.backend,
+                },
             }
 
             print(f"🤖 [VLM] frame {frame_idx} | {summary}")
