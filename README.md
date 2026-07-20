@@ -21,7 +21,7 @@
    background (system tray) whenever Windows boots, so you won't need to launch it manually later.
 4. Pull the local vision model (a few GB, downloaded once):
    ```bash
-   ollama pull qwen2.5vl:7b
+   ollama pull gemma3:12b
    ```
 
 ### Before each run
@@ -80,8 +80,9 @@ python vlm/vlm_worker.py \
 
 | Flag | Model | Notes |
 |---|---|---|
-| *(default)* | `qwen2.5vl:7b` | ~5 GB — one of the 4 architectures Ollama's current engine natively supports; strong at structured/OCR-style output |
-| `--vlm_model gemma3:12b` | fallback — also natively supported by the current engine |
+| *(default)* | `gemma3:12b` | ~8 GB — one of the 4 architectures Ollama's current engine natively supports; strong at structured/OCR-style output; the per-frame cost is tolerable given `--every 60` |
+| `--vlm_model gemma3:4b` | lighter/faster fallback if 12b is too slow, still natively supported |
+| `--vlm_model qwen2.5vl:7b` | tried as the default first — loads fine, but was both slow and weak in practice on this project's GPU (Pascal/Vulkan, see below) |
 | `--vlm_model llava` | last resort — loads reliably but weakest at structured JSON of the group |
 
 > **Do not confuse `qwen2.5vl` with `qwen2-vl`** (no `.5`) — the latter is an older model with a
@@ -94,16 +95,17 @@ python vlm/vlm_worker.py \
 > per key — far below what `--every 60` demands. The VLM worker now runs the vision model
 > locally via Ollama instead, with no quota at all.
 >
-> Two local models were tried and rejected before landing here. `minicpm-v4.5`/`minicpm-v4.6`
+> Three local models were tried before landing on `gemma3:12b`. `minicpm-v4.5`/`minicpm-v4.6`
 > crash official Ollama's `llama-server` backend (`exit status 0xc0000005`) — that architecture
 > was never mainlined into Ollama at all; it needs an unofficial fork
 > ([tc-mb/ollama](https://github.com/tc-mb/ollama)) to run. `llama3.2-vision:11b` fails to load
 > (`unknown model architecture: 'mllama'`) because Ollama's **new inference engine dropped
 > `mllama` support** in its rewrite — it was never upstreamed into mainline llama.cpp, only ever
 > ran on Ollama's own private patches, and there's no fix/ETA
-> ([ollama/ollama#16490](https://github.com/ollama/ollama/issues/16490), open). The lesson: the
-> new engine only natively supports a specific architecture set — **Llama 4, Gemma 3, Qwen 2.5 VL,
-> Mistral Small 3.1** — pick from that list rather than whatever's popular. See
+> ([ollama/ollama#16490](https://github.com/ollama/ollama/issues/16490), open). `qwen2.5vl:7b`
+> loaded and ran, but was both slow and weak in practice on this project's Pascal/Vulkan GPU. The
+> lesson: the new engine only natively supports a specific architecture set — **Llama 4, Gemma 3,
+> Qwen 2.5 VL, Mistral Small 3.1** — pick from that list rather than whatever's popular. See
 > `vlm/README.md` for a checklist to use before trying any other model. The Groq anomaly worker
 > (Step 2) is unaffected and still runs on `llama-3.3-70b-versatile`.
 
@@ -245,7 +247,7 @@ The nearest tracker frame is automatically attached as enrichment context.
 
 #### `vlm/vlm_worker.py`
 - Processes one full frame every N frames (default: 60).
-- Calls a **local Ollama vision model** (default `qwen2.5vl:7b`) on your GPU — no API key, no quota.
+- Calls a **local Ollama vision model** (default `gemma3:12b`) on your GPU — no API key, no quota.
 - Returns a single structured JSON per frame:
   - Scene description, people actions, appearance, weapon description.
   - Binary cues (yes/no/unclear): `gun`, `knife`, `reaching_display_case`, `reaching_behind_counter`, `hands_up`, `face_concealed`, `aggression`.

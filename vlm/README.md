@@ -2,11 +2,11 @@
 
 This folder contains the VLM scene-analysis layer.
 It calls a **local vision model via [Ollama](https://ollama.com/download)** (default
-`qwen2.5vl:7b`) to produce structured scene analysis for each video frame, which the
+`gemma3:12b`) to produce structured scene analysis for each video frame, which the
 Groq anomaly worker uses as its primary decision anchor. Runs entirely on your GPU —
 no API key, no quota, no per-request cost.
 
-**One-time setup:** install Ollama, then `ollama pull qwen2.5vl:7b` (a few GB). The
+**One-time setup:** install Ollama, then `ollama pull gemma3:12b` (~8 GB). The
 Ollama server runs in the background on `http://localhost:11434` and must be running before
 you start `vlm_worker.py`.
 
@@ -54,7 +54,7 @@ you start `vlm_worker.py`.
     "aggression": "no"
   },
   "summary": "Scene: A person stands at the store counter. People: ...",
-  "meta": { "generated_at_unix_ms": 1730000000000, "model": "qwen2.5vl:7b" }
+  "meta": { "generated_at_unix_ms": 1730000000000, "model": "gemma3:12b" }
 }
 ```
 
@@ -83,8 +83,9 @@ The fallback dict, binary-key detection, sanitizer, and summary builder all upda
 
 | Model | Notes |
 |---|---|
-| `qwen2.5vl:7b` *(default)* | ~5 GB — natively supported by Ollama's current engine; strong at structured/OCR-style output, which matches this worker's schema-constrained JSON use case |
-| `gemma3:12b` | fallback — also natively supported by the current engine |
+| `gemma3:12b` *(default)* | ~8 GB — natively supported by Ollama's current engine; strong at structured/OCR-style output, which matches this worker's schema-constrained JSON use case; per-frame cost is tolerable given `--every 60` |
+| `gemma3:4b` | lighter/faster fallback if 12b is too slow, still natively supported |
+| `qwen2.5vl:7b` | tried as the default first — loaded fine but was both slow and weak in practice on this project's Pascal/Vulkan GPU |
 | `llava` | last resort — loads reliably but weakest at structured JSON of the group |
 
 > **Do not confuse `qwen2.5vl` with `qwen2-vl`** (no `.5`) — the latter is an older model with a
@@ -98,7 +99,7 @@ The fallback dict, binary-key detection, sanitizer, and summary builder all upda
 > **5 requests/minute** per key, far below what `--every 60` demands. Running locally via
 > Ollama removes the quota problem entirely — throughput is now bounded only by your GPU.
 >
-> Two local models were tried and rejected before landing on `qwen2.5vl:7b`:
+> Three local models were tried before landing on `gemma3:12b`:
 > - **`minicpm-v4.5`/`minicpm-v4.6`** crash official Ollama's `llama-server` backend on
 >   load/inference (`exit status 0xc0000005`, an access violation). That architecture was never
 >   mainlined into Ollama at all; running it requires an unofficial fork
@@ -107,11 +108,13 @@ The fallback dict, binary-key detection, sanitizer, and summary builder all upda
 >   **new inference engine dropped `mllama` support** in its rewrite — it never existed in
 >   mainline llama.cpp, only ran on Ollama's own private patches, and there's no fix/ETA
 >   ([ollama/ollama#16490](https://github.com/ollama/ollama/issues/16490), open).
+> - **`qwen2.5vl:7b`** loaded and ran, but proved both slow and weak in practice on this
+>   project's GPU (Pascal/Vulkan — see below).
 >
 > The pattern: Ollama's current engine only **natively** supports a specific architecture set —
-> **Llama 4, Gemma 3, Qwen 2.5 VL, Mistral Small 3.1**. `qwen2.5vl:7b` is in that set and is the
-> exact kind of model Ollama's own docs use to demonstrate structured JSON output with images —
-> the same `format=` mechanism this worker relies on (see `_RESPONSE_SCHEMA` in `vlm_model.py`).
+> **Llama 4, Gemma 3, Qwen 2.5 VL, Mistral Small 3.1**. `gemma3:12b` is in that set and is
+> strong at structured JSON output with images — the same `format=` mechanism this worker
+> relies on (see `_RESPONSE_SCHEMA` in `vlm_model.py`).
 
 ### Before trying a different vision model
 
