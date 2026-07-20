@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import base64
 import json
+import sys
 import threading
 import time
 from pathlib import Path
@@ -22,13 +23,22 @@ from detection import (
 )
 
 _HERE = Path(__file__).resolve().parent
+_PROJECT_ROOT = _HERE.parent
 _OUTPUT_LOG = _HERE / "logs_output.jsonl"
+
+sys.path.insert(0, str(_PROJECT_ROOT))
+import session_log
+
+# Current-session log path. Reassigned (module-level global) on startup and on every
+# reset via _apply_reset(); plain reassignment is fine here since the GIL makes it
+# atomic enough — no lock needed for this use case.
+_current_log = _OUTPUT_LOG
 
 
 def _log_output(payload: Dict[str, Any]) -> None:
     """Append the exact payload about to be sent to NestJS (minus the bulky overlay JPEG)."""
     record = {k: v for k, v in payload.items() if k != "overlay_jpg_b64"}
-    with open(_OUTPUT_LOG, "a", encoding="utf-8") as f:
+    with open(_current_log, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
@@ -120,6 +130,7 @@ async def ws_send_json(ws, payload: Dict[str, Any]):
 
 def _apply_reset(sub):
     """Clear all tracker state, drain stale SUB buffer, signal watcher."""
+    global _current_log
     tracks: List[Track] = []
     next_track_id = 1
     drained = 0
@@ -131,6 +142,8 @@ def _apply_reset(sub):
             break
     if drained:
         print(f"[TRACKER] Drained {drained} stale frames after reset")
+    # Broadcaster may have started a new business/session before this reset.
+    _current_log = session_log.resolve_log_path("tracker") or _OUTPUT_LOG
     _reset_done_event.set()
     return tracks, next_track_id
 
@@ -163,6 +176,9 @@ async def main_async():
 
     if YOLO is None:
         raise RuntimeError("ultralytics not installed")
+
+    global _current_log
+    _current_log = session_log.resolve_log_path("tracker") or _OUTPUT_LOG
 
     print(f"[TRACKER] Loading YOLO26 object model: {args.yolo_model}...")
     model_objects = YOLO(args.yolo_model)

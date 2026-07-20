@@ -21,6 +21,7 @@ Usage:
 import argparse
 import difflib
 import json
+import sys
 from pathlib import Path
 
 LABELS = ["normal", "suspicious", "criminal"]
@@ -28,8 +29,15 @@ LABEL_ORDER = {"normal": 0, "suspicious": 1, "criminal": 2}
 PARSE_FAILURE_REASON = "Failed to parse model JSON output"
 
 _HERE = Path(__file__).resolve().parent
+
+sys.path.insert(0, str(_HERE.parent))
+import session_log
+
 DEFAULT_MOCK = _HERE.parent.parent / "CRIMENO-Backend" / "mocks" / "jewelry" / "groq_mock.jsonl"
-DEFAULT_LOGS = _HERE.parent / "groq" / "logs_output.jsonl"
+# Prefer the most recent session-scoped groq log; fall back to the legacy flat file if
+# no session has ever been recorded (e.g. session_log.py wasn't wired up yet, or no
+# video has ever been played through the broadcaster).
+DEFAULT_LOGS = session_log.latest_groq_log() or (_HERE.parent / "groq" / "logs_output.jsonl")
 
 
 def load_jsonl(path: Path) -> list:

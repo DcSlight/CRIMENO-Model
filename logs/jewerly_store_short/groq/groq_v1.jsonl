@@ -1,0 +1,1 @@
+{"type": "groq_anomaly", "frame_range": {"start": 0, "end": 0}, "result": {"anomaly_score": 0.15, "label": "normal", "reason": "Scene is unclear with multiple people present", "key_moments": ["Multiple people detected in the store", "No specific actions or behaviors observed"]}}

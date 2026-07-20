@@ -1,0 +1,1 @@
+{"type": "groq_anomaly", "frame_range": {"start": 0, "end": 0}, "result": {"anomaly_score": 0.15, "label": "normal", "reason": "Customers enter with face masks, scene stable", "key_moments": ["three customers enter the store", "customers wear face masks", "no aggressive behavior observed"]}}

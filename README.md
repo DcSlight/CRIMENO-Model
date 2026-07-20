@@ -6,19 +6,34 @@
 
 ## How to Run
 
-### Prerequisites (one-time setup)
+### Prerequisites (one-time setup — never repeat these)
 
-```bash
-pip install -r requirements.txt
-```
+1. Install Python deps:
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. Create a `.env` file in the project root (use `.env.example` as a template):
+   ```
+   GROQ_API_KEY=gsk_YOUR_KEY_HERE
+   ```
+   Only `GROQ_API_KEY` is needed (used by the anomaly worker, Step 2) — unless you plan to run
+   the VLM worker with `--backend online`, which additionally needs `GEMINI_API_KEY` (see
+   [vlm/README.md](vlm/README.md)).
+3. Install [Ollama](https://ollama.com/download) — it sets itself up to auto-start in the
+   background (system tray) whenever Windows boots, so you won't need to launch it manually later.
+   Only needed for the VLM worker's default `--backend local`; skip if you'll only run
+   `--backend online`.
+4. Pull the local vision model (a few GB, downloaded once):
+   ```bash
+   ollama pull gemma3:4b
+   ```
 
-Create a `.env` file in the project root (use `.env.example` as a template):
+### Before each run
 
-```
-GROQ_API_KEY=gsk_YOUR_KEY_HERE
-```
-
-> `GROQ_API_KEY` is shared by the anomaly worker (Step 2) and the VLM worker (Step 4).
+- Confirm Ollama is running — look for its icon in the system tray. It normally auto-starts with
+  Windows, so this is usually already true. If it's missing, just open the Ollama app once.
+- That's it — no API key, no other setup. The VLM worker (Step 4) talks to Ollama on
+  `http://localhost:11434`.
 
 ### Launch order
 
@@ -51,7 +66,7 @@ python tracker/tracker_worker.py \
   --anomaly-endpoint tcp://127.0.0.1:5581
 ```
 
-**Step 4 — VLM Scene Analyser** (Groq vision, uses `GROQ_API_KEY` — same key as Step 2)
+**Step 4 — VLM Scene Analyser** (default: local Ollama vision — make sure Ollama is running first)
 ```bash
 python vlm/vlm_worker.py \
   --every 60 \
@@ -59,18 +74,51 @@ python vlm/vlm_worker.py \
   --anomaly-endpoint tcp://127.0.0.1:5581
 ```
 
+Add `--backend online` (needs `GEMINI_API_KEY` in `.env`) to use the Gemini API instead of a
+local GPU model — see [vlm/README.md](vlm/README.md) for the tradeoffs and setup. Set
+`VLM_BACKEND`/`VLM_MODEL` in `.env` instead if you don't want to pass `--backend`/`--vlm_model`
+every run (see `.env.example`).
+
 > **VLM is the decision anchor.** Each VLM frame triggers a potential Groq call
 > (subject to `--decision-frames` throttle). Cost is fully decoupled from VLM speed:
 > running VLM faster gives fresher context but never increases API spend.
-> Note: the VLM's own Groq vision call and the anomaly worker's Groq text call
-> share the same `GROQ_API_KEY` quota.
+> Since the VLM runs locally, only the anomaly worker's Groq text call touches an
+> external quota.
 
-**Model options:**
+**Model options (`--backend local`, the default — see [vlm/README.md](vlm/README.md) for `--backend online`/Gemini):**
 
 | Flag | Model | Notes |
 |---|---|---|
-| *(default)* | `meta-llama/llama-4-scout-17b-16e-instruct` | Groq's primary vision model |
-| `--vlm_model qwen/qwen3.6-27b` | newer 27B multimodal alternate |
+| *(default)* | `gemma3:4b` | ~3 GB — one of the 4 architectures Ollama's current engine natively supports; light enough to run alongside `tracker_worker.py`'s YOLO models on the same GPU |
+| `--vlm_model gemma3:12b` | stronger at structured JSON, but too heavy to run concurrently with the tracker on this GPU — use for VLM-only runs or if you free up GPU headroom |
+| `--vlm_model qwen2.5vl:7b` | tried as the default first — loads fine, but was both slow and weak in practice on this project's GPU (Pascal/Vulkan, see below) |
+| `--vlm_model llava` | last resort — loads reliably but weakest at structured JSON of the group |
+
+> **Do not confuse `qwen2.5vl` with `qwen2-vl`** (no `.5`) — the latter is an older model with a
+> known broken vision-projector bug in Ollama.
+
+> Vision analysis moved off every hosted free tier after each one failed in practice: Groq
+> deprecated `meta-llama/llama-4-scout-17b-16e-instruct` on the free/dev tier (Jun 2026);
+> Groq's remaining free vision model, `qwen/qwen3.6-27b`, is a slow preview reasoning model
+> that returned empty completions here; and Gemini's free tier caps out at **5 requests/minute**
+> per key — far below what `--every 60` demands. The VLM worker now runs the vision model
+> locally via Ollama instead, with no quota at all.
+>
+> Several local models were tried before landing on `gemma3:4b`. `minicpm-v4.5`/`minicpm-v4.6`
+> crash official Ollama's `llama-server` backend (`exit status 0xc0000005`) — that architecture
+> was never mainlined into Ollama at all; it needs an unofficial fork
+> ([tc-mb/ollama](https://github.com/tc-mb/ollama)) to run. `llama3.2-vision:11b` fails to load
+> (`unknown model architecture: 'mllama'`) because Ollama's **new inference engine dropped
+> `mllama` support** in its rewrite — it was never upstreamed into mainline llama.cpp, only ever
+> ran on Ollama's own private patches, and there's no fix/ETA
+> ([ollama/ollama#16490](https://github.com/ollama/ollama/issues/16490), open). `qwen2.5vl:7b`
+> loaded and ran, but was both slow and weak in practice on this project's Pascal/Vulkan GPU.
+> `gemma3:12b` was stronger at structured JSON but too heavy to run at the same time as the
+> tracker's YOLO models — both compete for the same GPU. The lesson: the new engine only
+> natively supports a specific architecture set — **Llama 4, Gemma 3, Qwen 2.5 VL, Mistral
+> Small 3.1** — pick from that list rather than whatever's popular. See
+> `vlm/README.md` for a checklist to use before trying any other model. The Groq anomaly worker
+> (Step 2) is unaffected and still runs on `llama-3.3-70b-versatile`.
 
 > **`--ws-url none`** — use this unless the NestJS backend exposes a `/ws/vlm` route
 > (it does **not** by default). A missing route causes a hang on retry.
@@ -210,7 +258,7 @@ The nearest tracker frame is automatically attached as enrichment context.
 
 #### `vlm/vlm_worker.py`
 - Processes one full frame every N frames (default: 60).
-- Calls **Groq vision** (default `meta-llama/llama-4-scout-17b-16e-instruct`) via API — uses the same `GROQ_API_KEY` as the anomaly worker.
+- Calls a vision model — `--backend local` (default): **Ollama** on your GPU (`gemma3:4b`), no API key, no quota. `--backend online`: **Gemini API**, needs `GEMINI_API_KEY`.
 - Returns a single structured JSON per frame:
   - Scene description, people actions, appearance, weapon description.
   - Binary cues (yes/no/unclear): `gun`, `knife`, `reaching_display_case`, `reaching_behind_counter`, `hands_up`, `face_concealed`, `aggression`.
