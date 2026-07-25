@@ -47,6 +47,7 @@ MOCKS_ROOT = REPO_ROOT.parent / "CRIMENO-Backend" / "mocks"
 BUSINESS_MAP = {
     "jewerly_store_short": {"key": "jewelry", "name": "Jewelry Store"},
     "market": {"key": "market", "name": "Market"},
+    "gun_store_robbery": {"key": "gun_store", "name": "Gun Store"},
     # "shop": {"key": "market", "name": "Market"},
     # "supermarket_b": {"key": "gun_store", "name": "Gun Store"},
 }

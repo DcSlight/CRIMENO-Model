@@ -1,9 +1,9 @@
 {
   "schema_version": 2,
-  "generated_at_unix_ms": 1784978141251,
+  "generated_at_unix_ms": 1784978246120,
   "source": {
-    "business": "jewerly_store_short",
-    "version": 11
+    "business": "gun_store_robbery",
+    "version": 1
   },
   "businesses": [
     {
@@ -31,6 +31,13 @@
       "totalEvents": 13,
       "criminalEvents": 0,
       "avgAnomalyScore": 0.4246153846153847,
+      "activeBusinesses": 3,
+      "alertsToday": 0
+    },
+    "gun_store": {
+      "totalEvents": 12,
+      "criminalEvents": 0,
+      "avgAnomalyScore": 0.4066666666666667,
       "activeBusinesses": 3,
       "alertsToday": 0
     }
@@ -165,6 +172,80 @@
         "suspicious": 70,
         "criminal": 0
       }
+    ],
+    "gun_store": [
+      {
+        "time": "0s",
+        "normal": 5,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "0s",
+        "normal": 10,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "4s",
+        "normal": 13,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "6s",
+        "normal": 0,
+        "suspicious": 55,
+        "criminal": 0
+      },
+      {
+        "time": "8s",
+        "normal": 0,
+        "suspicious": 65,
+        "criminal": 0
+      },
+      {
+        "time": "10s",
+        "normal": 0,
+        "suspicious": 42,
+        "criminal": 0
+      },
+      {
+        "time": "14s",
+        "normal": 0,
+        "suspicious": 36,
+        "criminal": 0
+      },
+      {
+        "time": "16s",
+        "normal": 20,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "18s",
+        "normal": 0,
+        "suspicious": 32,
+        "criminal": 0
+      },
+      {
+        "time": "20s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "22s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "24s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      }
     ]
   },
   "anomalyTypeByBusiness": {
@@ -186,6 +267,12 @@
       {
         "type": "Weapon Detected",
         "count": 1
+      }
+    ],
+    "gun_store": [
+      {
+        "type": "Suspicious Behavior",
+        "count": 8
       }
     ]
   },
@@ -212,6 +299,20 @@
       {
         "name": "Suspicious",
         "value": 10
+      },
+      {
+        "name": "Criminal",
+        "value": 0
+      }
+    ],
+    "gun_store": [
+      {
+        "name": "Normal",
+        "value": 4
+      },
+      {
+        "name": "Suspicious",
+        "value": 8
       },
       {
         "name": "Criminal",
@@ -415,11 +516,110 @@
         "text": "Stabilizes",
         "value": 13
       }
+    ],
+    "gun_store": [
+      {
+        "text": "Display",
+        "value": 100
+      },
+      {
+        "text": "Cases",
+        "value": 80
+      },
+      {
+        "text": "Individuals",
+        "value": 52
+      },
+      {
+        "text": "Merchandise",
+        "value": 48
+      },
+      {
+        "text": "Reaching",
+        "value": 48
+      },
+      {
+        "text": "Into",
+        "value": 44
+      },
+      {
+        "text": "Case",
+        "value": 36
+      },
+      {
+        "text": "Aggression",
+        "value": 36
+      },
+      {
+        "text": "Smashing",
+        "value": 28
+      },
+      {
+        "text": "Face",
+        "value": 28
+      },
+      {
+        "text": "Concealment",
+        "value": 28
+      },
+      {
+        "text": "Over",
+        "value": 24
+      },
+      {
+        "text": "Subjects",
+        "value": 24
+      },
+      {
+        "text": "Counter",
+        "value": 24
+      },
+      {
+        "text": "Glass",
+        "value": 16
+      },
+      {
+        "text": "Person",
+        "value": 16
+      },
+      {
+        "text": "Access",
+        "value": 16
+      },
+      {
+        "text": "Reach",
+        "value": 16
+      },
+      {
+        "text": "Escalating",
+        "value": 16
+      },
+      {
+        "text": "Behind",
+        "value": 16
+      },
+      {
+        "text": "Detected",
+        "value": 12
+      },
+      {
+        "text": "Lean",
+        "value": 12
+      },
+      {
+        "text": "Behavior",
+        "value": 12
+      },
+      {
+        "text": "Looting",
+        "value": 12
+      }
     ]
   },
   "peopleByBusiness": {
     "jewelry": 6,
-    "market": 3
+    "market": 3,
+    "gun_store": 2
   },
   "confusionMatrixByBusiness": {
     "jewelry": [
@@ -455,32 +655,92 @@
         6,
         0
       ]
+    ],
+    "gun_store": [
+      [
+        2,
+        0,
+        0
+      ],
+      [
+        1,
+        3,
+        0
+      ],
+      [
+        1,
+        5,
+        0
+      ]
     ]
   },
   "eval": {
     "confusion_matrix": {
       "normal": {
         "normal": 2,
-        "suspicious": 6,
+        "suspicious": 0,
         "criminal": 0
       },
       "suspicious": {
-        "normal": 0,
-        "suspicious": 0,
+        "normal": 1,
+        "suspicious": 3,
         "criminal": 0
       },
       "criminal": {
-        "normal": 0,
-        "suspicious": 0,
+        "normal": 1,
+        "suspicious": 5,
         "criminal": 0
       }
     },
-    "accuracy": 0.25,
-    "under_call_count": 0,
-    "under_calls": [],
-    "over_call_count": 6,
-    "score_mae": 0.41875,
-    "avg_similarity": 0.3292252342205216,
+    "accuracy": 0.4166666666666667,
+    "under_call_count": 7,
+    "under_calls": [
+      [
+        120,
+        240,
+        "suspicious",
+        "normal"
+      ],
+      [
+        420,
+        540,
+        "criminal",
+        "suspicious"
+      ],
+      [
+        480,
+        600,
+        "criminal",
+        "normal"
+      ],
+      [
+        540,
+        660,
+        "criminal",
+        "suspicious"
+      ],
+      [
+        600,
+        720,
+        "criminal",
+        "suspicious"
+      ],
+      [
+        660,
+        780,
+        "criminal",
+        "suspicious"
+      ],
+      [
+        720,
+        840,
+        "criminal",
+        "suspicious"
+      ]
+    ],
+    "over_call_count": 0,
+    "score_mae": 0.26833333333333337,
+    "avg_similarity": 0.3055775213621775,
     "parse_failure_count": 0
   }
 }
