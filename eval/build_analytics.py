@@ -1,7 +1,14 @@
 """
-Build a single analytics.json snapshot from the REAL running-history logs of the
-jewelry business, in the shapes the CRIMENO dashboard's analytics widgets expect
-(see CRIMENO-Backend's analytics.types.ts / analytics.mock.ts for the TS side).
+Build a single analytics.json snapshot from the REAL running-history logs of
+every business in BUSINESS_MAP that has log data on disk, in the shapes the
+CRIMENO dashboard's analytics widgets expect (see CRIMENO-Backend's
+analytics.types.ts / analytics.mock.ts for the TS side).
+
+Each business is computed independently from its own latest groq_vN.jsonl /
+tracker_vN.jsonl, using its own ground-truth mock (CRIMENO-Backend/mocks/<key>/
+groq_mock.jsonl by convention) for the confusion matrix. A business with no log
+files yet is simply absent from the per-business dicts - the NestJS backend
+falls back to mock data for any key missing there.
 
 Pure stdlib only (json, argparse, pathlib, re, time, collections) plus a library
 import of eval/score_logs.py (never modified/duplicated - imported as-is for
@@ -10,7 +17,8 @@ load_jsonl / find_mock_span / build_summary / LABELS).
 Usage:
   py eval/build_analytics.py
   py eval/build_analytics.py --out PATH
-  py eval/build_analytics.py --logs PATH --mock PATH --out PATH
+  py eval/build_analytics.py --logs PATH --out PATH
+  py eval/build_analytics.py --mock PATH   # override ground-truth mock for ALL businesses (testing only)
 """
 
 import argparse
@@ -29,15 +37,16 @@ REPO_ROOT = _HERE.parent
 LOGS_ROOT = REPO_ROOT / "logs"
 SESSION_FILE = LOGS_ROOT / "current_session.json"
 DEFAULT_OUT = REPO_ROOT / "analytics.json"
-DEFAULT_MOCK = score_logs.DEFAULT_MOCK
+MOCKS_ROOT = REPO_ROOT.parent / "CRIMENO-Backend" / "mocks"
 
-# Single source of truth for business slug -> {key, name} used across the dashboard.
-# Only "jewelry" gets real computed numbers in this pass (confirmed scope decision) -
-# the other two are emitted in the `businesses` list only so the UI selector is
-# unchanged; NestJS falls back to mock data for keys missing from the per-business
-# dicts below.
+# Single source of truth for business log-folder-name -> {key, name} used across
+# the dashboard. Every business listed here gets real computed numbers IF it has
+# log files on disk (checked at run time) - businesses with no logs yet are simply
+# absent from the per-business dicts in the output, and NestJS falls back to mock
+# data for any key missing there.
 BUSINESS_MAP = {
     "jewerly_store_short": {"key": "jewelry", "name": "Jewelry Store"},
+    "market": {"key": "market", "name": "Market"},
     # "shop": {"key": "market", "name": "Market"},
     # "supermarket_b": {"key": "gun_store", "name": "Gun Store"},
 }
@@ -269,39 +278,70 @@ def compute_confusion_and_eval(mock_path: Path, real_path: Path):
     return matrix, eval_summary
 
 
-def build_analytics(logs_root: Path, mock_path: Path) -> dict:
-    business, version = resolve_active_run()
-    business_info = BUSINESS_MAP.get(business, {"key": "jewelry", "name": "Jewelry Store"})
-    key = business_info["key"]
+def resolve_latest_version(log_business: str, logs_root: Path):
+    """Highest available groq_vN.jsonl version for this business's logs, or None
+    if that business has no log files at all yet."""
+    groq_dir = logs_root / log_business / "groq"
+    best = 0
+    if groq_dir.is_dir():
+        for p in groq_dir.glob("groq_v*.jsonl"):
+            m = re.search(r"_v(\d+)\.jsonl$", p.name)
+            if m:
+                best = max(best, int(m.group(1)))
+    return best if best else None
 
-    groq_path = logs_root / business / "groq" / f"groq_v{version}.jsonl"
-    tracker_path = logs_root / business / "tracker" / f"tracker_v{version}.jsonl"
 
-    segments = load_groq_segments(groq_path)
-    frames = load_tracker_frames(tracker_path)
+def build_analytics(logs_root: Path, mock_override) -> dict:
+    active_business, active_version = resolve_active_run()
 
-    kpis = compute_kpis(segments)
-    anomaly_trend = compute_anomaly_trend(segments)
-    anomaly_type = compute_anomaly_type(segments)
-    severity = compute_severity(segments)
-    word_frequencies = compute_word_frequencies(segments)
-    people_count = compute_people_count(frames)
+    kpis_by_business = {}
+    trend_by_business = {}
+    type_by_business = {}
+    severity_by_business = {}
+    words_by_business = {}
+    people_by_business = {}
+    confusion_by_business = {}
+    active_eval_summary = None
 
-    confusion_matrix, eval_summary = compute_confusion_and_eval(mock_path, groq_path)
+    for log_business, info in BUSINESS_MAP.items():
+        key = info["key"]
+        version = resolve_latest_version(log_business, logs_root)
+        if version is None:
+            continue  # no real logs for this business yet - leave it to mock fallback
+
+        groq_path = logs_root / log_business / "groq" / f"groq_v{version}.jsonl"
+        tracker_path = logs_root / log_business / "tracker" / f"tracker_v{version}.jsonl"
+
+        segments = load_groq_segments(groq_path)
+        frames = load_tracker_frames(tracker_path)
+
+        kpis_by_business[key] = compute_kpis(segments)
+        trend_by_business[key] = compute_anomaly_trend(segments)
+        type_by_business[key] = compute_anomaly_type(segments)
+        severity_by_business[key] = compute_severity(segments)
+        words_by_business[key] = compute_word_frequencies(segments)
+        people_by_business[key] = compute_people_count(frames)
+
+        mock_path = mock_override if mock_override is not None else (MOCKS_ROOT / key / "groq_mock.jsonl")
+        matrix, summary = compute_confusion_and_eval(mock_path, groq_path)
+        confusion_by_business[key] = matrix
+
+        if log_business == active_business:
+            active_eval_summary = summary
 
     return {
         "schema_version": 2,
         "generated_at_unix_ms": int(time.time() * 1000),
-        "source": {"business": business, "version": version},
+        "source": {"business": active_business, "version": active_version},
         "businesses": ALL_BUSINESSES,
-        "kpisByBusiness": {key: kpis},
-        "anomalyTrendByBusiness": {key: anomaly_trend},
-        "anomalyTypeByBusiness": {key: anomaly_type},
-        "severityByBusiness": {key: severity},
-        "wordFrequenciesByBusiness": {key: word_frequencies},
-        "peopleByBusiness": {key: people_count},
-        "confusionMatrixByBusiness": {key: confusion_matrix},
-        "eval": eval_summary,
+        "kpisByBusiness": kpis_by_business,
+        "anomalyTrendByBusiness": trend_by_business,
+        "anomalyTypeByBusiness": type_by_business,
+        "severityByBusiness": severity_by_business,
+        "wordFrequenciesByBusiness": words_by_business,
+        "peopleByBusiness": people_by_business,
+        "confusionMatrixByBusiness": confusion_by_business,
+        "eval": active_eval_summary,
     }
 
 
@@ -318,8 +358,12 @@ def main():
         help=f"Logs root directory (default: {LOGS_ROOT})",
     )
     parser.add_argument(
-        "--mock", type=Path, default=DEFAULT_MOCK,
-        help=f"Ground-truth mock JSONL for confusion matrix (default: {DEFAULT_MOCK})",
+        "--mock", type=Path, default=None,
+        help=(
+            "Ground-truth mock JSONL for confusion matrix. If omitted (default), "
+            f"each business resolves its own mock at {MOCKS_ROOT}/<key>/groq_mock.jsonl. "
+            "If given, this single path overrides ALL businesses (mainly for testing)."
+        ),
     )
     args = parser.parse_args()
 

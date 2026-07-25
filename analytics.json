@@ -1,9 +1,9 @@
 {
   "schema_version": 2,
-  "generated_at_unix_ms": 1784964831897,
+  "generated_at_unix_ms": 1784965462430,
   "source": {
-    "business": "jewerly_store_short",
-    "version": 11
+    "business": "market",
+    "version": 1
   },
   "businesses": [
     {
@@ -24,6 +24,13 @@
       "totalEvents": 8,
       "criminalEvents": 0,
       "avgAnomalyScore": 0.49125,
+      "activeBusinesses": 3,
+      "alertsToday": 0
+    },
+    "market": {
+      "totalEvents": 13,
+      "criminalEvents": 0,
+      "avgAnomalyScore": 0.4246153846153847,
       "activeBusinesses": 3,
       "alertsToday": 0
     }
@@ -78,6 +85,86 @@
         "suspicious": 67,
         "criminal": 0
       }
+    ],
+    "market": [
+      {
+        "time": "0s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "18s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "20s",
+        "normal": 0,
+        "suspicious": 55,
+        "criminal": 0
+      },
+      {
+        "time": "22s",
+        "normal": 0,
+        "suspicious": 65,
+        "criminal": 0
+      },
+      {
+        "time": "24s",
+        "normal": 0,
+        "suspicious": 31,
+        "criminal": 0
+      },
+      {
+        "time": "30s",
+        "normal": 0,
+        "suspicious": 43,
+        "criminal": 0
+      },
+      {
+        "time": "32s",
+        "normal": 0,
+        "suspicious": 45,
+        "criminal": 0
+      },
+      {
+        "time": "34s",
+        "normal": 17,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "38s",
+        "normal": 7,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "40s",
+        "normal": 0,
+        "suspicious": 61,
+        "criminal": 0
+      },
+      {
+        "time": "48s",
+        "normal": 0,
+        "suspicious": 33,
+        "criminal": 0
+      },
+      {
+        "time": "50s",
+        "normal": 0,
+        "suspicious": 55,
+        "criminal": 0
+      },
+      {
+        "time": "56s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      }
     ]
   },
   "anomalyTypeByBusiness": {
@@ -90,6 +177,16 @@
         "type": "Weapon Detected",
         "count": 3
       }
+    ],
+    "market": [
+      {
+        "type": "Suspicious Behavior",
+        "count": 10
+      },
+      {
+        "type": "Weapon Detected",
+        "count": 1
+      }
     ]
   },
   "severityByBusiness": {
@@ -101,6 +198,20 @@
       {
         "name": "Suspicious",
         "value": 6
+      },
+      {
+        "name": "Criminal",
+        "value": 0
+      }
+    ],
+    "market": [
+      {
+        "name": "Normal",
+        "value": 3
+      },
+      {
+        "name": "Suspicious",
+        "value": 10
       },
       {
         "name": "Criminal",
@@ -206,10 +317,109 @@
         "text": "Flag",
         "value": 30
       }
+    ],
+    "market": [
+      {
+        "text": "Counter",
+        "value": 100
+      },
+      {
+        "text": "Individual",
+        "value": 74
+      },
+      {
+        "text": "Person",
+        "value": 70
+      },
+      {
+        "text": "Scene",
+        "value": 57
+      },
+      {
+        "text": "Behind",
+        "value": 48
+      },
+      {
+        "text": "Register",
+        "value": 35
+      },
+      {
+        "text": "Object",
+        "value": 30
+      },
+      {
+        "text": "Cash",
+        "value": 30
+      },
+      {
+        "text": "Jacket",
+        "value": 26
+      },
+      {
+        "text": "Reaches",
+        "value": 26
+      },
+      {
+        "text": "Area",
+        "value": 26
+      },
+      {
+        "text": "Dark",
+        "value": 22
+      },
+      {
+        "text": "Toward",
+        "value": 22
+      },
+      {
+        "text": "Into",
+        "value": 22
+      },
+      {
+        "text": "Escalates",
+        "value": 17
+      },
+      {
+        "text": "Approaches",
+        "value": 17
+      },
+      {
+        "text": "Stands",
+        "value": 17
+      },
+      {
+        "text": "Interaction",
+        "value": 17
+      },
+      {
+        "text": "Drawer",
+        "value": 17
+      },
+      {
+        "text": "Open",
+        "value": 17
+      },
+      {
+        "text": "Leans",
+        "value": 17
+      },
+      {
+        "text": "Over",
+        "value": 17
+      },
+      {
+        "text": "Reaching",
+        "value": 17
+      },
+      {
+        "text": "Stabilizes",
+        "value": 13
+      }
     ]
   },
   "peopleByBusiness": {
-    "jewelry": 6
+    "jewelry": 6,
+    "market": 3
   },
   "confusionMatrixByBusiness": {
     "jewelry": [
@@ -228,32 +438,98 @@
         0,
         0
       ]
+    ],
+    "market": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        4,
+        0
+      ],
+      [
+        2,
+        6,
+        0
+      ]
     ]
   },
   "eval": {
     "confusion_matrix": {
       "normal": {
-        "normal": 2,
-        "suspicious": 6,
+        "normal": 1,
+        "suspicious": 0,
         "criminal": 0
       },
       "suspicious": {
         "normal": 0,
-        "suspicious": 0,
+        "suspicious": 4,
         "criminal": 0
       },
       "criminal": {
-        "normal": 0,
-        "suspicious": 0,
+        "normal": 2,
+        "suspicious": 6,
         "criminal": 0
       }
     },
-    "accuracy": 0.25,
-    "under_call_count": 0,
-    "under_calls": [],
-    "over_call_count": 6,
-    "score_mae": 0.41875,
-    "avg_similarity": 0.3292252342205216,
+    "accuracy": 0.38461538461538464,
+    "under_call_count": 8,
+    "under_calls": [
+      [
+        900,
+        1020,
+        "criminal",
+        "suspicious"
+      ],
+      [
+        960,
+        1080,
+        "criminal",
+        "suspicious"
+      ],
+      [
+        1020,
+        1140,
+        "criminal",
+        "normal"
+      ],
+      [
+        1140,
+        1260,
+        "criminal",
+        "normal"
+      ],
+      [
+        1200,
+        1320,
+        "criminal",
+        "suspicious"
+      ],
+      [
+        1440,
+        1560,
+        "criminal",
+        "suspicious"
+      ],
+      [
+        1500,
+        1620,
+        "criminal",
+        "suspicious"
+      ],
+      [
+        1680,
+        1800,
+        "criminal",
+        "suspicious"
+      ]
+    ],
+    "over_call_count": 0,
+    "score_mae": 0.3976923076923077,
+    "avg_similarity": 0.2961798616998736,
     "parse_failure_count": 0
   }
 }
