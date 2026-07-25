@@ -1,0 +1,1577 @@
+
+======================================================
+VLM frame 0 (window 0-0)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+Business context (from NestJS):
+- Store: Lone Star Tactical Arms (gun_store)
+Description: Licensed firearm and tactical equipment store located in Houston, Texas, USA. The business sells legal firearms, ammunition, tactical accessories, protective equipment, and hunting gear. The store includes secured weapon display areas, locked glass showcases, a cashier counter, and restricted staff-only storage areas containing additional inventory.
+
+A security camera monitors the cashier desk, the firearm display showcases, the main shopping area, and the main entrance/exit door. The surveillance system is designed to detect suspicious or criminal behavior such as armed robbery attempts, threatening behavior, weapon misuse inside the store, unauthorized access to restricted areas, physical aggression, rapid escape attempts, suspicious concealment of identity, and attempts to steal firearms or ammunition.
+
+Weapons being visible, handled by employees, or legally presented to customers are considered normal business activity. The system should only flag dangerous or criminal behavior involving weapons, threats, intimidation, robbery, or unsafe handling.
+Location: 1450 Westheimer Rd, Houston, TX, USA, Houston, Texas
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Employees handling firearms, Customers viewing weapons with employee supervision, Cashier processing firearm purchases, Customers discussing products with staff
+Forbidden behaviors: Pointing firearms at people, Threatening staff or customers with a weapon, Attempting armed robbery, Aggressive behavior involving weapons, Unauthorized access behind the cashier area, Attempting to steal firearms or ammunition, Rapid escape after suspicious activity, Concealing identity with balaclava or ski mask, Loading firearms inside the store without authorization, Taking weapons from display areas without employee permissio
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, the firearm display showcases, and the main shopping area inside the store. It provides a wide-angle view of customer movement, employee activity, weapon handling interactions, and behavior near secured weapon display cases.
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 0) VLM observation: Two individuals are inside a gun store, with one person leaning over a glass display case while the other walks in the background. The person at the display case appears to be reaching into or interacting with the contents of the case. Flags — reaching display case: yes. Tracker detected: 2 persons.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "Customer interacts with display case, potentially browsing merchandise",
+  "key_moments": [
+    "subject leans over glass display case",
+    "person reaches into or interacts with case contents"
+  ],
+  "concern": "low"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.05,
+  "label": "normal",
+  "reason": "Customer interacts with display case, potentially browsing merchandise",
+  "key_moments": [
+    "subject leans over glass display case",
+    "person reaches into or interacts with case contents"
+  ]
+}
+
+======================================================
+VLM frame 60 (window 0-60)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+Business context (from NestJS):
+- Store: Lone Star Tactical Arms (gun_store)
+Description: Licensed firearm and tactical equipment store located in Houston, Texas, USA. The business sells legal firearms, ammunition, tactical accessories, protective equipment, and hunting gear. The store includes secured weapon display areas, locked glass showcases, a cashier counter, and restricted staff-only storage areas containing additional inventory.
+
+A security camera monitors the cashier desk, the firearm display showcases, the main shopping area, and the main entrance/exit door. The surveillance system is designed to detect suspicious or criminal behavior such as armed robbery attempts, threatening behavior, weapon misuse inside the store, unauthorized access to restricted areas, physical aggression, rapid escape attempts, suspicious concealment of identity, and attempts to steal firearms or ammunition.
+
+Weapons being visible, handled by employees, or legally presented to customers are considered normal business activity. The system should only flag dangerous or criminal behavior involving weapons, threats, intimidation, robbery, or unsafe handling.
+Location: 1450 Westheimer Rd, Houston, TX, USA, Houston, Texas
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Employees handling firearms, Customers viewing weapons with employee supervision, Cashier processing firearm purchases, Customers discussing products with staff
+Forbidden behaviors: Pointing firearms at people, Threatening staff or customers with a weapon, Attempting armed robbery, Aggressive behavior involving weapons, Unauthorized access behind the cashier area, Attempting to steal firearms or ammunition, Rapid escape after suspicious activity, Concealing identity with balaclava or ski mask, Loading firearms inside the store without authorization, Taking weapons from display areas without employee permissio
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, the firearm display showcases, and the main shopping area inside the store. It provides a wide-angle view of customer movement, employee activity, weapon handling interactions, and behavior near secured weapon display cases.
+EARLIER observations (oldest → most recent):
+- (frame 0) VLM observation: Two individuals are inside a gun store, with one person leaning over a glass display case while the other walks in the background. The person at the display case appears to be reaching into or interacting with the contents of the case. Flags — reaching display case: yes. Tracker detected: 2 persons.
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 0) VLM observation: Two individuals are inside a gun store, with one person leaning over a glass display case while the other walks in the background. The person at the display case appears to be reaching into or interacting with the contents of the case. Flags — reaching display case: yes. Tracker detected: 2 persons.
+- (frame 60) VLM observation: Two individuals are inside a gun store, with one person leaning over a display case while the other stands nearby. The scene shows potential unauthorized access to merchandise displays. Flags — reaching display case: yes; face concealed: unclear.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "Scene remains stable with customer interacting with display case",
+  "key_moments": [
+    "subject continues to interact with display case",
+    "second person stands nearby",
+    "potential unauthorized access to merchandise displays noted"
+  ],
+  "concern": "low"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.1,
+  "label": "normal",
+  "reason": "Scene remains stable with customer interacting with display case",
+  "key_moments": [
+    "subject continues to interact with display case",
+    "second person stands nearby",
+    "potential unauthorized access to merchandise displays noted"
+  ]
+}
+
+======================================================
+VLM frame 240 (window 120-240)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+Business context (from NestJS):
+- Store: Lone Star Tactical Arms (gun_store)
+Description: Licensed firearm and tactical equipment store located in Houston, Texas, USA. The business sells legal firearms, ammunition, tactical accessories, protective equipment, and hunting gear. The store includes secured weapon display areas, locked glass showcases, a cashier counter, and restricted staff-only storage areas containing additional inventory.
+
+A security camera monitors the cashier desk, the firearm display showcases, the main shopping area, and the main entrance/exit door. The surveillance system is designed to detect suspicious or criminal behavior such as armed robbery attempts, threatening behavior, weapon misuse inside the store, unauthorized access to restricted areas, physical aggression, rapid escape attempts, suspicious concealment of identity, and attempts to steal firearms or ammunition.
+
+Weapons being visible, handled by employees, or legally presented to customers are considered normal business activity. The system should only flag dangerous or criminal behavior involving weapons, threats, intimidation, robbery, or unsafe handling.
+Location: 1450 Westheimer Rd, Houston, TX, USA, Houston, Texas
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Employees handling firearms, Customers viewing weapons with employee supervision, Cashier processing firearm purchases, Customers discussing products with staff
+Forbidden behaviors: Pointing firearms at people, Threatening staff or customers with a weapon, Attempting armed robbery, Aggressive behavior involving weapons, Unauthorized access behind the cashier area, Attempting to steal firearms or ammunition, Rapid escape after suspicious activity, Concealing identity with balaclava or ski mask, Loading firearms inside the store without authorization, Taking weapons from display areas without employee permissio
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, the firearm display showcases, and the main shopping area inside the store. It provides a wide-angle view of customer movement, employee activity, weapon handling interactions, and behavior near secured weapon display cases.
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 120) VLM observation: Two individuals dressed in dark clothing are leaning over and reaching into the glass display cases inside a gun store. Both individuals appear to be actively searching or handling items within the cases. Flags — reaching display case: yes; face concealed: unclear. Tracker detected: 1 person.
+- (frame 180) VLM observation: An individual is standing behind a counter in a gun store, appearing to handle merchandise from a display case. Another person is positioned behind the main service counter. Flags — reaching display case: yes; face concealed: unclear. Tracker detected: 1 person.
+- (frame 240) VLM observation: An individual is walking through the center of a retail store, appearing to be in the process of removing or handling an object from a display case. The store displays numerous firearms on the walls and in glass cases. Flags — reaching display case: yes. Tracker detected: 1 person.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "Individuals handling items in display cases, potential unauthorized access",
+  "key_moments": [
+    "subjects reach into glass display cases",
+    "individual handles merchandise from a display case",
+    "person appears to remove an object from a display case"
+  ],
+  "concern": "medium"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.13,
+  "label": "normal",
+  "reason": "Individuals handling items in display cases, potential unauthorized access",
+  "key_moments": [
+    "subjects reach into glass display cases",
+    "individual handles merchandise from a display case",
+    "person appears to remove an object from a display case"
+  ]
+}
+
+======================================================
+VLM frame 300 (window 180-300)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+Business context (from NestJS):
+- Store: Lone Star Tactical Arms (gun_store)
+Description: Licensed firearm and tactical equipment store located in Houston, Texas, USA. The business sells legal firearms, ammunition, tactical accessories, protective equipment, and hunting gear. The store includes secured weapon display areas, locked glass showcases, a cashier counter, and restricted staff-only storage areas containing additional inventory.
+
+A security camera monitors the cashier desk, the firearm display showcases, the main shopping area, and the main entrance/exit door. The surveillance system is designed to detect suspicious or criminal behavior such as armed robbery attempts, threatening behavior, weapon misuse inside the store, unauthorized access to restricted areas, physical aggression, rapid escape attempts, suspicious concealment of identity, and attempts to steal firearms or ammunition.
+
+Weapons being visible, handled by employees, or legally presented to customers are considered normal business activity. The system should only flag dangerous or criminal behavior involving weapons, threats, intimidation, robbery, or unsafe handling.
+Location: 1450 Westheimer Rd, Houston, TX, USA, Houston, Texas
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Employees handling firearms, Customers viewing weapons with employee supervision, Cashier processing firearm purchases, Customers discussing products with staff
+Forbidden behaviors: Pointing firearms at people, Threatening staff or customers with a weapon, Attempting armed robbery, Aggressive behavior involving weapons, Unauthorized access behind the cashier area, Attempting to steal firearms or ammunition, Rapid escape after suspicious activity, Concealing identity with balaclava or ski mask, Loading firearms inside the store without authorization, Taking weapons from display areas without employee permissio
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, the firearm display showcases, and the main shopping area inside the store. It provides a wide-angle view of customer movement, employee activity, weapon handling interactions, and behavior near secured weapon display cases.
+EARLIER observations (oldest → most recent):
+- (frame 240) VLM observation: An individual is walking through the center of a retail store, appearing to be in the process of removing or handling an object from a display case. The store displays numerous firearms on the walls and in glass cases. Flags — reaching display case: yes. Tracker detected: 1 person.
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 180) VLM observation: An individual is standing behind a counter in a gun store, appearing to handle merchandise from a display case. Another person is positioned behind the main service counter. Flags — reaching display case: yes; face concealed: unclear. Tracker detected: 1 person.
+- (frame 240) VLM observation: An individual is walking through the center of a retail store, appearing to be in the process of removing or handling an object from a display case. The store displays numerous firearms on the walls and in glass cases. Flags — reaching display case: yes. Tracker detected: 1 person.
+- (frame 300) VLM observation: Two individuals are actively smashing and reaching into glass display cases inside a retail store, with one person leaning over the counter and another reaching into a case. The store appears to be a firearms retailer, given the inventory displayed on the walls. Flags — reaching display case: yes; face concealed: unclear; aggression: yes. Tracker detected: 1 person.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "Scene escalates with smashing and reaching into display cases",
+  "key_moments": [
+    "individuals smash and reach into glass display cases",
+    "person leans over the counter",
+    "aggression detected"
+  ],
+  "concern": "high"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.55,
+  "label": "suspicious",
+  "reason": "Scene escalates with smashing and reaching into display cases",
+  "key_moments": [
+    "individuals smash and reach into glass display cases",
+    "person leans over the counter",
+    "aggression detected"
+  ]
+}
+
+======================================================
+VLM frame 360 (window 240-360)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+Business context (from NestJS):
+- Store: Lone Star Tactical Arms (gun_store)
+Description: Licensed firearm and tactical equipment store located in Houston, Texas, USA. The business sells legal firearms, ammunition, tactical accessories, protective equipment, and hunting gear. The store includes secured weapon display areas, locked glass showcases, a cashier counter, and restricted staff-only storage areas containing additional inventory.
+
+A security camera monitors the cashier desk, the firearm display showcases, the main shopping area, and the main entrance/exit door. The surveillance system is designed to detect suspicious or criminal behavior such as armed robbery attempts, threatening behavior, weapon misuse inside the store, unauthorized access to restricted areas, physical aggression, rapid escape attempts, suspicious concealment of identity, and attempts to steal firearms or ammunition.
+
+Weapons being visible, handled by employees, or legally presented to customers are considered normal business activity. The system should only flag dangerous or criminal behavior involving weapons, threats, intimidation, robbery, or unsafe handling.
+Location: 1450 Westheimer Rd, Houston, TX, USA, Houston, Texas
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Employees handling firearms, Customers viewing weapons with employee supervision, Cashier processing firearm purchases, Customers discussing products with staff
+Forbidden behaviors: Pointing firearms at people, Threatening staff or customers with a weapon, Attempting armed robbery, Aggressive behavior involving weapons, Unauthorized access behind the cashier area, Attempting to steal firearms or ammunition, Rapid escape after suspicious activity, Concealing identity with balaclava or ski mask, Loading firearms inside the store without authorization, Taking weapons from display areas without employee permissio
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, the firearm display showcases, and the main shopping area inside the store. It provides a wide-angle view of customer movement, employee activity, weapon handling interactions, and behavior near secured weapon display cases.
+EARLIER observations (oldest → most recent):
+- (frame 240) VLM observation: An individual is walking through the center of a retail store, appearing to be in the process of removing or handling an object from a display case. The store displays numerous firearms on the walls and in glass cases. Flags — reaching display case: yes. Tracker detected: 1 person.
+- (frame 300) VLM observation: Two individuals are actively smashing and reaching into glass display cases inside a retail store, with one person leaning over the counter and another reaching into a case. The store appears to be a firearms retailer, given the inventory displayed on the walls. Flags — reaching display case: yes; face concealed: unclear; aggression: yes. Tracker detected: 1 person.
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 240) VLM observation: An individual is walking through the center of a retail store, appearing to be in the process of removing or handling an object from a display case. The store displays numerous firearms on the walls and in glass cases. Flags — reaching display case: yes. Tracker detected: 1 person.
+- (frame 300) VLM observation: Two individuals are actively smashing and reaching into glass display cases inside a retail store, with one person leaning over the counter and another reaching into a case. The store appears to be a firearms retailer, given the inventory displayed on the walls. Flags — reaching display case: yes; face concealed: unclear; aggression: yes. Tracker detected: 1 person.
+- (frame 360) VLM observation: Two individuals are actively smashing and reaching into a glass display case inside a retail store. Both individuals are wearing dark clothing and face coverings while leaning over the counter to access the merchandise. Flags — reaching display case: yes; face concealed: yes; aggression: yes. Tracker detected: 1 person.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "Individuals smashing display cases, escalating aggression",
+  "key_moments": [
+    "subjects smash and reach into glass display cases",
+    "individuals lean over the counter to access merchandise",
+    "face concealment becomes more apparent"
+  ],
+  "concern": "high"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.65,
+  "label": "suspicious",
+  "reason": "Individuals smashing display cases, escalating aggression",
+  "key_moments": [
+    "subjects smash and reach into glass display cases",
+    "individuals lean over the counter to access merchandise",
+    "face concealment becomes more apparent"
+  ]
+}
+
+======================================================
+VLM frame 420 (window 300-420)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+Business context (from NestJS):
+- Store: Lone Star Tactical Arms (gun_store)
+Description: Licensed firearm and tactical equipment store located in Houston, Texas, USA. The business sells legal firearms, ammunition, tactical accessories, protective equipment, and hunting gear. The store includes secured weapon display areas, locked glass showcases, a cashier counter, and restricted staff-only storage areas containing additional inventory.
+
+A security camera monitors the cashier desk, the firearm display showcases, the main shopping area, and the main entrance/exit door. The surveillance system is designed to detect suspicious or criminal behavior such as armed robbery attempts, threatening behavior, weapon misuse inside the store, unauthorized access to restricted areas, physical aggression, rapid escape attempts, suspicious concealment of identity, and attempts to steal firearms or ammunition.
+
+Weapons being visible, handled by employees, or legally presented to customers are considered normal business activity. The system should only flag dangerous or criminal behavior involving weapons, threats, intimidation, robbery, or unsafe handling.
+Location: 1450 Westheimer Rd, Houston, TX, USA, Houston, Texas
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Employees handling firearms, Customers viewing weapons with employee supervision, Cashier processing firearm purchases, Customers discussing products with staff
+Forbidden behaviors: Pointing firearms at people, Threatening staff or customers with a weapon, Attempting armed robbery, Aggressive behavior involving weapons, Unauthorized access behind the cashier area, Attempting to steal firearms or ammunition, Rapid escape after suspicious activity, Concealing identity with balaclava or ski mask, Loading firearms inside the store without authorization, Taking weapons from display areas without employee permissio
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, the firearm display showcases, and the main shopping area inside the store. It provides a wide-angle view of customer movement, employee activity, weapon handling interactions, and behavior near secured weapon display cases.
+EARLIER observations (oldest → most recent):
+- (frame 240) VLM observation: An individual is walking through the center of a retail store, appearing to be in the process of removing or handling an object from a display case. The store displays numerous firearms on the walls and in glass cases. Flags — reaching display case: yes. Tracker detected: 1 person.
+- (frame 300) VLM observation: Two individuals are actively smashing and reaching into glass display cases inside a retail store, with one person leaning over the counter and another reaching into a case. The store appears to be a firearms retailer, given the inventory displayed on the walls. Flags — reaching display case: yes; face concealed: unclear; aggression: yes. Tracker detected: 1 person.
+- (frame 360) VLM observation: Two individuals are actively smashing and reaching into a glass display case inside a retail store. Both individuals are wearing dark clothing and face coverings while leaning over the counter to access the merchandise. Flags — reaching display case: yes; face concealed: yes; aggression: yes. Tracker detected: 1 person.
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 300) VLM observation: Two individuals are actively smashing and reaching into glass display cases inside a retail store, with one person leaning over the counter and another reaching into a case. The store appears to be a firearms retailer, given the inventory displayed on the walls. Flags — reaching display case: yes; face concealed: unclear; aggression: yes. Tracker detected: 1 person.
+- (frame 360) VLM observation: Two individuals are actively smashing and reaching into a glass display case inside a retail store. Both individuals are wearing dark clothing and face coverings while leaning over the counter to access the merchandise. Flags — reaching display case: yes; face concealed: yes; aggression: yes. Tracker detected: 1 person.
+- (frame 420) VLM observation: Two individuals are leaning over and reaching into glass display cases inside a retail store, with one individual appearing to be actively manipulating items inside the case. The store walls are lined with numerous firearms on display. Flags — reaching display case: yes; face concealed: unclear.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "Individuals smashing and reaching into display cases, aggression detected",
+  "key_moments": [
+    "two individuals smashing display cases",
+    "reaching into cases with face concealment",
+    "aggression and manipulation of items inside cases"
+  ],
+  "concern": "high"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.42,
+  "label": "suspicious",
+  "reason": "Individuals smashing and reaching into display cases, aggression detected",
+  "key_moments": [
+    "two individuals smashing display cases",
+    "reaching into cases with face concealment",
+    "aggression and manipulation of items inside cases"
+  ]
+}
+
+======================================================
+VLM frame 540 (window 420-540)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+Business context (from NestJS):
+- Store: Lone Star Tactical Arms (gun_store)
+Description: Licensed firearm and tactical equipment store located in Houston, Texas, USA. The business sells legal firearms, ammunition, tactical accessories, protective equipment, and hunting gear. The store includes secured weapon display areas, locked glass showcases, a cashier counter, and restricted staff-only storage areas containing additional inventory.
+
+A security camera monitors the cashier desk, the firearm display showcases, the main shopping area, and the main entrance/exit door. The surveillance system is designed to detect suspicious or criminal behavior such as armed robbery attempts, threatening behavior, weapon misuse inside the store, unauthorized access to restricted areas, physical aggression, rapid escape attempts, suspicious concealment of identity, and attempts to steal firearms or ammunition.
+
+Weapons being visible, handled by employees, or legally presented to customers are considered normal business activity. The system should only flag dangerous or criminal behavior involving weapons, threats, intimidation, robbery, or unsafe handling.
+Location: 1450 Westheimer Rd, Houston, TX, USA, Houston, Texas
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Employees handling firearms, Customers viewing weapons with employee supervision, Cashier processing firearm purchases, Customers discussing products with staff
+Forbidden behaviors: Pointing firearms at people, Threatening staff or customers with a weapon, Attempting armed robbery, Aggressive behavior involving weapons, Unauthorized access behind the cashier area, Attempting to steal firearms or ammunition, Rapid escape after suspicious activity, Concealing identity with balaclava or ski mask, Loading firearms inside the store without authorization, Taking weapons from display areas without employee permissio
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, the firearm display showcases, and the main shopping area inside the store. It provides a wide-angle view of customer movement, employee activity, weapon handling interactions, and behavior near secured weapon display cases.
+EARLIER observations (oldest → most recent):
+- (frame 240) VLM observation: An individual is walking through the center of a retail store, appearing to be in the process of removing or handling an object from a display case. The store displays numerous firearms on the walls and in glass cases. Flags — reaching display case: yes. Tracker detected: 1 person.
+- (frame 300) VLM observation: Two individuals are actively smashing and reaching into glass display cases inside a retail store, with one person leaning over the counter and another reaching into a case. The store appears to be a firearms retailer, given the inventory displayed on the walls. Flags — reaching display case: yes; face concealed: unclear; aggression: yes. Tracker detected: 1 person.
+- (frame 360) VLM observation: Two individuals are actively smashing and reaching into a glass display case inside a retail store. Both individuals are wearing dark clothing and face coverings while leaning over the counter to access the merchandise. Flags — reaching display case: yes; face concealed: yes; aggression: yes. Tracker detected: 1 person.
+- (frame 420) VLM observation: Two individuals are leaning over and reaching into glass display cases inside a retail store, with one individual appearing to be actively manipulating items inside the case. The store walls are lined with numerous firearms on display. Flags — reaching display case: yes; face concealed: unclear.
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 420) VLM observation: Two individuals are leaning over and reaching into glass display cases inside a retail store, with one individual appearing to be actively manipulating items inside the case. The store walls are lined with numerous firearms on display. Flags — reaching display case: yes; face concealed: unclear.
+- (frame 480) VLM observation: Two individuals are leaning over a display case in a store, appearing to be actively removing or handling merchandise from behind the glass. The store walls are lined with numerous firearms on display. Flags — reaching display case: yes; face concealed: unclear. Tracker detected: 1 person.
+- (frame 540) VLM observation: Two individuals are leaning over and reaching into a glass display case inside a retail store, appearing to be in the process of removing merchandise. Both individuals are dressed in dark, full-body clothing that obscures their identities. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 1 person.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "Individuals removing merchandise from display cases, escalating behavior",
+  "key_moments": [
+    "subjects lean over display case, reaching for merchandise",
+    "face concealment becomes more apparent",
+    "aggressive behavior indicated by smashing and reaching into cases in earlier frames"
+  ],
+  "concern": "high"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.36,
+  "label": "suspicious",
+  "reason": "Individuals removing merchandise from display cases, escalating behavior",
+  "key_moments": [
+    "subjects lean over display case, reaching for merchandise",
+    "face concealment becomes more apparent",
+    "aggressive behavior indicated by smashing and reaching into cases in earlier frames"
+  ]
+}
+
+======================================================
+VLM frame 600 (window 480-600)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+Business context (from NestJS):
+- Store: Lone Star Tactical Arms (gun_store)
+Description: Licensed firearm and tactical equipment store located in Houston, Texas, USA. The business sells legal firearms, ammunition, tactical accessories, protective equipment, and hunting gear. The store includes secured weapon display areas, locked glass showcases, a cashier counter, and restricted staff-only storage areas containing additional inventory.
+
+A security camera monitors the cashier desk, the firearm display showcases, the main shopping area, and the main entrance/exit door. The surveillance system is designed to detect suspicious or criminal behavior such as armed robbery attempts, threatening behavior, weapon misuse inside the store, unauthorized access to restricted areas, physical aggression, rapid escape attempts, suspicious concealment of identity, and attempts to steal firearms or ammunition.
+
+Weapons being visible, handled by employees, or legally presented to customers are considered normal business activity. The system should only flag dangerous or criminal behavior involving weapons, threats, intimidation, robbery, or unsafe handling.
+Location: 1450 Westheimer Rd, Houston, TX, USA, Houston, Texas
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Employees handling firearms, Customers viewing weapons with employee supervision, Cashier processing firearm purchases, Customers discussing products with staff
+Forbidden behaviors: Pointing firearms at people, Threatening staff or customers with a weapon, Attempting armed robbery, Aggressive behavior involving weapons, Unauthorized access behind the cashier area, Attempting to steal firearms or ammunition, Rapid escape after suspicious activity, Concealing identity with balaclava or ski mask, Loading firearms inside the store without authorization, Taking weapons from display areas without employee permissio
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, the firearm display showcases, and the main shopping area inside the store. It provides a wide-angle view of customer movement, employee activity, weapon handling interactions, and behavior near secured weapon display cases.
+EARLIER observations (oldest → most recent):
+- (frame 240) VLM observation: An individual is walking through the center of a retail store, appearing to be in the process of removing or handling an object from a display case. The store displays numerous firearms on the walls and in glass cases. Flags — reaching display case: yes. Tracker detected: 1 person.
+- (frame 300) VLM observation: Two individuals are actively smashing and reaching into glass display cases inside a retail store, with one person leaning over the counter and another reaching into a case. The store appears to be a firearms retailer, given the inventory displayed on the walls. Flags — reaching display case: yes; face concealed: unclear; aggression: yes. Tracker detected: 1 person.
+- (frame 360) VLM observation: Two individuals are actively smashing and reaching into a glass display case inside a retail store. Both individuals are wearing dark clothing and face coverings while leaning over the counter to access the merchandise. Flags — reaching display case: yes; face concealed: yes; aggression: yes. Tracker detected: 1 person.
+- (frame 420) VLM observation: Two individuals are leaning over and reaching into glass display cases inside a retail store, with one individual appearing to be actively manipulating items inside the case. The store walls are lined with numerous firearms on display. Flags — reaching display case: yes; face concealed: unclear.
+- (frame 540) VLM observation: Two individuals are leaning over and reaching into a glass display case inside a retail store, appearing to be in the process of removing merchandise. Both individuals are dressed in dark, full-body clothing that obscures their identities. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 1 person.
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 480) VLM observation: Two individuals are leaning over a display case in a store, appearing to be actively removing or handling merchandise from behind the glass. The store walls are lined with numerous firearms on display. Flags — reaching display case: yes; face concealed: unclear. Tracker detected: 1 person.
+- (frame 540) VLM observation: Two individuals are leaning over and reaching into a glass display case inside a retail store, appearing to be in the process of removing merchandise. Both individuals are dressed in dark, full-body clothing that obscures their identities. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 1 person.
+- (frame 600) VLM observation: Two individuals are leaning over and reaching into a glass display case inside a retail store, appearing to remove merchandise. The store walls are lined with numerous firearms on display. Flags — reaching display case: yes; face concealed: unclear.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "Individuals continue reaching into display cases, escalating concern",
+  "key_moments": [
+    "subjects lean over display case, reaching for merchandise",
+    "face concealment alternates between clear and unclear",
+    "aggression flags previously detected, now unclear"
+  ],
+  "concern": "high"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.2,
+  "label": "normal",
+  "reason": "Individuals continue reaching into display cases, escalating concern",
+  "key_moments": [
+    "subjects lean over display case, reaching for merchandise",
+    "face concealment alternates between clear and unclear",
+    "aggression flags previously detected, now unclear"
+  ]
+}
+
+======================================================
+VLM frame 660 (window 540-660)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+Business context (from NestJS):
+- Store: Lone Star Tactical Arms (gun_store)
+Description: Licensed firearm and tactical equipment store located in Houston, Texas, USA. The business sells legal firearms, ammunition, tactical accessories, protective equipment, and hunting gear. The store includes secured weapon display areas, locked glass showcases, a cashier counter, and restricted staff-only storage areas containing additional inventory.
+
+A security camera monitors the cashier desk, the firearm display showcases, the main shopping area, and the main entrance/exit door. The surveillance system is designed to detect suspicious or criminal behavior such as armed robbery attempts, threatening behavior, weapon misuse inside the store, unauthorized access to restricted areas, physical aggression, rapid escape attempts, suspicious concealment of identity, and attempts to steal firearms or ammunition.
+
+Weapons being visible, handled by employees, or legally presented to customers are considered normal business activity. The system should only flag dangerous or criminal behavior involving weapons, threats, intimidation, robbery, or unsafe handling.
+Location: 1450 Westheimer Rd, Houston, TX, USA, Houston, Texas
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Employees handling firearms, Customers viewing weapons with employee supervision, Cashier processing firearm purchases, Customers discussing products with staff
+Forbidden behaviors: Pointing firearms at people, Threatening staff or customers with a weapon, Attempting armed robbery, Aggressive behavior involving weapons, Unauthorized access behind the cashier area, Attempting to steal firearms or ammunition, Rapid escape after suspicious activity, Concealing identity with balaclava or ski mask, Loading firearms inside the store without authorization, Taking weapons from display areas without employee permissio
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, the firearm display showcases, and the main shopping area inside the store. It provides a wide-angle view of customer movement, employee activity, weapon handling interactions, and behavior near secured weapon display cases.
+EARLIER observations (oldest → most recent):
+- (frame 240) VLM observation: An individual is walking through the center of a retail store, appearing to be in the process of removing or handling an object from a display case. The store displays numerous firearms on the walls and in glass cases. Flags — reaching display case: yes. Tracker detected: 1 person.
+- (frame 300) VLM observation: Two individuals are actively smashing and reaching into glass display cases inside a retail store, with one person leaning over the counter and another reaching into a case. The store appears to be a firearms retailer, given the inventory displayed on the walls. Flags — reaching display case: yes; face concealed: unclear; aggression: yes. Tracker detected: 1 person.
+- (frame 360) VLM observation: Two individuals are actively smashing and reaching into a glass display case inside a retail store. Both individuals are wearing dark clothing and face coverings while leaning over the counter to access the merchandise. Flags — reaching display case: yes; face concealed: yes; aggression: yes. Tracker detected: 1 person.
+- (frame 420) VLM observation: Two individuals are leaning over and reaching into glass display cases inside a retail store, with one individual appearing to be actively manipulating items inside the case. The store walls are lined with numerous firearms on display. Flags — reaching display case: yes; face concealed: unclear.
+- (frame 540) VLM observation: Two individuals are leaning over and reaching into a glass display case inside a retail store, appearing to be in the process of removing merchandise. Both individuals are dressed in dark, full-body clothing that obscures their identities. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 1 person.
+- (frame 600) VLM observation: Two individuals are leaning over and reaching into a glass display case inside a retail store, appearing to remove merchandise. The store walls are lined with numerous firearms on display. Flags — reaching display case: yes; face concealed: unclear.
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 540) VLM observation: Two individuals are leaning over and reaching into a glass display case inside a retail store, appearing to be in the process of removing merchandise. Both individuals are dressed in dark, full-body clothing that obscures their identities. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 1 person.
+- (frame 600) VLM observation: Two individuals are leaning over and reaching into a glass display case inside a retail store, appearing to remove merchandise. The store walls are lined with numerous firearms on display. Flags — reaching display case: yes; face concealed: unclear.
+- (frame 660) VLM observation: Two individuals are leaning over and reaching into glass display cases inside a retail store, appearing to be in the process of removing merchandise. Both individuals are dressed in dark clothing and appear to be concealing their faces. Flags — reaching display case: yes; face concealed: yes.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "Individuals removing merchandise from display cases, concealing faces",
+  "key_moments": [
+    "Two individuals leaning over display cases, reaching for merchandise",
+    "Faces concealed, identities obscured",
+    "Aggressive behavior and reaching into cases continue"
+  ],
+  "concern": "high"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.32,
+  "label": "suspicious",
+  "reason": "Individuals removing merchandise from display cases, concealing faces",
+  "key_moments": [
+    "Two individuals leaning over display cases, reaching for merchandise",
+    "Faces concealed, identities obscured",
+    "Aggressive behavior and reaching into cases continue"
+  ]
+}
+
+======================================================
+VLM frame 720 (window 600-720)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+Business context (from NestJS):
+- Store: Lone Star Tactical Arms (gun_store)
+Description: Licensed firearm and tactical equipment store located in Houston, Texas, USA. The business sells legal firearms, ammunition, tactical accessories, protective equipment, and hunting gear. The store includes secured weapon display areas, locked glass showcases, a cashier counter, and restricted staff-only storage areas containing additional inventory.
+
+A security camera monitors the cashier desk, the firearm display showcases, the main shopping area, and the main entrance/exit door. The surveillance system is designed to detect suspicious or criminal behavior such as armed robbery attempts, threatening behavior, weapon misuse inside the store, unauthorized access to restricted areas, physical aggression, rapid escape attempts, suspicious concealment of identity, and attempts to steal firearms or ammunition.
+
+Weapons being visible, handled by employees, or legally presented to customers are considered normal business activity. The system should only flag dangerous or criminal behavior involving weapons, threats, intimidation, robbery, or unsafe handling.
+Location: 1450 Westheimer Rd, Houston, TX, USA, Houston, Texas
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Employees handling firearms, Customers viewing weapons with employee supervision, Cashier processing firearm purchases, Customers discussing products with staff
+Forbidden behaviors: Pointing firearms at people, Threatening staff or customers with a weapon, Attempting armed robbery, Aggressive behavior involving weapons, Unauthorized access behind the cashier area, Attempting to steal firearms or ammunition, Rapid escape after suspicious activity, Concealing identity with balaclava or ski mask, Loading firearms inside the store without authorization, Taking weapons from display areas without employee permissio
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, the firearm display showcases, and the main shopping area inside the store. It provides a wide-angle view of customer movement, employee activity, weapon handling interactions, and behavior near secured weapon display cases.
+EARLIER observations (oldest → most recent):
+- (frame 240) VLM observation: An individual is walking through the center of a retail store, appearing to be in the process of removing or handling an object from a display case. The store displays numerous firearms on the walls and in glass cases. Flags — reaching display case: yes. Tracker detected: 1 person.
+- (frame 300) VLM observation: Two individuals are actively smashing and reaching into glass display cases inside a retail store, with one person leaning over the counter and another reaching into a case. The store appears to be a firearms retailer, given the inventory displayed on the walls. Flags — reaching display case: yes; face concealed: unclear; aggression: yes. Tracker detected: 1 person.
+- (frame 360) VLM observation: Two individuals are actively smashing and reaching into a glass display case inside a retail store. Both individuals are wearing dark clothing and face coverings while leaning over the counter to access the merchandise. Flags — reaching display case: yes; face concealed: yes; aggression: yes. Tracker detected: 1 person.
+- (frame 420) VLM observation: Two individuals are leaning over and reaching into glass display cases inside a retail store, with one individual appearing to be actively manipulating items inside the case. The store walls are lined with numerous firearms on display. Flags — reaching display case: yes; face concealed: unclear.
+- (frame 540) VLM observation: Two individuals are leaning over and reaching into a glass display case inside a retail store, appearing to be in the process of removing merchandise. Both individuals are dressed in dark, full-body clothing that obscures their identities. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 1 person.
+- (frame 600) VLM observation: Two individuals are leaning over and reaching into a glass display case inside a retail store, appearing to remove merchandise. The store walls are lined with numerous firearms on display. Flags — reaching display case: yes; face concealed: unclear.
+- (frame 660) VLM observation: Two individuals are leaning over and reaching into glass display cases inside a retail store, appearing to be in the process of removing merchandise. Both individuals are dressed in dark clothing and appear to be concealing their faces. Flags — reaching display case: yes; face concealed: yes.
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 600) VLM observation: Two individuals are leaning over and reaching into a glass display case inside a retail store, appearing to remove merchandise. The store walls are lined with numerous firearms on display. Flags — reaching display case: yes; face concealed: unclear.
+- (frame 660) VLM observation: Two individuals are leaning over and reaching into glass display cases inside a retail store, appearing to be in the process of removing merchandise. Both individuals are dressed in dark clothing and appear to be concealing their faces. Flags — reaching display case: yes; face concealed: yes.
+- (frame 720) VLM observation: Two individuals are actively looting merchandise from behind the counter of a gun store. Both individuals are dressed in dark clothing and appear to be clearing items from the display area. Flags — reaching display case: yes; reaching behind counter: yes; face concealed: unclear; aggression: yes.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "Individuals looting merchandise, escalating aggression",
+  "key_moments": [
+    "subjects reach behind counter",
+    "aggression increases",
+    "face concealment observed",
+    "merchandise being removed from display area"
+  ],
+  "concern": "high"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.7,
+  "label": "suspicious",
+  "reason": "Individuals looting merchandise, escalating aggression",
+  "key_moments": [
+    "subjects reach behind counter",
+    "aggression increases",
+    "face concealment observed",
+    "merchandise being removed from display area"
+  ]
+}
+
+======================================================
+VLM frame 780 (window 660-780)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+Business context (from NestJS):
+- Store: Lone Star Tactical Arms (gun_store)
+Description: Licensed firearm and tactical equipment store located in Houston, Texas, USA. The business sells legal firearms, ammunition, tactical accessories, protective equipment, and hunting gear. The store includes secured weapon display areas, locked glass showcases, a cashier counter, and restricted staff-only storage areas containing additional inventory.
+
+A security camera monitors the cashier desk, the firearm display showcases, the main shopping area, and the main entrance/exit door. The surveillance system is designed to detect suspicious or criminal behavior such as armed robbery attempts, threatening behavior, weapon misuse inside the store, unauthorized access to restricted areas, physical aggression, rapid escape attempts, suspicious concealment of identity, and attempts to steal firearms or ammunition.
+
+Weapons being visible, handled by employees, or legally presented to customers are considered normal business activity. The system should only flag dangerous or criminal behavior involving weapons, threats, intimidation, robbery, or unsafe handling.
+Location: 1450 Westheimer Rd, Houston, TX, USA, Houston, Texas
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Employees handling firearms, Customers viewing weapons with employee supervision, Cashier processing firearm purchases, Customers discussing products with staff
+Forbidden behaviors: Pointing firearms at people, Threatening staff or customers with a weapon, Attempting armed robbery, Aggressive behavior involving weapons, Unauthorized access behind the cashier area, Attempting to steal firearms or ammunition, Rapid escape after suspicious activity, Concealing identity with balaclava or ski mask, Loading firearms inside the store without authorization, Taking weapons from display areas without employee permissio
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, the firearm display showcases, and the main shopping area inside the store. It provides a wide-angle view of customer movement, employee activity, weapon handling interactions, and behavior near secured weapon display cases.
+EARLIER observations (oldest → most recent):
+- (frame 240) VLM observation: An individual is walking through the center of a retail store, appearing to be in the process of removing or handling an object from a display case. The store displays numerous firearms on the walls and in glass cases. Flags — reaching display case: yes. Tracker detected: 1 person.
+- (frame 300) VLM observation: Two individuals are actively smashing and reaching into glass display cases inside a retail store, with one person leaning over the counter and another reaching into a case. The store appears to be a firearms retailer, given the inventory displayed on the walls. Flags — reaching display case: yes; face concealed: unclear; aggression: yes. Tracker detected: 1 person.
+- (frame 360) VLM observation: Two individuals are actively smashing and reaching into a glass display case inside a retail store. Both individuals are wearing dark clothing and face coverings while leaning over the counter to access the merchandise. Flags — reaching display case: yes; face concealed: yes; aggression: yes. Tracker detected: 1 person.
+- (frame 420) VLM observation: Two individuals are leaning over and reaching into glass display cases inside a retail store, with one individual appearing to be actively manipulating items inside the case. The store walls are lined with numerous firearms on display. Flags — reaching display case: yes; face concealed: unclear.
+- (frame 540) VLM observation: Two individuals are leaning over and reaching into a glass display case inside a retail store, appearing to be in the process of removing merchandise. Both individuals are dressed in dark, full-body clothing that obscures their identities. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 1 person.
+- (frame 600) VLM observation: Two individuals are leaning over and reaching into a glass display case inside a retail store, appearing to remove merchandise. The store walls are lined with numerous firearms on display. Flags — reaching display case: yes; face concealed: unclear.
+- (frame 660) VLM observation: Two individuals are leaning over and reaching into glass display cases inside a retail store, appearing to be in the process of removing merchandise. Both individuals are dressed in dark clothing and appear to be concealing their faces. Flags — reaching display case: yes; face concealed: yes.
+- (frame 720) VLM observation: Two individuals are actively looting merchandise from behind the counter of a gun store. Both individuals are dressed in dark clothing and appear to be clearing items from the display area. Flags — reaching display case: yes; reaching behind counter: yes; face concealed: unclear; aggression: yes.
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 660) VLM observation: Two individuals are leaning over and reaching into glass display cases inside a retail store, appearing to be in the process of removing merchandise. Both individuals are dressed in dark clothing and appear to be concealing their faces. Flags — reaching display case: yes; face concealed: yes.
+- (frame 720) VLM observation: Two individuals are actively looting merchandise from behind the counter of a gun store. Both individuals are dressed in dark clothing and appear to be clearing items from the display area. Flags — reaching display case: yes; reaching behind counter: yes; face concealed: unclear; aggression: yes.
+- (frame 780) VLM observation: Two individuals are actively reaching into and over a glass display case inside a retail store, appearing to be in the process of removing merchandise. Both individuals are positioned behind the counter area, leaning over the display cases. Flags — reaching display case: yes; reaching behind counter: yes; face concealed: unclear.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "Individuals looting merchandise, reaching behind counter",
+  "key_moments": [
+    "subjects move behind the counter",
+    "reaching into display cases intensifies",
+    "aggression and face concealment indicated"
+  ],
+  "concern": "high"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.7,
+  "label": "suspicious",
+  "reason": "Individuals looting merchandise, reaching behind counter",
+  "key_moments": [
+    "subjects move behind the counter",
+    "reaching into display cases intensifies",
+    "aggression and face concealment indicated"
+  ]
+}
+
+======================================================
+VLM frame 840 (window 720-840)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+Business context (from NestJS):
+- Store: Lone Star Tactical Arms (gun_store)
+Description: Licensed firearm and tactical equipment store located in Houston, Texas, USA. The business sells legal firearms, ammunition, tactical accessories, protective equipment, and hunting gear. The store includes secured weapon display areas, locked glass showcases, a cashier counter, and restricted staff-only storage areas containing additional inventory.
+
+A security camera monitors the cashier desk, the firearm display showcases, the main shopping area, and the main entrance/exit door. The surveillance system is designed to detect suspicious or criminal behavior such as armed robbery attempts, threatening behavior, weapon misuse inside the store, unauthorized access to restricted areas, physical aggression, rapid escape attempts, suspicious concealment of identity, and attempts to steal firearms or ammunition.
+
+Weapons being visible, handled by employees, or legally presented to customers are considered normal business activity. The system should only flag dangerous or criminal behavior involving weapons, threats, intimidation, robbery, or unsafe handling.
+Location: 1450 Westheimer Rd, Houston, TX, USA, Houston, Texas
+Sensitivity: high; scoring: aggressive; interaction: high
+Allowed behaviors: Employees handling firearms, Customers viewing weapons with employee supervision, Cashier processing firearm purchases, Customers discussing products with staff
+Forbidden behaviors: Pointing firearms at people, Threatening staff or customers with a weapon, Attempting armed robbery, Aggressive behavior involving weapons, Unauthorized access behind the cashier area, Attempting to steal firearms or ammunition, Rapid escape after suspicious activity, Concealing identity with balaclava or ski mask, Loading firearms inside the store without authorization, Taking weapons from display areas without employee permissio
+Surveillance cameras (1) — all video frames analyzed are captured from these cameras:
+  - Main Store Security Camera: The camera monitors the cashier desk, the main entrance and exit door, the firearm display showcases, and the main shopping area inside the store. It provides a wide-angle view of customer movement, employee activity, weapon handling interactions, and behavior near secured weapon display cases.
+EARLIER observations (oldest → most recent):
+- (frame 240) VLM observation: An individual is walking through the center of a retail store, appearing to be in the process of removing or handling an object from a display case. The store displays numerous firearms on the walls and in glass cases. Flags — reaching display case: yes. Tracker detected: 1 person.
+- (frame 300) VLM observation: Two individuals are actively smashing and reaching into glass display cases inside a retail store, with one person leaning over the counter and another reaching into a case. The store appears to be a firearms retailer, given the inventory displayed on the walls. Flags — reaching display case: yes; face concealed: unclear; aggression: yes. Tracker detected: 1 person.
+- (frame 360) VLM observation: Two individuals are actively smashing and reaching into a glass display case inside a retail store. Both individuals are wearing dark clothing and face coverings while leaning over the counter to access the merchandise. Flags — reaching display case: yes; face concealed: yes; aggression: yes. Tracker detected: 1 person.
+- (frame 420) VLM observation: Two individuals are leaning over and reaching into glass display cases inside a retail store, with one individual appearing to be actively manipulating items inside the case. The store walls are lined with numerous firearms on display. Flags — reaching display case: yes; face concealed: unclear.
+- (frame 540) VLM observation: Two individuals are leaning over and reaching into a glass display case inside a retail store, appearing to be in the process of removing merchandise. Both individuals are dressed in dark, full-body clothing that obscures their identities. Flags — reaching display case: yes; face concealed: yes. Tracker detected: 1 person.
+- (frame 600) VLM observation: Two individuals are leaning over and reaching into a glass display case inside a retail store, appearing to remove merchandise. The store walls are lined with numerous firearms on display. Flags — reaching display case: yes; face concealed: unclear.
+- (frame 660) VLM observation: Two individuals are leaning over and reaching into glass display cases inside a retail store, appearing to be in the process of removing merchandise. Both individuals are dressed in dark clothing and appear to be concealing their faces. Flags — reaching display case: yes; face concealed: yes.
+- (frame 720) VLM observation: Two individuals are actively looting merchandise from behind the counter of a gun store. Both individuals are dressed in dark clothing and appear to be clearing items from the display area. Flags — reaching display case: yes; reaching behind counter: yes; face concealed: unclear; aggression: yes.
+- (frame 780) VLM observation: Two individuals are actively reaching into and over a glass display case inside a retail store, appearing to be in the process of removing merchandise. Both individuals are positioned behind the counter area, leaning over the display cases. Flags — reaching display case: yes; reaching behind counter: yes; face concealed: unclear.
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 720) VLM observation: Two individuals are actively looting merchandise from behind the counter of a gun store. Both individuals are dressed in dark clothing and appear to be clearing items from the display area. Flags — reaching display case: yes; reaching behind counter: yes; face concealed: unclear; aggression: yes.
+- (frame 780) VLM observation: Two individuals are actively reaching into and over a glass display case inside a retail store, appearing to be in the process of removing merchandise. Both individuals are positioned behind the counter area, leaning over the display cases. Flags — reaching display case: yes; reaching behind counter: yes; face concealed: unclear.
+- (frame 840) VLM observation: Two individuals are actively smashing and reaching into a glass display case inside a retail store. Both individuals are dressed in dark clothing and appear to be looting the merchandise. Flags — reaching display case: yes; face concealed: yes; aggression: yes.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "Looting escalates with smashing display cases",
+  "key_moments": [
+    "individuals move behind counter and access display cases",
+    "reaching and smashing display cases intensifies",
+    "aggression and face concealment increase"
+  ],
+  "concern": "high"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.7,
+  "label": "suspicious",
+  "reason": "Looting escalates with smashing display cases",
+  "key_moments": [
+    "individuals move behind counter and access display cases",
+    "reaching and smashing display cases intensifies",
+    "aggression and face concealment increase"
+  ]
+}

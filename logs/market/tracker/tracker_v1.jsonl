@@ -469,3 +469,4 @@
 {"type": "tracker_frame", "frame_index": 2340, "video_time_ms": 78000, "frame_size": {"w": 320, "h": 240}, "tracks": [], "motion_detected": false}
 {"type": "tracker_frame", "frame_index": 2345, "video_time_ms": 78166, "frame_size": {"w": 320, "h": 240}, "tracks": [], "motion_detected": false}
 {"type": "tracker_frame", "frame_index": 2350, "video_time_ms": 78333, "frame_size": {"w": 320, "h": 240}, "tracks": [], "motion_detected": false}
+{"type": "tracker_frame", "frame_index": -1, "video_time_ms": -1, "tracks": [], "motion_detected": false, "reset": true}

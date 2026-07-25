@@ -1,9 +1,9 @@
 {
   "schema_version": 2,
-  "generated_at_unix_ms": 1784965462430,
+  "generated_at_unix_ms": 1784978141251,
   "source": {
-    "business": "market",
-    "version": 1
+    "business": "jewerly_store_short",
+    "version": 11
   },
   "businesses": [
     {
@@ -460,76 +460,27 @@
   "eval": {
     "confusion_matrix": {
       "normal": {
-        "normal": 1,
-        "suspicious": 0,
+        "normal": 2,
+        "suspicious": 6,
         "criminal": 0
       },
       "suspicious": {
         "normal": 0,
-        "suspicious": 4,
+        "suspicious": 0,
         "criminal": 0
       },
       "criminal": {
-        "normal": 2,
-        "suspicious": 6,
+        "normal": 0,
+        "suspicious": 0,
         "criminal": 0
       }
     },
-    "accuracy": 0.38461538461538464,
-    "under_call_count": 8,
-    "under_calls": [
-      [
-        900,
-        1020,
-        "criminal",
-        "suspicious"
-      ],
-      [
-        960,
-        1080,
-        "criminal",
-        "suspicious"
-      ],
-      [
-        1020,
-        1140,
-        "criminal",
-        "normal"
-      ],
-      [
-        1140,
-        1260,
-        "criminal",
-        "normal"
-      ],
-      [
-        1200,
-        1320,
-        "criminal",
-        "suspicious"
-      ],
-      [
-        1440,
-        1560,
-        "criminal",
-        "suspicious"
-      ],
-      [
-        1500,
-        1620,
-        "criminal",
-        "suspicious"
-      ],
-      [
-        1680,
-        1800,
-        "criminal",
-        "suspicious"
-      ]
-    ],
-    "over_call_count": 0,
-    "score_mae": 0.3976923076923077,
-    "avg_similarity": 0.2961798616998736,
+    "accuracy": 0.25,
+    "under_call_count": 0,
+    "under_calls": [],
+    "over_call_count": 6,
+    "score_mae": 0.41875,
+    "avg_similarity": 0.3292252342205216,
     "parse_failure_count": 0
   }
 }
