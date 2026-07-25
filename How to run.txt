@@ -50,6 +50,7 @@ Step 4 - VLM layer (backend/model come from .env's VLM_BACKEND/VLM_MODEL; warms 
   python vlm_worker.py --every 60 --ws-url ws://127.0.0.1:3000/ws/vlm --anomaly-endpoint tcp://127.0.0.1:5581
 
 Simple scorer (mock vs. real logs, no Groq needed):
+  python eval/build_analytics.py --out analytics.json    ---get the dashboard data
   python eval/score_logs.py                     (compares groq/logs_output.jsonl against the jewelry mock)
   python eval/score_logs.py --json out.json      (also writes the summary metrics to JSON, for the dashboard)
   python eval/score_logs.py --mock PATH --logs PATH   (point at different mock/log files)
