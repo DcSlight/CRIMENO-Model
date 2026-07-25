@@ -2,6 +2,19 @@ import re
 from typing import Any, Dict, List
 
 
+# Canonical VLM binary-cue key -> human-readable label, used to build the condensed
+# "flags" line (see build_vlm_sentence) and shared with groq_anomaly_worker.py /
+# scoring.py so all three stay in lock-step with the VLM schema (vlm/prompt.txt).
+CUE_LABELS: Dict[str, str] = {
+    "gun":                     "gun",
+    "knife":                   "knife",
+    "reaching_display_case":   "reaching display case",
+    "reaching_behind_counter": "reaching behind counter",
+    "hands_up":                "hands up",
+    "face_concealed":          "face concealed",
+    "aggression":              "aggression",
+}
+
 GENERIC_START_PATTERNS = [
     "the image shows",
     "this image shows",
@@ -74,6 +87,12 @@ def clean_caption(raw_caption: str, max_sentences: int = 3) -> str:
 
 
 def build_tracker_sentence(rec: Dict[str, Any]) -> str:
+    """Person/object COUNTS only — no raw track IDs, confidence scores, or bounding boxes.
+
+    Raw bbox/ID text is noise to an LLM narrator (it can't reason about pixel coordinates)
+    and was diluting/competing with the actual behavioral signal. Counts still let Groq
+    reason about "multiple people converging" without the technical soup.
+    """
     tracker = rec.get("tracker")
     if not tracker:
         return ""
@@ -82,16 +101,13 @@ def build_tracker_sentence(rec: Dict[str, Any]) -> str:
     if not tracks:
         return ""
 
-    parts = []
+    counts: Dict[str, int] = {}
     for t in tracks:
-        tid  = t.get("track_id")
-        cls  = t.get("cls", "object")
-        conf = t.get("conf", 0.0)
-        bbox = t.get("bbox", {})
-        x1, y1, x2, y2 = bbox.get("x1"), bbox.get("y1"), bbox.get("x2"), bbox.get("y2")
-        parts.append(f"ID {tid}: {cls} (confidence {conf:.2f}) at [{x1},{y1},{x2},{y2}]")
+        cls = t.get("cls", "object")
+        counts[cls] = counts.get(cls, 0) + 1
 
-    return ("YOLO tracker detected: " + "; ".join(parts) + ".") if parts else ""
+    parts = [f"{n} {cls}{'s' if n != 1 else ''}" for cls, n in counts.items()]
+    return ("Tracker detected: " + ", ".join(parts) + ".") if parts else ""
 
 
 def build_appearance_weapon_sentence(rec: Dict[str, Any]) -> str:
@@ -121,12 +137,43 @@ def build_appearance_weapon_sentence(rec: Dict[str, Any]) -> str:
 
 
 def build_vlm_sentence(rec: Dict[str, Any]) -> str:
-    """VLM full-frame Q&A summary — passed through verbatim, not truncated."""
+    """VLM observation — the Description sentence plus a condensed flag line.
+
+    Previously this passed through vlm.summary verbatim, which is a flat dump of every
+    schema field including repeated "Gun: no. Knife: no." boilerplate. That register
+    taught Groq to echo cues ("Reaching display case") instead of narrating behavior.
+    Now: keep the (already security-led) Description sentence, and only surface cues
+    that are NOT "no" — the true, security-relevant signal — as a short flag line.
+    """
     vlm = rec.get("vlm")
     if not vlm:
         return ""
-    summary = (vlm.get("summary") or "").strip()
-    return ("VLM observation: " + summary) if summary else ""
+    qa = vlm.get("qa") or {}
+    description = (qa.get("description") or "").strip()
+
+    if not description:
+        # Fallback for older log/mock formats that only have the flat summary string.
+        summary = (vlm.get("summary") or "").strip()
+        return ("VLM observation: " + summary) if summary else ""
+
+    # "weapon" is free text (e.g. "long, thin object, possibly a rifle or shotgun"), not a
+    # yes/no/unclear cue like gun/knife — it previously wasn't surfaced here at all, so
+    # anything the VLM could describe but not confidently classify as gun-or-knife (a bat,
+    # an ambiguous long object) was invisible to Groq's narrative. Surface it explicitly
+    # whenever it's not "none" (it still never feeds the deterministic score — only
+    # gun/knife do that — this is narrative-only, same as the description sentence).
+    weapon_note = (qa.get("weapon") or "").strip()
+    if weapon_note and weapon_note.lower() not in ("none", "n/a", "none visible"):
+        description = f"{description} Weapon note: {weapon_note}."
+
+    flags = []
+    for key, label in CUE_LABELS.items():
+        value = str(qa.get(key, "")).strip().lower()
+        if value and value != "no":
+            flags.append(f"{label}: {value}")
+    flag_text = ("Flags — " + "; ".join(flags) + ".") if flags else "Flags — none."
+
+    return f"VLM observation: {description} {flag_text}"
 
 
 def build_event_sentence(rec: Dict[str, Any]) -> str:

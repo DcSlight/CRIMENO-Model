@@ -1,35 +1,58 @@
+VLM now supports two backends, picked with --backend local|online (default: local).
+Set VLM_BACKEND=local|online and/or VLM_MODEL=<tag> in .env to skip passing --backend/
+--vlm_model every run (a CLI flag still overrides the .env value if you pass one) - see
+.env.example.
+
+One-time setup for --backend local (Ollama, runs on your GPU, no API key):
+  1. Install Ollama: https://ollama.com/download  (auto-starts in tray on boot)
+  2. ollama pull gemma3:4b   (~3 GB, once)
+     NOTE: do NOT use minicpm-v4.5/4.6 (crash Ollama, exit 0xc0000005 - needs unofficial fork)
+     or llama3.2-vision:11b (fails to load - "unknown model architecture: 'mllama'", Ollama's
+     new engine dropped support, no fix/ETA). qwen2.5vl:7b was tried as the default but was
+     both slow and weak in practice on this GPU (Pascal/Vulkan). gemma3:12b was stronger but
+     too heavy to run alongside tracker_worker.py's YOLO models - both compete for the same
+     GPU. gemma3:4b is light enough to run tracker + VLM together. Ollama's current engine
+     only natively supports Llama 4 / Gemma 3 / Qwen 2.5 VL / Mistral Small 3.1. See
+     vlm/README.md "Before trying a different vision model" before swapping again.
+  3. pip install -r requirements.txt
+
+One-time setup for --backend online (Gemini API, no local GPU needed):
+  1. Get a key: https://aistudio.google.com/apikey
+  2. Add to .env: GEMINI_API_KEY=your_key_here
+  3. pip install -r requirements.txt
+  Verify the model tag (default gemini-3.5-flash) is still current in AI Studio before
+  relying on it - gemini-2.0-flash was shut down mid-project while it was the default.
+  Frames leave the device to Google with this backend - local stays fully on-device.
+
+Before each run (--backend local): check Ollama's tray icon is running (it should auto-start).
+No API key needed for local VLM.
+
+----Fix Ollama----
+(if VLM warm-up fails with "exit status 0xc0000005")
+1. Get-Process ollama* | Stop-Process -Force
+2. $env:CUDA_VISIBLE_DEVICES = "-1"
+3. ollama serve
+   (leave this terminal open)
+4. new terminal: ollama list          (copy the model name shown)
+5. ollama run <model name> "hello"    (should get a real reply, no 500 error)
+   (then continue with Steps 1-4 below in their own terminals)
+
 Step 1 - Broadcaster:
   python video_broadcaster.py videos/shop.mp4
 
 Step 2 - Groq anomaly worker:
   python groq_anomaly_worker.py --ws_url ws://127.0.0.1:3000/ws/groq --decision-frames 60 --tracker-every 5
 
-  --decision-frames: minimum video frames between two Groq API calls (= cost knob, default 60).
-                     Groq fires AT MOST once per this many frames regardless of how fast VLM runs.
-  --tracker-every:   tracker's --send_every_n_frames value (default 5). Used to bound how far a
-                     tracker record can be from a VLM anchor when attaching enrichment context.
-  Cost is fully decoupled from VLM speed: running VLM faster gives fresher context but never
-  increases API spend. Only lower --decision-frames to increase decision frequency.
-
 Step 3 - YOLO Tracker:
   python tracker_worker.py --device cuda --ws_url ws://127.0.0.1:3000/ws/tracker --send_overlay 0 --send_every_n_frames 5 --anomaly-endpoint tcp://127.0.0.1:5581
 
-Step 4 - VLM layer (Qwen2.5-VL-3B-Instruct, full-frame scene analysis — PRIMARY decision driver / anchor):
-  python vlm_worker.py --device cuda --every 60 --ws-url none --anomaly-endpoint tcp://127.0.0.1:5581
+Step 4 - VLM layer (backend/model come from .env's VLM_BACKEND/VLM_MODEL; warms up on startup - watch for "[VLM] Warm-up result"):
+  python vlm_worker.py --every 60 --ws-url ws://127.0.0.1:3000/ws/vlm --anomaly-endpoint tcp://127.0.0.1:5581
 
-  VLM is the decision ANCHOR: each VLM frame triggers a potential Groq decision (subject to the
-  --decision-frames throttle above). The nearest tracker frame is attached automatically as
-  enrichment context.
-  One single structured call per frame returns rich JSON: scene description, people actions,
-  appearance, weapon description, + binary cues (gun, knife, reaching counter, hands up,
-  face concealed, aggression).
-  Model options:
-    --vlm_model Qwen/Qwen2.5-VL-3B-Instruct   (default, ~8 GB VRAM)
-    --vlm_model Qwen/Qwen2.5-VL-7B-Instruct   (higher quality, ~16 GB VRAM)
-  WS: use --ws-url none unless the NestJS backend actually exposes a /ws/vlm route (it does NOT by
-  default — a missing route causes "did not receive a valid HTTP response" and the worker hangs
-  retrying). The VLM reaches Groq via the anomaly-endpoint (5581) regardless of WS.
-
+Simple scorer (mock vs. real logs, no Groq needed):
+  python eval/score_logs.py                     (compares groq/logs_output.jsonl against the jewelry mock)
+  python eval/score_logs.py --json out.json      (also writes the summary metrics to JSON, for the dashboard)
+  python eval/score_logs.py --mock PATH --logs PATH   (point at different mock/log files)
 
 
 ---------------

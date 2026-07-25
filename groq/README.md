@@ -12,6 +12,7 @@ to classify each scene window as `normal`, `suspicious`, or `criminal`.
 | `event_builder.py` | Rules-based text processing — builds event sentences from VLM + tracker records |
 | `prompt.txt` | System prompt template sent to Llama 3.3 70B — edit here to tune model behaviour |
 | `groq_context_log.txt` | Auto-generated log of every prompt sent to Groq (for debugging) |
+| `logs_output.jsonl` | Auto-generated log of every anomaly payload sent to NestJS (one JSON object per line) |
 
 ## How it works
 

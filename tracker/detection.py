@@ -1,12 +1,10 @@
 import base64
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
-
-from config import ALL_WEAPON_CLASSES, APPEARANCE_PROMPTS
 
 
 # ============================================================
@@ -56,29 +54,6 @@ def iou_xyxy(a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]) -> floa
     return inter_area / union if union > 0 else 0.0
 
 
-def box_overlaps_any(bbox: Tuple[int, int, int, int],
-                     others: List[Tuple[int, int, int, int]]) -> bool:
-    """True if bbox has IOU > 0 with any box, or its centre sits inside one.
-    Used to gate weapon detections to actual people."""
-    x1, y1, x2, y2 = bbox
-    cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
-    for o in others:
-        if iou_xyxy(bbox, o) > 0.0:
-            return True
-        ox1, oy1, ox2, oy2 = o
-        if ox1 <= cx <= ox2 and oy1 <= cy <= oy2:
-            return True
-    return False
-
-
-def shrink_bbox_tuple(bbox: Tuple[int, int, int, int], factor: float = 0.2) -> Tuple[int, int, int, int]:
-    """Shrink a bounding box by `factor` while keeping it centred."""
-    x1, y1, x2, y2 = bbox
-    dx = int((x2 - x1) * factor / 2)
-    dy = int((y2 - y1) * factor / 2)
-    return (x1 + dx, y1 + dy, x2 - dx, y2 - dy)
-
-
 # ============================================================
 # Track dataclass
 # ============================================================
@@ -91,35 +66,6 @@ class Track:
     conf: float
     last_seen_frame: int
     source: str = ""
-    hits: int = 1
-    attributes: List[str] = field(default_factory=list)
-    attr_counts: Dict[str, int] = field(default_factory=dict)
-
-
-def is_weapon_track(t: Track) -> bool:
-    """True if this track is a weapon detection subject to person-gating + temporal confirmation."""
-    return t.source in ("suspicious", "weapon") and t.cls_name in ALL_WEAPON_CLASSES
-
-
-# ============================================================
-# Motion fallback (MOG2)
-# ============================================================
-
-class MotionDetector:
-    def __init__(self):
-        self.bg = cv2.createBackgroundSubtractorMOG2(history=200, varThreshold=32, detectShadows=False)
-
-    def detect(self, frame_bgr: np.ndarray) -> List[Tuple[int, int, int, int]]:
-        mask = self.bg.apply(frame_bgr)
-        mask = cv2.medianBlur(mask, 5)
-        _, mask = cv2.threshold(mask, 180, 255, cv2.THRESH_BINARY)
-        boxes: List[Tuple[int, int, int, int]] = []
-        for c in cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]:
-            if cv2.contourArea(c) < 600:
-                continue
-            x, y, w, h = cv2.boundingRect(c)
-            boxes.append((x, y, x + w, y + h))
-        return boxes
 
 
 # ============================================================
@@ -163,20 +109,12 @@ def draw_tracks(frame: np.ndarray, tracks: List[Track]) -> np.ndarray:
 
 
 def show_debug_frame(frame: np.ndarray, tracks: List[Track],
-                     window_name: str = "DEBUG", raw_yoloe=None) -> None:
+                     window_name: str = "DEBUG") -> None:
     debug = frame.copy()
-    for d in (raw_yoloe or []):
-        rx1, ry1, rx2, ry2 = d["bbox"]
-        cv2.rectangle(debug, (rx1, ry1), (rx2, ry2), (0, 255, 255), 1)
-        cv2.putText(debug, f"{d['cls_name']} {d['conf']:.2f}", (rx1, max(0, ry1 - 5)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
     for t in tracks:
         x1, y1, x2, y2 = t.bbox
-        color = (0, 0, 255) if t.source in ("suspicious", "weapon") else (0, 255, 0)
-        cv2.rectangle(debug, (x1, y1), (x2, y2), color, 2)
+        cv2.rectangle(debug, (x1, y1), (x2, y2), (0, 255, 0), 2)
         label = f"{t.cls_name} {t.conf:.2f}"
-        if t.attributes:
-            label += " [" + ",".join(t.attributes) + "]"
-        cv2.putText(debug, label, (x1, max(0, y1 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+        cv2.putText(debug, label, (x1, max(0, y1 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
     cv2.imshow(window_name, debug)
     cv2.waitKey(1)
