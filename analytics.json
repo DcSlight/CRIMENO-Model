@@ -1,9 +1,9 @@
 {
   "schema_version": 2,
-  "generated_at_unix_ms": 1784978287987,
+  "generated_at_unix_ms": 1785186012364,
   "source": {
-    "business": "gun_store_robbery",
-    "version": 1
+    "business": "jewerly_store_short",
+    "version": 12
   },
   "businesses": [
     {
@@ -21,11 +21,11 @@
   ],
   "kpisByBusiness": {
     "jewelry": {
-      "totalEvents": 8,
-      "criminalEvents": 0,
-      "avgAnomalyScore": 0.49125,
+      "totalEvents": 11,
+      "criminalEvents": 1,
+      "avgAnomalyScore": 0.6354545454545454,
       "activeBusinesses": 3,
-      "alertsToday": 0
+      "alertsToday": 1
     },
     "market": {
       "totalEvents": 13,
@@ -47,25 +47,25 @@
       {
         "time": "0s",
         "normal": 0,
-        "suspicious": 30,
-        "criminal": 0
-      },
-      {
-        "time": "0s",
-        "normal": 20,
-        "suspicious": 0,
+        "suspicious": 45,
         "criminal": 0
       },
       {
         "time": "0s",
         "normal": 0,
-        "suspicious": 50,
+        "suspicious": 38,
+        "criminal": 0
+      },
+      {
+        "time": "0s",
+        "normal": 0,
+        "suspicious": 60,
         "criminal": 0
       },
       {
         "time": "2s",
-        "normal": 20,
-        "suspicious": 0,
+        "normal": 0,
+        "suspicious": 36,
         "criminal": 0
       },
       {
@@ -83,14 +83,32 @@
       {
         "time": "14s",
         "normal": 0,
-        "suspicious": 66,
+        "suspicious": 70,
         "criminal": 0
       },
       {
         "time": "16s",
         "normal": 0,
-        "suspicious": 67,
+        "suspicious": 70,
         "criminal": 0
+      },
+      {
+        "time": "18s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "20s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "22s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
       }
     ],
     "market": [
@@ -252,11 +270,15 @@
     "jewelry": [
       {
         "type": "Suspicious Behavior",
-        "count": 6
+        "count": 10
       },
       {
         "type": "Weapon Detected",
-        "count": 3
+        "count": 4
+      },
+      {
+        "type": "Armed Robbery",
+        "count": 1
       }
     ],
     "market": [
@@ -280,15 +302,15 @@
     "jewelry": [
       {
         "name": "Normal",
-        "value": 2
+        "value": 0
       },
       {
         "name": "Suspicious",
-        "value": 6
+        "value": 10
       },
       {
         "name": "Criminal",
-        "value": 0
+        "value": 1
       }
     ],
     "market": [
@@ -327,11 +349,23 @@
         "value": 100
       },
       {
+        "text": "Counter",
+        "value": 80
+      },
+      {
         "text": "Customer",
         "value": 70
       },
       {
         "text": "Employee",
+        "value": 70
+      },
+      {
+        "text": "Man",
+        "value": 70
+      },
+      {
+        "text": "Physical",
         "value": 70
       },
       {
@@ -359,11 +393,23 @@
         "value": 50
       },
       {
+        "text": "Individual",
+        "value": 50
+      },
+      {
+        "text": "Escalates",
+        "value": 50
+      },
+      {
         "text": "Handgun",
         "value": 50
       },
       {
-        "text": "Individual",
+        "text": "Aggression",
+        "value": 50
+      },
+      {
+        "text": "Another",
         "value": 40
       },
       {
@@ -371,19 +417,11 @@
         "value": 40
       },
       {
-        "text": "Counter",
-        "value": 40
-      },
-      {
         "text": "Seated",
         "value": 40
       },
       {
-        "text": "Escalates",
-        "value": 40
-      },
-      {
-        "text": "Man",
+        "text": "Potential",
         "value": 40
       },
       {
@@ -391,32 +429,16 @@
         "value": 40
       },
       {
-        "text": "Aggression",
+        "text": "Behind",
         "value": 40
       },
       {
-        "text": "Another",
-        "value": 30
+        "text": "Forceful",
+        "value": 40
       },
       {
-        "text": "Remains",
-        "value": 30
-      },
-      {
-        "text": "Browsing",
-        "value": 30
-      },
-      {
-        "text": "Potential",
-        "value": 30
-      },
-      {
-        "text": "Resembling",
-        "value": 30
-      },
-      {
-        "text": "Flag",
-        "value": 30
+        "text": "Contact",
+        "value": 40
       }
     ],
     "market": [
@@ -624,14 +646,14 @@
   "confusionMatrixByBusiness": {
     "jewelry": [
       [
-        2,
-        6,
+        0,
+        8,
         0
       ],
       [
         0,
-        0,
-        0
+        2,
+        1
       ],
       [
         0,
@@ -677,70 +699,27 @@
   "eval": {
     "confusion_matrix": {
       "normal": {
-        "normal": 2,
-        "suspicious": 0,
+        "normal": 0,
+        "suspicious": 8,
         "criminal": 0
       },
       "suspicious": {
-        "normal": 1,
-        "suspicious": 3,
-        "criminal": 0
+        "normal": 0,
+        "suspicious": 2,
+        "criminal": 1
       },
       "criminal": {
-        "normal": 1,
-        "suspicious": 5,
+        "normal": 0,
+        "suspicious": 0,
         "criminal": 0
       }
     },
-    "accuracy": 0.4166666666666667,
-    "under_call_count": 7,
-    "under_calls": [
-      [
-        120,
-        240,
-        "suspicious",
-        "normal"
-      ],
-      [
-        420,
-        540,
-        "criminal",
-        "suspicious"
-      ],
-      [
-        480,
-        600,
-        "criminal",
-        "normal"
-      ],
-      [
-        540,
-        660,
-        "criminal",
-        "suspicious"
-      ],
-      [
-        600,
-        720,
-        "criminal",
-        "suspicious"
-      ],
-      [
-        660,
-        780,
-        "criminal",
-        "suspicious"
-      ],
-      [
-        720,
-        840,
-        "criminal",
-        "suspicious"
-      ]
-    ],
-    "over_call_count": 0,
-    "score_mae": 0.26833333333333337,
-    "avg_similarity": 0.3055775213621775,
+    "accuracy": 0.18181818181818182,
+    "under_call_count": 0,
+    "under_calls": [],
+    "over_call_count": 9,
+    "score_mae": 0.4418181818181818,
+    "avg_similarity": 0.3116650693320965,
     "parse_failure_count": 0
   }
 }
