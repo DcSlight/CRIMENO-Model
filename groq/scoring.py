@@ -62,7 +62,7 @@ CUE_WEIGHTS: Dict[str, Dict[str, float]] = {
 MULTI_PERSON_CONVERGE_WEIGHT = 0.10
 
 # scoring_level (from business context) biases the raw score before the label/gate decision.
-SCORING_LEVEL_BIAS = {"conservative": -0.10, "balanced": 0.0, "aggressive": 0.10}
+SCORING_LEVEL_BIAS = {"conservative": -0.10, "balanced": 0.0, "aggressive": 0.25}
 
 # Recency decay for evidence that is no longer visible in the current frame but appeared
 # recently. A cue's effective weight for a given past frame is base_weight * DECAY^age
