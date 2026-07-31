@@ -52,11 +52,11 @@ def _secs(frames: int) -> float:
 
 
 def print_matrix(matrix) -> None:
-    print("Confusion matrix (rows=ground truth, cols=predicted, cell = overlapping frames):")
+    print("Confusion matrix (rows=ground truth, cols=predicted, cell = overlapping seconds):")
     header = "".ljust(14) + "".join(l.ljust(12) for l in metrics.LABELS)
     print(header)
     for gt in metrics.LABELS:
-        row = gt.ljust(14) + "".join(str(matrix[gt][pred]).ljust(12) for pred in metrics.LABELS)
+        row = gt.ljust(14) + "".join(f"{_secs(matrix[gt][pred])}s".ljust(12) for pred in metrics.LABELS)
         print(row)
 
 
