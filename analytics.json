@@ -1,9 +1,9 @@
 {
   "schema_version": 2,
-  "generated_at_unix_ms": 1785186012364,
+  "generated_at_unix_ms": 1785500978247,
   "source": {
     "business": "jewerly_store_short",
-    "version": 12
+    "version": 15
   },
   "businesses": [
     {
@@ -21,11 +21,11 @@
   ],
   "kpisByBusiness": {
     "jewelry": {
-      "totalEvents": 11,
-      "criminalEvents": 1,
-      "avgAnomalyScore": 0.6354545454545454,
+      "totalEvents": 16,
+      "criminalEvents": 6,
+      "avgAnomalyScore": 0.64375,
       "activeBusinesses": 3,
-      "alertsToday": 1
+      "alertsToday": 6
     },
     "market": {
       "totalEvents": 13,
@@ -46,26 +46,26 @@
     "jewelry": [
       {
         "time": "0s",
-        "normal": 0,
-        "suspicious": 45,
+        "normal": 20,
+        "suspicious": 0,
         "criminal": 0
       },
       {
         "time": "0s",
-        "normal": 0,
-        "suspicious": 38,
+        "normal": 13,
+        "suspicious": 0,
         "criminal": 0
       },
       {
         "time": "0s",
-        "normal": 0,
-        "suspicious": 60,
+        "normal": 20,
+        "suspicious": 0,
         "criminal": 0
       },
       {
         "time": "2s",
-        "normal": 0,
-        "suspicious": 36,
+        "normal": 11,
+        "suspicious": 0,
         "criminal": 0
       },
       {
@@ -83,19 +83,19 @@
       {
         "time": "14s",
         "normal": 0,
-        "suspicious": 70,
+        "suspicious": 61,
         "criminal": 0
       },
       {
         "time": "16s",
         "normal": 0,
-        "suspicious": 70,
+        "suspicious": 60,
         "criminal": 0
       },
       {
         "time": "18s",
         "normal": 0,
-        "suspicious": 70,
+        "suspicious": 55,
         "criminal": 0
       },
       {
@@ -109,6 +109,36 @@
         "normal": 0,
         "suspicious": 0,
         "criminal": 100
+      },
+      {
+        "time": "24s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
+      },
+      {
+        "time": "26s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
+      },
+      {
+        "time": "28s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "30s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
+      },
+      {
+        "time": "32s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
       }
     ],
     "market": [
@@ -269,16 +299,16 @@
   "anomalyTypeByBusiness": {
     "jewelry": [
       {
-        "type": "Suspicious Behavior",
-        "count": 10
+        "type": "Weapon Detected",
+        "count": 8
       },
       {
-        "type": "Weapon Detected",
-        "count": 4
+        "type": "Suspicious Behavior",
+        "count": 6
       },
       {
         "type": "Armed Robbery",
-        "count": 1
+        "count": 5
       }
     ],
     "market": [
@@ -302,15 +332,15 @@
     "jewelry": [
       {
         "name": "Normal",
-        "value": 0
+        "value": 4
       },
       {
         "name": "Suspicious",
-        "value": 10
+        "value": 6
       },
       {
         "name": "Criminal",
-        "value": 1
+        "value": 6
       }
     ],
     "market": [
@@ -350,95 +380,95 @@
       },
       {
         "text": "Counter",
-        "value": 80
-      },
-      {
-        "text": "Customer",
-        "value": 70
-      },
-      {
-        "text": "Employee",
-        "value": 70
-      },
-      {
-        "text": "Man",
-        "value": 70
-      },
-      {
-        "text": "Physical",
-        "value": 70
-      },
-      {
-        "text": "Interacts",
-        "value": 60
-      },
-      {
-        "text": "Case",
-        "value": 60
-      },
-      {
-        "text": "Stands",
-        "value": 60
-      },
-      {
-        "text": "Scene",
-        "value": 60
-      },
-      {
-        "text": "Jewelry",
-        "value": 50
-      },
-      {
-        "text": "Desk",
-        "value": 50
-      },
-      {
-        "text": "Individual",
-        "value": 50
-      },
-      {
-        "text": "Escalates",
-        "value": 50
-      },
-      {
-        "text": "Handgun",
-        "value": 50
-      },
-      {
-        "text": "Aggression",
-        "value": 50
-      },
-      {
-        "text": "Another",
-        "value": 40
-      },
-      {
-        "text": "Customers",
-        "value": 40
-      },
-      {
-        "text": "Seated",
-        "value": 40
+        "value": 92
       },
       {
         "text": "Potential",
-        "value": 40
+        "value": 77
       },
       {
-        "text": "Object",
-        "value": 40
+        "text": "Physical",
+        "value": 77
+      },
+      {
+        "text": "Customer",
+        "value": 69
+      },
+      {
+        "text": "Individual",
+        "value": 69
+      },
+      {
+        "text": "Scene",
+        "value": 69
+      },
+      {
+        "text": "Man",
+        "value": 69
+      },
+      {
+        "text": "Case",
+        "value": 62
+      },
+      {
+        "text": "Employee",
+        "value": 62
       },
       {
         "text": "Behind",
-        "value": 40
+        "value": 62
       },
       {
-        "text": "Forceful",
-        "value": 40
+        "text": "Stands",
+        "value": 54
       },
       {
-        "text": "Contact",
-        "value": 40
+        "text": "Escalates",
+        "value": 54
+      },
+      {
+        "text": "Aggression",
+        "value": 54
+      },
+      {
+        "text": "Firearm",
+        "value": 54
+      },
+      {
+        "text": "Interacts",
+        "value": 46
+      },
+      {
+        "text": "Another",
+        "value": 46
+      },
+      {
+        "text": "Handgun",
+        "value": 46
+      },
+      {
+        "text": "Woman",
+        "value": 46
+      },
+      {
+        "text": "Person",
+        "value": 46
+      },
+      {
+        "text": "Jewelry",
+        "value": 38
+      },
+      {
+        "text": "Object",
+        "value": 38
+      },
+      {
+        "text": "Flag",
+        "value": 38
+      },
+      {
+        "text": "Restraint",
+        "value": 38
       }
     ],
     "market": [
@@ -646,14 +676,14 @@
   "confusionMatrixByBusiness": {
     "jewelry": [
       [
-        0,
-        8,
+        4,
+        4,
         0
       ],
       [
         0,
         2,
-        1
+        6
       ],
       [
         0,
@@ -699,14 +729,14 @@
   "eval": {
     "confusion_matrix": {
       "normal": {
-        "normal": 0,
-        "suspicious": 8,
+        "normal": 4,
+        "suspicious": 4,
         "criminal": 0
       },
       "suspicious": {
         "normal": 0,
         "suspicious": 2,
-        "criminal": 1
+        "criminal": 6
       },
       "criminal": {
         "normal": 0,
@@ -714,12 +744,12 @@
         "criminal": 0
       }
     },
-    "accuracy": 0.18181818181818182,
+    "accuracy": 0.375,
     "under_call_count": 0,
     "under_calls": [],
-    "over_call_count": 9,
-    "score_mae": 0.4418181818181818,
-    "avg_similarity": 0.3116650693320965,
+    "over_call_count": 10,
+    "score_mae": 0.27625,
+    "avg_similarity": 0.2873228098349186,
     "parse_failure_count": 0
   }
 }
