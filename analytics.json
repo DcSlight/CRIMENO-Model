@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_at_unix_ms": 1785529207753,
+  "generated_at_unix_ms": 1785528793108,
   "source": {
     "business": "jewerly_store_short",
     "version": 15
@@ -1139,12 +1139,12 @@
       [
         0,
         2,
-        14
+        2
       ],
       [
         0,
         0,
-        62
+        74
       ]
     ],
     "market": [
@@ -1231,12 +1231,12 @@
         "suspicious": {
           "normal": 0,
           "suspicious": 61,
-          "criminal": 419
+          "criminal": 59
         },
         "criminal": {
           "normal": 0,
           "suspicious": 0,
-          "criminal": 1860
+          "criminal": 2220
         }
       },
       "not_covered": {
@@ -1244,10 +1244,10 @@
         "suspicious": 0,
         "criminal": 0
       },
-      "accuracy": 0.7606666666666667,
-      "score_mae": 0.13019999999999998,
+      "accuracy": 0.8806666666666667,
+      "score_mae": 0.11339999999999997,
       "under_call_count": 0,
-      "over_call_count": 718,
+      "over_call_count": 358,
       "coverage": {
         "covered_range": [
           0,
@@ -1272,23 +1272,23 @@
         "suspicious": {
           "normal": 0,
           "suspicious": 61,
-          "criminal": 360
+          "criminal": 59
         },
         "criminal": {
           "normal": 0,
           "suspicious": 0,
-          "criminal": 0
+          "criminal": 301
         }
       },
       "not_covered": {
         "normal": 60,
-        "suspicious": 59,
-        "criminal": 1860
+        "suspicious": 0,
+        "criminal": 1919
       },
-      "accuracy": 0.178256611165524,
-      "score_mae": 0.40187071498530846,
+      "accuracy": 0.4730656219392752,
+      "score_mae": 0.35655239960822727,
       "under_call_count": 0,
-      "over_call_count": 839,
+      "over_call_count": 538,
       "coverage": {
         "covered_range": [
           0,
