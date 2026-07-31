@@ -169,8 +169,9 @@ LABELS = ("normal", "suspicious", "criminal")
 # ------------------------------------------------------------------
 # Threat latching
 # ------------------------------------------------------------------
-# Ground truth for a real armed robbery holds "criminal" for ~60 CONSECUTIVE SECONDS, while
-# the evidence decay above has a horizon of ~8. Without memory the score collapses back to
+# Ground truth for a real armed robbery holds "criminal" for up to ~90 CONSECUTIVE SECONDS
+# (checked across all three mocks: jewelry 74s, market 91s, gun_store 53s), while the
+# evidence decay above has a horizon of ~8. Without memory the score collapses back to
 # "normal" the moment the weapon and the struggle leave frame — even though the robbery is
 # still in progress and the suspects are visibly emptying the cases.
 #
@@ -178,8 +179,8 @@ LABELS = ("normal", "suspicious", "criminal")
 # still needs raw, sustained, corroborated evidence), so latching only governs how the state
 # is EXITED, never how it is entered — the anti-false-positive guard this module was built
 # around is fully preserved.
-LATCH_HOLD_DECISIONS = 20      # decisions held at full threat after the gate fires
-LATCH_DECAY_DECISIONS = 20     # decisions over which the threat then fades to zero
+LATCH_HOLD_DECISIONS = 40      # decisions held at full threat after the gate fires
+LATCH_DECAY_DECISIONS = 40     # decisions over which the threat then fades to zero
 LATCH_CALM_EXIT_STREAK = 6     # consecutive calm decisions that release the latch early
 LATCH_FLOOR_SCORE = 0.90       # raw-score floor at full threat (matches ground-truth plateau)
 LATCH_CRIMINAL_MIN_LEVEL = 0.5  # threat level above which "criminal" stays available
