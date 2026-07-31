@@ -222,7 +222,9 @@ class TestAnomalyTrend(unittest.TestCase):
             (300, 420, "suspicious", 0.7),
         ])
         segments = metrics.non_degenerate(segments)
-        trend = build_analytics.compute_anomaly_trend(segments)
+        points = metrics.points_from_windows(segments)
+        start, end = metrics.covered_range_from_windows(segments)
+        trend = build_analytics.compute_anomaly_trend(points, start, end)
 
         times = [p["time"] for p in trend]
         self.assertEqual(len(times), len(set(times)), f"duplicate time keys in {times}")
@@ -233,7 +235,7 @@ class TestAnomalyTrend(unittest.TestCase):
             self.assertGreater(b, a)
 
     def test_trend_is_empty_for_no_segments(self):
-        self.assertEqual(build_analytics.compute_anomaly_trend([]), [])
+        self.assertEqual(build_analytics.compute_anomaly_trend([], None, None), [])
 
 
 if __name__ == "__main__":

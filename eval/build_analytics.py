@@ -44,6 +44,12 @@ DEFAULT_OUT = REPO_ROOT / "analytics.json"
 
 ALL_BUSINESSES = [{"key": key, "name": info["display_name"]} for key, info in metrics.BUSINESSES.items()]
 
+# confusionMatrixByBusiness ships to the dashboard in SECONDS, not raw frames - metrics.evaluate()
+# grades frame-by-frame (see its docstring for why), but a reader expects a confusion matrix
+# cell to be a plain count, not "2220" with no unit. Accuracy/MAE/etc in the `eval` object stay
+# frame-weighted and untouched - only this display matrix is converted.
+FPS = 30
+
 STOPWORDS = {
     "the", "a", "an", "is", "are", "was", "were", "to", "of", "in", "on", "at",
     "and", "or", "with", "for", "near", "that", "this", "it", "as", "be", "by",
@@ -90,10 +96,38 @@ def resolve_active_run():
     return key, metrics.BUSINESSES[key]["log_folder"], version
 
 
-def compute_kpis(segments: list) -> dict:
-    total = len(segments)
-    criminal = sum(1 for s in segments if s["label"] == "criminal")
-    avg_score = sum(s["score"] for s in segments) / total if total else 0.0
+def replay_points_for(vlm_path, tracker_path, scoring_level: str):
+    """Full-video predictions via cue-replay through groq/scoring.py - the SAME source the
+    confusion matrix already prefers over the live groq log, used here so KPIs/trend/severity
+    describe the real video's actual length instead of whatever prefix a live run happened to
+    reach before being stopped early. Returns ([], None, None) if there's no vlm cue stream to
+    replay - callers should fall back to the live log's own (possibly partial) coverage."""
+    if vlm_path is None:
+        return [], None, None
+    vlm_records = metrics.load_vlm_records(vlm_path)
+    tracker_frames = metrics.load_tracker_frames(tracker_path)
+    points = metrics.points_from_replay(vlm_records, tracker_frames, scoring_level)
+    covered_start, covered_end = metrics.points_range(points)
+    return points, covered_start, covered_end
+
+
+def compute_kpis(points: list, covered_start, covered_end,
+                  step: int = metrics.DEFAULT_STEP_FRAMES) -> dict:
+    if not points or covered_start is None:
+        return {
+            "totalEvents": 0, "criminalEvents": 0, "avgAnomalyScore": 0.0,
+            "activeBusinesses": len(ALL_BUSINESSES), "alertsToday": 0,
+        }
+    labels, scores = [], []
+    for frame in metrics.sample_grid(covered_start, covered_end, step):
+        pred = metrics.predicted_at(points, frame, covered_start, covered_end)
+        if pred is not None:
+            label, score, _reason = pred
+            labels.append(label)
+            scores.append(score)
+    total = len(labels)
+    criminal = sum(1 for label in labels if label == "criminal")
+    avg_score = sum(scores) / total if total else 0.0
     return {
         "totalEvents": total,
         "criminalEvents": criminal,
@@ -103,7 +137,8 @@ def compute_kpis(segments: list) -> dict:
     }
 
 
-def compute_anomaly_trend(segments: list, step: int = metrics.DEFAULT_STEP_FRAMES) -> list:
+def compute_anomaly_trend(points: list, covered_start, covered_end,
+                           step: int = metrics.DEFAULT_STEP_FRAMES) -> list:
     """One point per fixed `step`-frame bucket (default 2s) across the whole run, with the
     anomaly score placed into whichever series matches that bucket's standing label and 0 in
     the other two. Replaces the old per-window trend, which keyed each point on a window's
@@ -111,14 +146,10 @@ def compute_anomaly_trend(segments: list, step: int = metrics.DEFAULT_STEP_FRAME
     duplicate x-axis keys (three "0s" points) and gaps wherever no window happened to start
     (frames 180-300 on the jewelry run), crushing the "normal" series into a stub at the
     origin instead of a real timeline."""
-    if not segments:
+    if not points or covered_start is None:
         return []
-    points = metrics.points_from_windows(segments)
-    covered_start, covered_end = metrics.covered_range_from_windows(segments)
-    grid = metrics.sample_grid(covered_start, covered_end, step)
-
     trend = []
-    for frame in grid:
+    for frame in metrics.sample_grid(covered_start, covered_end, step):
         point = {"time": f"{round(frame / 30)}s", "normal": 0, "suspicious": 0, "criminal": 0}
         pred = metrics.predicted_at(points, frame, covered_start, covered_end)
         if pred is not None:
@@ -142,14 +173,13 @@ def compute_anomaly_type(segments: list) -> list:
     return [{"type": t, "count": c} for t, c in counts.items() if c > 0]
 
 
-def compute_severity(segments: list, step: int = metrics.DEFAULT_STEP_FRAMES) -> list:
+def compute_severity(points: list, covered_start, covered_end,
+                      step: int = metrics.DEFAULT_STEP_FRAMES) -> list:
     """Grid-sampled distribution ("how much of the run's covered video sat at each label"),
     not a raw count of overlapping windows - a window emitted every 60 frames but spanning
     120 would otherwise be counted once per emission regardless of how long it actually held."""
     counts = {label: 0 for label in metrics.LABELS}
-    if segments:
-        points = metrics.points_from_windows(segments)
-        covered_start, covered_end = metrics.covered_range_from_windows(segments)
+    if points and covered_start is not None:
         for frame in metrics.sample_grid(covered_start, covered_end, step):
             pred = metrics.predicted_at(points, frame, covered_start, covered_end)
             if pred is not None and pred[0] in counts:
@@ -232,7 +262,7 @@ def compute_eval_summary(business_key: str, mock_path: Path, groq_path, vlm_path
     matrix = None
     if source_result:
         m = source_result["confusion_matrix"]
-        matrix = [[m[gt][pred] for pred in metrics.LABELS] for gt in metrics.LABELS]
+        matrix = [[round(m[gt][pred] / FPS) for pred in metrics.LABELS] for gt in metrics.LABELS]
     out["confusion_matrix_source"] = "replay" if out["replay"] else ("log" if out["log"] else None)
     return out, matrix
 
@@ -247,6 +277,7 @@ def build_analytics(mock_override, scoring_level: str = metrics.DEFAULT_SCORING_
     words_by_business = {}
     people_by_business = {}
     confusion_by_business = {}
+    narrative_coverage_by_business = {}
     active_eval_summary = None
 
     for key in metrics.BUSINESSES:
@@ -260,11 +291,28 @@ def build_analytics(mock_override, scoring_level: str = metrics.DEFAULT_SCORING_
         segments = metrics.non_degenerate(metrics.load_windows(groq_path))
         frames = metrics.load_tracker_frames(tracker_path)
 
-        kpis_by_business[key] = compute_kpis(segments)
-        trend_by_business[key] = compute_anomaly_trend(segments)
+        # KPIs/trend/severity are normalized to the FULL video (cue-replay), matching what
+        # the confusion matrix already prefers - otherwise a live run stopped early (or a
+        # groq worker that lagged the vlm/tracker workers) makes these widgets silently
+        # describe a shorter span than the confusion matrix and the real video length.
+        points, covered_start, covered_end = replay_points_for(vlm_path, tracker_path, scoring_level)
+        if not points:
+            # No vlm cue stream to replay - degrade to whatever the live log itself covers
+            # rather than going blank.
+            points = metrics.points_from_windows(segments)
+            covered_start, covered_end = metrics.covered_range_from_windows(segments)
+
+        kpis_by_business[key] = compute_kpis(points, covered_start, covered_end)
+        trend_by_business[key] = compute_anomaly_trend(points, covered_start, covered_end)
+        severity_by_business[key] = compute_severity(points, covered_start, covered_end)
+
+        # Anomaly type / word frequencies keyword-match Groq's own narrated `reason` +
+        # `key_moments` text, which only exists in the live groq log - cue-replay never
+        # invents narration, so these two stay scoped to whatever that log actually covered
+        # (see narrativeCoverageByBusiness below for how much of the video that is).
         type_by_business[key] = compute_anomaly_type(segments)
-        severity_by_business[key] = compute_severity(segments)
         words_by_business[key] = compute_word_frequencies(segments)
+
         people_by_business[key] = compute_people_count(frames)
 
         mock_path = mock_override if mock_override is not None else metrics.mock_path_for(key)
@@ -272,6 +320,8 @@ def build_analytics(mock_override, scoring_level: str = metrics.DEFAULT_SCORING_
             key, mock_path, groq_path, vlm_path, tracker_path, scoring_level,
         )
         confusion_by_business[key] = matrix
+        if summary and summary.get("log"):
+            narrative_coverage_by_business[key] = summary["log"]["coverage"]
 
         if key == active_key:
             active_eval_summary = summary
@@ -288,6 +338,9 @@ def build_analytics(mock_override, scoring_level: str = metrics.DEFAULT_SCORING_
         "wordFrequenciesByBusiness": words_by_business,
         "peopleByBusiness": people_by_business,
         "confusionMatrixByBusiness": confusion_by_business,
+        # Diagnostic only (nothing currently reads this): how much of the real video
+        # anomalyType/wordFrequencies actually cover, since they're stuck on the live log.
+        "narrativeCoverageByBusiness": narrative_coverage_by_business,
         "eval": active_eval_summary,
     }
 

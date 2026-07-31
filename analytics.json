@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_at_unix_ms": 1785527151176,
+  "generated_at_unix_ms": 1785528793108,
   "source": {
     "business": "jewerly_store_short",
     "version": 15
@@ -21,23 +21,23 @@
   ],
   "kpisByBusiness": {
     "jewelry": {
-      "totalEvents": 15,
-      "criminalEvents": 6,
-      "avgAnomalyScore": 0.6733333333333333,
+      "totalEvents": 51,
+      "criminalEvents": 38,
+      "avgAnomalyScore": 0.7886274509803921,
       "activeBusinesses": 3,
-      "alertsToday": 6
+      "alertsToday": 38
     },
     "market": {
-      "totalEvents": 12,
+      "totalEvents": 37,
       "criminalEvents": 0,
-      "avgAnomalyScore": 0.46,
+      "avgAnomalyScore": 0.27756756756756756,
       "activeBusinesses": 3,
       "alertsToday": 0
     },
     "gun_store": {
-      "totalEvents": 11,
+      "totalEvents": 29,
       "criminalEvents": 0,
-      "avgAnomalyScore": 0.4390909090909091,
+      "avgAnomalyScore": 0.41517241379310343,
       "activeBusinesses": 3,
       "alertsToday": 0
     }
@@ -46,13 +46,13 @@
     "jewelry": [
       {
         "time": "0s",
-        "normal": 0,
+        "normal": 20,
         "suspicious": 0,
         "criminal": 0
       },
       {
         "time": "2s",
-        "normal": 13,
+        "normal": 18,
         "suspicious": 0,
         "criminal": 0
       },
@@ -64,25 +64,25 @@
       },
       {
         "time": "6s",
-        "normal": 11,
+        "normal": 16,
         "suspicious": 0,
         "criminal": 0
       },
       {
         "time": "8s",
-        "normal": 11,
+        "normal": 19,
         "suspicious": 0,
         "criminal": 0
       },
       {
         "time": "10s",
-        "normal": 11,
+        "normal": 5,
         "suspicious": 0,
         "criminal": 0
       },
       {
         "time": "12s",
-        "normal": 11,
+        "normal": 3,
         "suspicious": 0,
         "criminal": 0
       },
@@ -95,25 +95,25 @@
       {
         "time": "16s",
         "normal": 0,
-        "suspicious": 70,
+        "suspicious": 67,
         "criminal": 0
       },
       {
         "time": "18s",
         "normal": 0,
-        "suspicious": 61,
+        "suspicious": 56,
         "criminal": 0
       },
       {
         "time": "20s",
         "normal": 0,
-        "suspicious": 60,
+        "suspicious": 55,
         "criminal": 0
       },
       {
         "time": "22s",
         "normal": 0,
-        "suspicious": 55,
+        "suspicious": 60,
         "criminal": 0
       },
       {
@@ -157,9 +157,255 @@
         "normal": 0,
         "suspicious": 0,
         "criminal": 90
+      },
+      {
+        "time": "38s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "40s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "42s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "44s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "46s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "48s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
+      },
+      {
+        "time": "50s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
+      },
+      {
+        "time": "52s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
+      },
+      {
+        "time": "54s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "56s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 94
+      },
+      {
+        "time": "58s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "60s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "62s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "64s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "66s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "68s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "70s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "72s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "74s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
+      },
+      {
+        "time": "76s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "78s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "80s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "82s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "84s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 98
+      },
+      {
+        "time": "86s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
+      },
+      {
+        "time": "88s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
+      },
+      {
+        "time": "90s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 91
+      },
+      {
+        "time": "92s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "94s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "96s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
+      },
+      {
+        "time": "98s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "100s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
       }
     ],
     "market": [
+      {
+        "time": "0s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "2s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "4s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "6s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "8s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "10s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "12s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "14s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "16s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
       {
         "time": "18s",
         "normal": 0,
@@ -175,37 +421,37 @@
       {
         "time": "22s",
         "normal": 0,
-        "suspicious": 70,
+        "suspicious": 55,
         "criminal": 0
       },
       {
         "time": "24s",
         "normal": 0,
-        "suspicious": 55,
+        "suspicious": 30,
         "criminal": 0
       },
       {
         "time": "26s",
         "normal": 0,
-        "suspicious": 65,
+        "suspicious": 68,
         "criminal": 0
       },
       {
         "time": "28s",
         "normal": 0,
-        "suspicious": 31,
+        "suspicious": 37,
         "criminal": 0
       },
       {
         "time": "30s",
-        "normal": 0,
-        "suspicious": 31,
+        "normal": 9,
+        "suspicious": 0,
         "criminal": 0
       },
       {
         "time": "32s",
-        "normal": 0,
-        "suspicious": 31,
+        "normal": 5,
+        "suspicious": 0,
         "criminal": 0
       },
       {
@@ -217,79 +463,115 @@
       {
         "time": "36s",
         "normal": 0,
-        "suspicious": 45,
+        "suspicious": 43,
         "criminal": 0
       },
       {
         "time": "38s",
-        "normal": 17,
+        "normal": 20,
         "suspicious": 0,
         "criminal": 0
       },
       {
         "time": "40s",
-        "normal": 17,
+        "normal": 13,
         "suspicious": 0,
         "criminal": 0
       },
       {
         "time": "42s",
-        "normal": 7,
+        "normal": 15,
         "suspicious": 0,
         "criminal": 0
       },
       {
         "time": "44s",
         "normal": 0,
-        "suspicious": 61,
+        "suspicious": 58,
         "criminal": 0
       },
       {
         "time": "46s",
         "normal": 0,
-        "suspicious": 61,
+        "suspicious": 55,
         "criminal": 0
       },
       {
         "time": "48s",
         "normal": 0,
-        "suspicious": 61,
+        "suspicious": 53,
         "criminal": 0
       },
       {
         "time": "50s",
         "normal": 0,
-        "suspicious": 61,
+        "suspicious": 51,
         "criminal": 0
       },
       {
         "time": "52s",
-        "normal": 0,
-        "suspicious": 33,
+        "normal": 20,
+        "suspicious": 0,
         "criminal": 0
       },
       {
         "time": "54s",
         "normal": 0,
-        "suspicious": 55,
+        "suspicious": 50,
         "criminal": 0
       },
       {
         "time": "56s",
         "normal": 0,
-        "suspicious": 55,
+        "suspicious": 50,
         "criminal": 0
       },
       {
         "time": "58s",
         "normal": 0,
-        "suspicious": 55,
+        "suspicious": 50,
         "criminal": 0
       },
       {
         "time": "60s",
         "normal": 0,
         "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "62s",
+        "normal": 0,
+        "suspicious": 44,
+        "criminal": 0
+      },
+      {
+        "time": "64s",
+        "normal": 0,
+        "suspicious": 63,
+        "criminal": 0
+      },
+      {
+        "time": "66s",
+        "normal": 0,
+        "suspicious": 35,
+        "criminal": 0
+      },
+      {
+        "time": "68s",
+        "normal": 0,
+        "suspicious": 54,
+        "criminal": 0
+      },
+      {
+        "time": "70s",
+        "normal": 20,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "72s",
+        "normal": 16,
+        "suspicious": 0,
         "criminal": 0
       }
     ],
@@ -302,68 +584,68 @@
       },
       {
         "time": "2s",
-        "normal": 10,
+        "normal": 8,
         "suspicious": 0,
         "criminal": 0
       },
       {
         "time": "4s",
-        "normal": 10,
+        "normal": 8,
         "suspicious": 0,
         "criminal": 0
       },
       {
         "time": "6s",
-        "normal": 10,
+        "normal": 8,
         "suspicious": 0,
         "criminal": 0
       },
       {
         "time": "8s",
-        "normal": 13,
+        "normal": 4,
         "suspicious": 0,
         "criminal": 0
       },
       {
         "time": "10s",
         "normal": 0,
-        "suspicious": 55,
+        "suspicious": 43,
         "criminal": 0
       },
       {
         "time": "12s",
         "normal": 0,
-        "suspicious": 65,
+        "suspicious": 50,
         "criminal": 0
       },
       {
         "time": "14s",
-        "normal": 0,
-        "suspicious": 42,
-        "criminal": 0
-      },
-      {
-        "time": "16s",
-        "normal": 0,
-        "suspicious": 42,
-        "criminal": 0
-      },
-      {
-        "time": "18s",
-        "normal": 0,
-        "suspicious": 36,
-        "criminal": 0
-      },
-      {
-        "time": "20s",
         "normal": 20,
         "suspicious": 0,
         "criminal": 0
       },
       {
+        "time": "16s",
+        "normal": 19,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "18s",
+        "normal": 20,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "20s",
+        "normal": 11,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
         "time": "22s",
-        "normal": 0,
-        "suspicious": 32,
+        "normal": 17,
+        "suspicious": 0,
         "criminal": 0
       },
       {
@@ -382,6 +664,90 @@
         "time": "28s",
         "normal": 0,
         "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "30s",
+        "normal": 0,
+        "suspicious": 43,
+        "criminal": 0
+      },
+      {
+        "time": "32s",
+        "normal": 0,
+        "suspicious": 69,
+        "criminal": 0
+      },
+      {
+        "time": "34s",
+        "normal": 0,
+        "suspicious": 48,
+        "criminal": 0
+      },
+      {
+        "time": "36s",
+        "normal": 20,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "38s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "40s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "42s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "44s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "46s",
+        "normal": 0,
+        "suspicious": 50,
+        "criminal": 0
+      },
+      {
+        "time": "48s",
+        "normal": 0,
+        "suspicious": 50,
+        "criminal": 0
+      },
+      {
+        "time": "50s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "52s",
+        "normal": 0,
+        "suspicious": 55,
+        "criminal": 0
+      },
+      {
+        "time": "54s",
+        "normal": 0,
+        "suspicious": 65,
+        "criminal": 0
+      },
+      {
+        "time": "56s",
+        "normal": 0,
+        "suspicious": 36,
         "criminal": 0
       }
     ]
@@ -422,7 +788,7 @@
     "jewelry": [
       {
         "name": "Normal",
-        "value": 6
+        "value": 7
       },
       {
         "name": "Suspicious",
@@ -430,17 +796,17 @@
       },
       {
         "name": "Criminal",
-        "value": 6
+        "value": 38
       }
     ],
     "market": [
       {
         "name": "Normal",
-        "value": 3
+        "value": 19
       },
       {
         "name": "Suspicious",
-        "value": 17
+        "value": 18
       },
       {
         "name": "Criminal",
@@ -450,11 +816,11 @@
     "gun_store": [
       {
         "name": "Normal",
-        "value": 5
+        "value": 11
       },
       {
         "name": "Suspicious",
-        "value": 9
+        "value": 18
       },
       {
         "name": "Criminal",
@@ -766,55 +1132,90 @@
   "confusionMatrixByBusiness": {
     "jewelry": [
       [
-        361,
-        299,
+        12,
+        10,
         0
       ],
       [
         0,
-        61,
-        59
+        2,
+        2
       ],
       [
         0,
         0,
-        2220
+        74
       ]
     ],
     "market": [
       [
-        540,
+        18,
         0,
         0
       ],
       [
-        120,
-        240,
+        4,
+        8,
         0
       ],
       [
-        421,
-        840,
+        14,
+        28,
         0
       ]
     ],
     "gun_store": [
       [
-        180,
+        6,
         0,
         0
       ],
       [
-        240,
-        120,
+        8,
+        4,
         0
       ],
       [
-        181,
-        960,
+        6,
+        32,
         0
       ]
     ]
+  },
+  "narrativeCoverageByBusiness": {
+    "jewelry": {
+      "covered_range": [
+        0,
+        1080
+      ],
+      "mock_full_range": [
+        0,
+        2999
+      ],
+      "coverage_pct": 0.3601
+    },
+    "market": {
+      "covered_range": [
+        540,
+        1800
+      ],
+      "mock_full_range": [
+        0,
+        3635
+      ],
+      "coverage_pct": 0.3466
+    },
+    "gun_store": {
+      "covered_range": [
+        0,
+        840
+      ],
+      "mock_full_range": [
+        0,
+        2122
+      ],
+      "coverage_pct": 0.3959
+    }
   },
   "eval": {
     "scoring_level": "balanced",
