@@ -56,7 +56,7 @@ Eval:
 
 
 //sweep - runs the scoring against all three levels (conservative, balanced, aggressive) instead of just one.
-//verbose - prints extra diagnostic detail
+//verbose - prints extra diagnostic detail.
 
 Tests:  
   python -m unittest discover -s tests
