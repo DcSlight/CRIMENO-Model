@@ -4,11 +4,14 @@ A real-time video pipeline that watches a store's camera feed, tracks people/obj
 vision model's read on each scene, and turns that evidence into a deterministic
 normal/suspicious/criminal verdict — streamed to a NestJS backend and a React dashboard.
 
+> **Sibling repositories:** [CRIMENO-Backend](https://github.com/DcSlight/CRIMENO-Backend) (NestJS API + WebSocket relay + AI assistant) · [CRIMENO-Client](https://github.com/DcSlight/CRIMENO-Client) (React dashboard) · [CRIMENO-Mobile](https://github.com/DcSlight/CRIMENO-Mobile) (mobile app)
+
 ## Navigation
 
-1. [How to Run](#how-to-run)
-2. [Architecture](#architecture)
-3. [Services](#services)
+1. [Key Code References](#key-code-references)
+2. [How to Run](#how-to-run)
+3. [Architecture](#architecture)
+4. [Services](#services)
    - [`video_broadcaster.py`](#video_broadcasterpy)
    - [`tracker/tracker_worker.py`](#trackertracker_workerpy)
    - [`vlm/vlm_worker.py` + `vlm/vlm_model.py`](#vlmvlm_workerpy--vlmvlm_modelpy)
@@ -16,12 +19,33 @@ normal/suspicious/criminal verdict — streamed to a NestJS backend and a React 
    - [`groq/scoring.py`](#groqscoringpy)
    - [`session_log.py`](#session_logpy)
    - [`eval/`](#eval)
-4. [Message contracts](#message-contracts)
-5. [Reset & sync flow](#reset--sync-flow)
-6. [Logs & sessions](#logs--sessions)
-7. [Evaluation & analytics](#evaluation--analytics)
-8. [Configuration reference](#configuration-reference)
-9. [Vision model selection](#vision-model-selection)
+5. [Message contracts](#message-contracts)
+6. [Reset & sync flow](#reset--sync-flow)
+7. [Logs & sessions](#logs--sessions)
+8. [Evaluation & analytics](#evaluation--analytics)
+9. [Configuration reference](#configuration-reference)
+10. [Vision model selection](#vision-model-selection)
+
+---
+
+## Key Code References
+
+Direct links into the core logic, for anyone reviewing the project:
+
+| Area | What it is | Link |
+|---|---|---|
+| Deterministic scoring | The full cue history → `(anomaly_score, label, threat_state)` function | [`groq/scoring.py#L390-L531`](groq/scoring.py#L390-L531) |
+| Cue weights & thresholds | Evidence weight tables, scoring-level thresholds, decay/gate/latch constants | [`groq/scoring.py#L54-L186`](groq/scoring.py#L54-L186) |
+| Weapon confidence grading | Free-text `weapon` description → high/medium/low/none | [`groq/scoring.py#L260-L281`](groq/scoring.py#L260-L281) |
+| Threat latching | Keeps "criminal" latched while an incident is ongoing | [`groq/scoring.py#L359-L388`](groq/scoring.py#L359-L388) |
+| VLM output schema | The 10-field JSON schema every vision call must return | [`vlm/prompt.txt#L6-L20`](vlm/prompt.txt#L6-L20) |
+| VLM frame receive → analyze → send | Main loop: pulls a frame, runs inference, pushes to Groq + NestJS | [`vlm/vlm_worker.py#L211-L258`](vlm/vlm_worker.py#L211-L258) |
+| Groq cue ingest & normalization | Maps free-form VLM answers onto `{yes, no, unclear}` | [`groq/groq_anomaly_worker.py#L89-L128`](groq/groq_anomaly_worker.py#L89-L128) |
+| Reset handshake (tracker side) | Watcher thread: forwards reset, sends acks | [`tracker/tracker_worker.py#L63-L96`](tracker/tracker_worker.py#L63-L96) |
+| Reset handshake (broadcaster side) | Sends reset, waits for acks, replies to NestJS | [`video_broadcaster.py#L136-L201`](video_broadcaster.py#L136-L201) |
+| Frame-overlap grading | The accuracy/MAE/confusion-matrix core (`evaluate()`) | [`eval/metrics.py#L361-L444`](eval/metrics.py#L361-L444) |
+| Unit tests — scoring | Cases covering every scoring rule in `groq/scoring.py` | [`tests/test_scoring.py`](tests/test_scoring.py) |
+| Unit tests — eval metrics | Regression tests for frame-overlap grading & trend/severity | [`tests/test_metrics.py`](tests/test_metrics.py) |
 
 ---
 
