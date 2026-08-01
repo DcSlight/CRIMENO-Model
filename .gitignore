@@ -3,6 +3,7 @@ yolov8n.pt
 .env
 .idea
 __pycache__/*
+**/__pycache__/*
 #AI
 .claude
 CLAUDE.md
