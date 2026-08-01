@@ -1,10 +1,12 @@
-# CRIMENO — Criminal Activity Detection Models Pipeline
+# CRIMENO - Criminal Activity Detection Models Pipeline
 
 A real-time video pipeline that watches a store's camera feed, tracks people/objects, gets a
 vision model's read on each scene, and turns that evidence into a deterministic
-normal/suspicious/criminal verdict — streamed to a NestJS backend and a React dashboard.
+normal/suspicious/criminal verdict - streamed to a NestJS backend and a React dashboard.
 
 > **Sibling repositories:** [CRIMENO-Backend](https://github.com/DcSlight/CRIMENO-Backend) (NestJS API + WebSocket relay + AI assistant) · [CRIMENO-Client](https://github.com/DcSlight/CRIMENO-Client) (React dashboard) · [CRIMENO-Mobile](https://github.com/DcSlight/CRIMENO-Mobile) (mobile app)
+
+![The live dashboard: bounding-box tracking, VLM scene analysis, and Groq anomaly narration running together on a real market feed](crimeno-pics/video_of_the_system_market.png)
 
 ## Navigation
 
@@ -25,6 +27,7 @@ normal/suspicious/criminal verdict — streamed to a NestJS backend and a React 
 8. [Evaluation & analytics](#evaluation--analytics)
 9. [Configuration reference](#configuration-reference)
 10. [Vision model selection](#vision-model-selection)
+11. [System Showcase](#system-showcase)
 
 ---
 
@@ -32,20 +35,20 @@ normal/suspicious/criminal verdict — streamed to a NestJS backend and a React 
 
 Direct links into the core logic, for anyone reviewing the project:
 
-| Area | What it is | Link |
-|---|---|---|
-| Deterministic scoring | The full cue history → `(anomaly_score, label, threat_state)` function | [`groq/scoring.py#L390-L531`](groq/scoring.py#L390-L531) |
-| Cue weights & thresholds | Evidence weight tables, scoring-level thresholds, decay/gate/latch constants | [`groq/scoring.py#L54-L186`](groq/scoring.py#L54-L186) |
-| Weapon confidence grading | Free-text `weapon` description → high/medium/low/none | [`groq/scoring.py#L260-L281`](groq/scoring.py#L260-L281) |
-| Threat latching | Keeps "criminal" latched while an incident is ongoing | [`groq/scoring.py#L359-L388`](groq/scoring.py#L359-L388) |
-| VLM output schema | The 10-field JSON schema every vision call must return | [`vlm/prompt.txt#L6-L20`](vlm/prompt.txt#L6-L20) |
-| VLM frame receive → analyze → send | Main loop: pulls a frame, runs inference, pushes to Groq + NestJS | [`vlm/vlm_worker.py#L211-L258`](vlm/vlm_worker.py#L211-L258) |
-| Groq cue ingest & normalization | Maps free-form VLM answers onto `{yes, no, unclear}` | [`groq/groq_anomaly_worker.py#L89-L128`](groq/groq_anomaly_worker.py#L89-L128) |
-| Reset handshake (tracker side) | Watcher thread: forwards reset, sends acks | [`tracker/tracker_worker.py#L63-L96`](tracker/tracker_worker.py#L63-L96) |
-| Reset handshake (broadcaster side) | Sends reset, waits for acks, replies to NestJS | [`video_broadcaster.py#L136-L201`](video_broadcaster.py#L136-L201) |
-| Frame-overlap grading | The accuracy/MAE/confusion-matrix core (`evaluate()`) | [`eval/metrics.py#L361-L444`](eval/metrics.py#L361-L444) |
-| Unit tests — scoring | Cases covering every scoring rule in `groq/scoring.py` | [`tests/test_scoring.py`](tests/test_scoring.py) |
-| Unit tests — eval metrics | Regression tests for frame-overlap grading & trend/severity | [`tests/test_metrics.py`](tests/test_metrics.py) |
+| Area                               | What it is                                                                   | Link                                                                           |
+| ---------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Deterministic scoring              | The full cue history → `(anomaly_score, label, threat_state)` function       | [`groq/scoring.py#L390-L531`](groq/scoring.py#L390-L531)                       |
+| Cue weights & thresholds           | Evidence weight tables, scoring-level thresholds, decay/gate/latch constants | [`groq/scoring.py#L54-L186`](groq/scoring.py#L54-L186)                         |
+| Weapon confidence grading          | Free-text `weapon` description → high/medium/low/none                        | [`groq/scoring.py#L260-L281`](groq/scoring.py#L260-L281)                       |
+| Threat latching                    | Keeps "criminal" latched while an incident is ongoing                        | [`groq/scoring.py#L359-L388`](groq/scoring.py#L359-L388)                       |
+| VLM output schema                  | The 10-field JSON schema every vision call must return                       | [`vlm/prompt.txt#L6-L20`](vlm/prompt.txt#L6-L20)                               |
+| VLM frame receive → analyze → send | Main loop: pulls a frame, runs inference, pushes to Groq + NestJS            | [`vlm/vlm_worker.py#L211-L258`](vlm/vlm_worker.py#L211-L258)                   |
+| Groq cue ingest & normalization    | Maps free-form VLM answers onto `{yes, no, unclear}`                         | [`groq/groq_anomaly_worker.py#L89-L128`](groq/groq_anomaly_worker.py#L89-L128) |
+| Reset handshake (tracker side)     | Watcher thread: forwards reset, sends acks                                   | [`tracker/tracker_worker.py#L63-L96`](tracker/tracker_worker.py#L63-L96)       |
+| Reset handshake (broadcaster side) | Sends reset, waits for acks, replies to NestJS                               | [`video_broadcaster.py#L136-L201`](video_broadcaster.py#L136-L201)             |
+| Frame-overlap grading              | The accuracy/MAE/confusion-matrix core (`evaluate()`)                        | [`eval/metrics.py#L361-L444`](eval/metrics.py#L361-L444)                       |
+| Unit tests — scoring               | Cases covering every scoring rule in `groq/scoring.py`                       | [`tests/test_scoring.py`](tests/test_scoring.py)                               |
+| Unit tests — eval metrics          | Regression tests for frame-overlap grading & trend/severity                  | [`tests/test_metrics.py`](tests/test_metrics.py)                               |
 
 ---
 
@@ -83,22 +86,26 @@ Direct links into the core logic, for anyone reviewing the project:
 Run each command in a **separate terminal**, from the project root.
 
 **Step 1 — Video Broadcaster**
+
 ```bash
 python video_broadcaster.py videos/shop.mp4
 ```
 
 **Step 2 — Groq Anomaly Worker** (requires `GROQ_API_KEY`)
+
 ```bash
 python groq/groq_anomaly_worker.py \
   --ws_url ws://127.0.0.1:3000/ws/groq \
   --decision-frames 60 \
   --tracker-every 5
 ```
+
 `--decision-frames` — minimum video frames between two Groq API calls (cost knob). Groq fires
 **at most** once per this many frames, no matter how fast the VLM runs. Lower it to increase
 decision frequency (and spend).
 
 **Step 3 — YOLO Tracker**
+
 ```bash
 python tracker/tracker_worker.py \
   --device cuda \
@@ -109,12 +116,14 @@ python tracker/tracker_worker.py \
 ```
 
 **Step 4 — VLM Scene Analyser** (default: local Ollama; make sure Ollama is running first)
+
 ```bash
 python vlm/vlm_worker.py \
   --every 60 \
   --ws-url ws://127.0.0.1:3000/ws/vlm \
   --anomaly-endpoint tcp://127.0.0.1:5581
 ```
+
 Backend and model can be set once via `.env` (`VLM_BACKEND`, `VLM_MODEL`) instead of passing
 `--backend`/`--vlm_model` every run — a CLI flag overrides the `.env` value when both are given.
 See [Vision model selection](#vision-model-selection) for `--backend online` and the model
@@ -132,6 +141,7 @@ py eval/build_analytics.py                                             # write a
 py eval/score_logs.py --business jewelry                               # accuracy vs ground truth
 py eval/score_logs.py --business jewelry --scoring-level aggressive --sweep --verbose
 ```
+
 See [Evaluation & analytics](#evaluation--analytics) for what these compute.
 
 ### Tests
@@ -145,11 +155,13 @@ python -m unittest discover -s tests -v
 
 On Pascal-class GPUs (e.g. Tesla/GRID P40) Ollama's CUDA backend can segfault under its newer
 inference engine. Fix:
+
 ```powershell
 Get-Process ollama* | Stop-Process -Force
 $env:CUDA_VISIBLE_DEVICES = "-1"
 ollama serve            # leave this terminal open
 ```
+
 In a new terminal: `ollama list` (copy the model name), then `ollama run <model name> "hello"`
 — you should get a real reply, not a 500 error. This hides the GPU from the CUDA backend only;
 Ollama falls back to its Vulkan backend, which supports Pascal correctly and still runs on GPU
@@ -158,6 +170,8 @@ Ollama falls back to its Vulkan backend, which supports Pascal correctly and sti
 ---
 
 ## Architecture
+
+![System component diagram: video sources feed the vision & behavior analysis model, which reports through the NestJS backend to the web client and mobile alert app](crimeno-pics/architecture.png)
 
 ### Pipeline overview
 
@@ -194,22 +208,24 @@ tracker frame is automatically attached as enrichment context. Groq's own call o
 the numeric score and label are computed by `groq/scoring.py` from the buffered VLM cue history
 (see [`groq/scoring.py`](#groqscoringpy)).
 
+![Sequence diagram: broadcaster extracts and publishes frames over PUB/SUB, YOLO returns tracks, the captioning model returns scene descriptions every 30 frames, the LLM returns a suspicion score, and the backend stores the event and alerts the client](crimeno-pics/main_flow_design.png)
+
 ### ZMQ socket map
 
-| Port | Type | Direction | Purpose |
-|---|---|---|---|
-| `5560` | PUB / SUB | Broadcaster → Workers | Video frames (`frame` topic), `meta` topic, reset signal (`reset` topic) |
-| `5561` | REQ / REP | NestJS → Broadcaster | Play command; broadcaster replies with status + readiness |
-| `5562` | PUSH / PULL | Tracker → Broadcaster | `reset_ack` + `first_frame_ack` handshake |
-| `5581` | PUSH / PULL | Tracker + VLM + NestJS → Groq worker | Frame data, `business_context`, reset forwarding |
+| Port   | Type        | Direction                            | Purpose                                                                  |
+| ------ | ----------- | ------------------------------------ | ------------------------------------------------------------------------ |
+| `5560` | PUB / SUB   | Broadcaster → Workers                | Video frames (`frame` topic), `meta` topic, reset signal (`reset` topic) |
+| `5561` | REQ / REP   | NestJS → Broadcaster                 | Play command; broadcaster replies with status + readiness                |
+| `5562` | PUSH / PULL | Tracker → Broadcaster                | `reset_ack` + `first_frame_ack` handshake                                |
+| `5581` | PUSH / PULL | Tracker + VLM + NestJS → Groq worker | Frame data, `business_context`, reset forwarding                         |
 
 ### WebSocket routes (NestJS)
 
-| Route | Fed by |
-|---|---|
-| `ws://localhost:3000/ws/tracker` | `tracker/tracker_worker.py` |
-| `ws://localhost:3000/ws/vlm` | `vlm/vlm_worker.py` |
-| `ws://localhost:3000/ws/groq` | `groq/groq_anomaly_worker.py` |
+| Route                            | Fed by                        |
+| -------------------------------- | ----------------------------- |
+| `ws://localhost:3000/ws/tracker` | `tracker/tracker_worker.py`   |
+| `ws://localhost:3000/ws/vlm`     | `vlm/vlm_worker.py`           |
+| `ws://localhost:3000/ws/groq`    | `groq/groq_anomaly_worker.py` |
 
 ---
 
@@ -247,6 +263,7 @@ via `--yolo_model`) runs.
 **Tuning** — edit `tracker/config.py → ROBBERY_OBJECT_CLASSES` only; no code changes needed.
 
 **Launch command:**
+
 ```bash
 python tracker/tracker_worker.py \
   --device cuda \
@@ -263,15 +280,18 @@ structured JSON per frame — scene description, people/appearance/weapon text, 
 (yes/no/unclear) cues. Two interchangeable backends, both sharing the same schema-parsing,
 retry, and sanitization code in `vlm_model.py`:
 
-| `--backend` | Runs where | Setup | Tradeoff |
-|---|---|---|---|
-| `local` *(default)* | Your GPU via [Ollama](https://ollama.com/download) | `ollama pull gemma3:4b` (~3 GB), Ollama server running | No API key, no quota, no per-request cost — bounded by local hardware |
-| `online` | Gemini API | `GEMINI_API_KEY` in `.env` | No local GPU cost — but frames leave the device to Google, subject to Gemini rate limits/pricing |
+| `--backend`         | Runs where                                         | Setup                                                  | Tradeoff                                                                                         |
+| ------------------- | -------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `local` _(default)_ | Your GPU via [Ollama](https://ollama.com/download) | `ollama pull gemma3:4b` (~3 GB), Ollama server running | No API key, no quota, no per-request cost — bounded by local hardware                            |
+| `online`            | Gemini API                                         | `GEMINI_API_KEY` in `.env`                             | No local GPU cost — but frames leave the device to Google, subject to Gemini rate limits/pricing |
 
 `--backend`/`--vlm_model` can be set once via `VLM_BACKEND`/`VLM_MODEL` in `.env` instead of
 passing flags every run; a CLI flag overrides the env var when both are given.
 
+![Hybrid VLM flow: every frame from the broadcaster passes through a startup warm-up check, then a backend switch splits into the local Ollama/gemma3:4b path or the online Gemini API path, and both converge on the same schema-driven parser before reaching the anomaly worker and NestJS](crimeno-pics/hybrid_vlm.png)
+
 **How it works:**
+
 1. **Warms up** with one dummy frame at startup — loads it into VRAM (`local`) or makes one
    live API call (`online`), surfacing load/auth/compatibility errors before the rest of the
    pipeline starts. Watch for `[VLM] Warm-up result: ...` — a real scene description means it's
@@ -302,6 +322,7 @@ just adding it to the JSON block; no code changes.
   [Vision model selection](#vision-model-selection).
 
 **Launch command:**
+
 ```bash
 # Local (default) — no API key needed
 python vlm/vlm_worker.py --every 60 --ws-url ws://127.0.0.1:3000/ws/vlm --anomaly-endpoint tcp://127.0.0.1:5581
@@ -318,6 +339,7 @@ computed deterministically by [`groq/scoring.py`](#groqscoringpy) — see the do
 `groq/scoring.py` for why (a single unconfirmed cue used to produce a false "criminal 0.9").
 
 **How it works:**
+
 1. **Cue normalization** — the VLM's free-form 3-state answers ("yes, a gun", "unclear
    (partially obscured)") are normalized onto a strict `{yes, no, unclear}` vocabulary
    (`normalize_cue_value`), plus key/value aliases that also let `CRIMENO-Backend/mocks`'
@@ -355,6 +377,7 @@ line. `CUE_LABELS` here is the single source of truth for cue keys shared with t
 `scoring.py`.
 
 **Tuning:**
+
 - Model behaviour / narrative style → edit `groq/prompt.txt` directly.
 - Decision frequency → `--decision-frames`.
 - NOW-window width → `--window-frames`.
@@ -362,12 +385,14 @@ line. `CUE_LABELS` here is the single source of truth for cue keys shared with t
 - Scoring weights/thresholds → `groq/scoring.py` (see below).
 
 **Launch command:**
+
 ```bash
 python groq/groq_anomaly_worker.py \
   --ws_url ws://127.0.0.1:3000/ws/groq \
   --decision-frames 60 \
   --tracker-every 5
 ```
+
 Requires `GROQ_API_KEY` in `.env`.
 
 ### `groq/scoring.py`
@@ -376,18 +401,24 @@ Pure, unit-tested functions (no I/O, no LLM calls) that turn a short history of 
 observations into `(anomaly_score, label, threat_state)`. Groq's job is narration; this module
 owns the number.
 
+The raw score in one line — each cue's max decayed weight across the buffer, plus the
+tracker-convergence bonus, the threat-latch floor, and the bounded concern tiebreak, clamped to
+`[0, 1]`:
+
+![S_raw = clamp between 0 and 1 of: sum over cues in C of max over age of (weight times decay to the power of age), plus the multi-person convergence bonus, plus the latched threat level, plus the concern tiebreak](crimeno-pics/image.png)
+
 **Cue weights** — a cue/value combination not listed contributes `0`:
 
-| Cue | `yes` | `unclear` |
-|---|---|---|
-| `gun` | 1.00 | 0.50 |
-| `knife` | 1.00 | 0.50 |
-| `weapon_confidence` (derived) | high: 0.85 · medium: 0.45 · low: 0.10 | — |
-| `aggression` | 0.35 | 0.18 |
-| `hands_up` | 0.25 | 0.12 |
-| `reaching_behind_counter` | 0.50 | 0.20 |
-| `face_concealed` | 0.15 | 0.08 |
-| `reaching_display_case` | 0.00 (0.30 × threat level once a threat is already latched — see below) | — |
+| Cue                           | `yes`                                                                   | `unclear` |
+| ----------------------------- | ----------------------------------------------------------------------- | --------- |
+| `gun`                         | 1.00                                                                    | 0.50      |
+| `knife`                       | 1.00                                                                    | 0.50      |
+| `weapon_confidence` (derived) | high: 0.85 · medium: 0.45 · low: 0.10                                   | —         |
+| `aggression`                  | 0.35                                                                    | 0.18      |
+| `hands_up`                    | 0.25                                                                    | 0.12      |
+| `reaching_behind_counter`     | 0.50                                                                    | 0.20      |
+| `face_concealed`              | 0.15                                                                    | 0.08      |
+| `reaching_display_case`       | 0.00 (0.30 × threat level once a threat is already latched — see below) | —         |
 
 Weapon `unclear` is weighted close to `yes` deliberately: real footage is almost always hedged
 ("possibly a rifle"), so treating `unclear` as near-nothing made the only weapon signal in a
@@ -395,19 +426,19 @@ real robbery video nearly invisible to the score.
 
 **Evidence decay** — each cue's contribution is the `max` over the buffer of
 `base_weight × 0.55^age` (age 0 = current frame). A cue that was true 1–2 observations ago but
-isn't now still counts, just fading — governs *seconds*, not minutes (past age ~4 it's <5%).
+isn't now still counts, just fading — governs _seconds_, not minutes (past age ~4 it's <5%).
 
 **Weapon persistence damping** — a weapon cue seen in fewer than 2 of the last 4 observations is
 linearly damped, so a single-frame flicker doesn't get full weight.
 
-**Scoring levels** — shift the *decision thresholds*, not an additive score bias (an additive
+**Scoring levels** — shift the _decision thresholds_, not an additive score bias (an additive
 bias would raise the floor of even idle scenes):
 
-| Level | suspicious ≥ | criminal ≥ |
-|---|---|---|
-| `conservative` | 0.38 | 0.58 |
-| `balanced` *(default)* | 0.30 | 0.50 |
-| `aggressive` | 0.24 | 0.42 |
+| Level                  | suspicious ≥ | criminal ≥ |
+| ---------------------- | ------------ | ---------- |
+| `conservative`         | 0.38         | 0.58       |
+| `balanced` _(default)_ | 0.30         | 0.50       |
+| `aggressive`           | 0.24         | 0.42       |
 
 Pulled from the `business_context` string NestJS sends (`scoring: <level>`); defaults to
 `balanced` if absent.
@@ -415,6 +446,7 @@ Pulled from the `business_context` string NestJS sends (`scoring: <level>`); def
 **Criminal gate** — `label = "criminal"` only opens via one of two paths, both requiring
 sustained, corroborated evidence read from **raw** per-frame cues (never the decayed sum above,
 so a stale signal smeared by decay can never fake a streak):
+
 - **Weapon path** — current frame shows `gun`/`knife: yes` or `weapon_confidence: high`, AND a
   corroborating cue (`aggression`, `hands_up`, or `reaching_behind_counter`) has held `"yes"`
   for ≥2 consecutive decision points.
@@ -440,6 +472,7 @@ Finally, `apply_scoring` clamps the raw score into a fixed band per label: `norm
 
 Shared "current session" contract used by the broadcaster, all three workers, and the eval
 layer. On every `play`, `video_broadcaster.py` calls `begin_session(video_path)`, which:
+
 - Slugifies the video path into a business name (e.g. `shop.mp4` → `shop`).
 - Scans `logs/<business>/{vlm,groq,tracker}/` for the highest existing `_v<N>.` suffix and picks
   the next version.
@@ -474,24 +507,29 @@ See [Evaluation & analytics](#evaluation--analytics) for usage and output shapes
 ## Message contracts
 
 ### Frame broadcast (ZMQ PUB `5560`, multipart)
+
 ```
 [ topic="frame", frame_index (str), video_time_ms (str), jpg_bytes ]
 ```
 
 ### Meta broadcast (ZMQ PUB `5560`, multipart)
+
 ```
 [ topic="meta", width (str), height (str), fps (str) ]
 ```
+
 Sent once per video, right after the play-command reply.
 
 ### Play command / reply (ZMQ REQ/REP `5561`)
 
 Request (NestJS → Broadcaster):
+
 ```json
 { "cmd": "play", "video": "videos/shop.mp4", "videoType": "local" }
 ```
 
 Reply (Broadcaster → NestJS):
+
 ```json
 {
   "status": "ok",
@@ -503,12 +541,14 @@ Reply (Broadcaster → NestJS):
 ```
 
 ### Reset acks (ZMQ PUSH/PULL `5562`, tracker only)
+
 ```json
 { "worker": "tracker", "type": "reset_ack" }
 { "worker": "tracker", "type": "first_frame_ack" }
 ```
 
 ### `tracker_frame` (tracker → NestJS `/ws/tracker`, tracker → Groq `5581`)
+
 ```json
 {
   "type": "tracker_frame",
@@ -528,18 +568,20 @@ Reply (Broadcaster → NestJS):
   "motion_detected": false
 }
 ```
-| Field | Type | Notes |
-|---|---|---|
-| `tracks[].cls` | string | COCO class name (`person`, or one of `ROBBERY_OBJECT_CLASSES`) |
-| `tracks[].conf` | float | YOLO confidence; only `>= 0.6` survives the hard filter |
-| `tracks[].source` | string | always `"objects"` today |
-| `tracks[].attributes` | array | always `[]` — no appearance model wired in |
-| `motion_detected` | bool | always `false` — no motion fallback in the current tracker |
+
+| Field                 | Type   | Notes                                                          |
+| --------------------- | ------ | -------------------------------------------------------------- |
+| `tracks[].cls`        | string | COCO class name (`person`, or one of `ROBBERY_OBJECT_CLASSES`) |
+| `tracks[].conf`       | float  | YOLO confidence; only `>= 0.6` survives the hard filter        |
+| `tracks[].source`     | string | always `"objects"` today                                       |
+| `tracks[].attributes` | array  | always `[]` — no appearance model wired in                     |
+| `motion_detected`     | bool   | always `false` — no motion fallback in the current tracker     |
 
 On reset, the tracker also sends a clear payload: `{"type": "tracker_frame", "frame_index": -1,
 "video_time_ms": -1, "tracks": [], "motion_detected": false, "reset": true}`.
 
 ### `vlm_frame` (VLM → Groq `5581`, VLM → NestJS `/ws/vlm`)
+
 ```json
 {
   "type": "vlm_frame",
@@ -559,38 +601,50 @@ On reset, the tracker also sends a clear payload: `{"type": "tracker_frame", "fr
     "aggression": "no"
   },
   "summary": "Description: A customer is standing... Gun: no. Knife: no. ...",
-  "meta": { "generated_at_unix_ms": 1785500726785, "model": "gemma3:4b", "backend": "local" }
+  "meta": {
+    "generated_at_unix_ms": 1785500726785,
+    "model": "gemma3:4b",
+    "backend": "local"
+  }
 }
 ```
-| `qa` field | Values | Notes |
-|---|---|---|
-| `description`, `people_actions`, `appearance` | free text | factual scene description |
-| `weapon` | free text or `"none"` | source of the derived `weapon_confidence` cue in scoring |
-| `gun`, `knife` | `yes` / `no` / `unclear` | `"yes"` only on unhedged direct visibility |
-| `reaching_display_case` | `yes` / `no` | innocent while calm; looting once a threat is latched |
-| `reaching_behind_counter` | `yes` / `no` / `unclear` | employee-only space, not the display case |
-| `hands_up`, `face_concealed`, `aggression` | `yes` / `no` / `unclear` | see `vlm/prompt.txt` for exact calibration |
+
+| `qa` field                                    | Values                   | Notes                                                    |
+| --------------------------------------------- | ------------------------ | -------------------------------------------------------- |
+| `description`, `people_actions`, `appearance` | free text                | factual scene description                                |
+| `weapon`                                      | free text or `"none"`    | source of the derived `weapon_confidence` cue in scoring |
+| `gun`, `knife`                                | `yes` / `no` / `unclear` | `"yes"` only on unhedged direct visibility               |
+| `reaching_display_case`                       | `yes` / `no`             | innocent while calm; looting once a threat is latched    |
+| `reaching_behind_counter`                     | `yes` / `no` / `unclear` | employee-only space, not the display case                |
+| `hands_up`, `face_concealed`, `aggression`    | `yes` / `no` / `unclear` | see `vlm/prompt.txt` for exact calibration               |
 
 ### `business_context` (NestJS → Groq `5581`)
+
 ```json
 {
   "type": "business_context",
   "context": "Store: Downtown Jewelers (jewelry)\nSensitivity: high; scoring: aggressive; interaction: high\nAllowed behaviors: ...\nForbidden behaviors: ..."
 }
 ```
+
 Built by `CRIMENO-Backend`'s `formatBusinessContext()`. The worker extracts `scoring: <level>`
 via regex (`extract_scoring_level`) and prepends the whole string to every Groq prompt.
 
 ### Groq's raw LLM output (narrative only — not the final result)
+
 ```json
 {
   "reason": "Customer reaches the counter area and body language becomes more assertive, though weapon visibility is still uncertain.",
-  "key_moments": ["subject closes distance to the seller", "posture becomes more assertive"],
+  "key_moments": [
+    "subject closes distance to the seller",
+    "posture becomes more assertive"
+  ],
   "concern": "medium"
 }
 ```
 
 ### `groq_anomaly` (Groq → NestJS `/ws/groq`, logged to `groq_vN.jsonl`)
+
 ```json
 {
   "type": "groq_anomaly",
@@ -607,31 +661,37 @@ via regex (`extract_scoring_level`) and prepends the whole string to every Groq 
   }
 }
 ```
+
 `anomaly_score`/`label` are code-computed (see [`groq/scoring.py`](#groqscoringpy)); `reason`/
 `key_moments` come straight from Groq's narration.
 
 ### `logs/current_session.json`
+
 ```json
-{ "business": "jewerly_store_short", "version": 15, "started_at_unix_ms": 1785500724894 }
+{
+  "business": "jewerly_store_short",
+  "version": 15,
+  "started_at_unix_ms": 1785500724894
+}
 ```
 
 ### `analytics.json` (top-level keys, schema v2)
 
-| Key | Shape |
-|---|---|
-| `schema_version` | `2` |
-| `generated_at_unix_ms` | int |
-| `source` | `{ business, version }` — the active session at generation time |
-| `businesses` | `[{ key, name }, ...]` |
-| `kpisByBusiness` | per-key `{ totalEvents, criminalEvents, avgAnomalyScore, activeBusinesses, alertsToday }` |
-| `anomalyTrendByBusiness` | per-key list of `{ time: "Ns", normal, suspicious, criminal }` (score×100, one series per label) |
-| `anomalyTypeByBusiness` | per-key `[{ type, count }]` — keyword-matched from Groq's narration |
-| `severityByBusiness` | per-key `[{ name: "Normal"/"Suspicious"/"Criminal", value }]` |
-| `wordFrequenciesByBusiness` | per-key `[{ text, value }]` word cloud from `reason`+`key_moments` |
-| `peopleByBusiness` | per-key int — max concurrent tracked people |
-| `confusionMatrixByBusiness` | per-key `3×3` int matrix, rows/cols = Normal/Suspicious/Criminal, cells in **seconds** |
-| `narrativeCoverageByBusiness` | per-key coverage diagnostic (nothing currently reads this) |
-| `eval` | the active business's full eval summary (see below) |
+| Key                           | Shape                                                                                            |
+| ----------------------------- | ------------------------------------------------------------------------------------------------ |
+| `schema_version`              | `2`                                                                                              |
+| `generated_at_unix_ms`        | int                                                                                              |
+| `source`                      | `{ business, version }` — the active session at generation time                                  |
+| `businesses`                  | `[{ key, name }, ...]`                                                                           |
+| `kpisByBusiness`              | per-key `{ totalEvents, criminalEvents, avgAnomalyScore, activeBusinesses, alertsToday }`        |
+| `anomalyTrendByBusiness`      | per-key list of `{ time: "Ns", normal, suspicious, criminal }` (score×100, one series per label) |
+| `anomalyTypeByBusiness`       | per-key `[{ type, count }]` — keyword-matched from Groq's narration                              |
+| `severityByBusiness`          | per-key `[{ name: "Normal"/"Suspicious"/"Criminal", value }]`                                    |
+| `wordFrequenciesByBusiness`   | per-key `[{ text, value }]` word cloud from `reason`+`key_moments`                               |
+| `peopleByBusiness`            | per-key int — max concurrent tracked people                                                      |
+| `confusionMatrixByBusiness`   | per-key `3×3` int matrix, rows/cols = Normal/Suspicious/Criminal, cells in **seconds**           |
+| `narrativeCoverageByBusiness` | per-key coverage diagnostic (nothing currently reads this)                                       |
+| `eval`                        | the active business's full eval summary (see below)                                              |
 
 Business keys are `jewelry` / `market` / `gun_store`, mapping to log folders
 `jewerly_store_short` / `market` / `gun_store_robbery` (`eval/metrics.py → BUSINESSES`). A
@@ -644,6 +704,10 @@ business with no logs yet is simply absent — NestJS falls back to mock data fo
 When a new video is selected, every component holds stale state from the previous one. A
 coordinated handshake — driven by the broadcaster, but only fully participated in by the
 **tracker** — prevents old bounding boxes/detections from bleeding into the new stream.
+
+![Reset flow: a reset trigger publishes a "reset" message that broadcasts to every worker and clears their context/memory, then the video processing loop resumes — encoding, throttling, and publishing each frame with its index and timestamp](crimeno-pics/reset_flow.png)
+
+![Warmup sequence: the broadcaster resolves the stream and exchanges a reset message and ack with the workers, publishes frame 0 and waits for first_frame_ack before replying "status: ok", then streams every subsequent frame resized, compressed, and paced to the original FPS](crimeno-pics/warmup.png)
 
 ### Sequence
 
@@ -668,7 +732,7 @@ coordinated handshake — driven by the broadcaster, but only fully participated
    `first_frame_ack` — sent right after the tracker's WebSocket send fires for frame 0's real
    bounding boxes, meaning "frame 0 is in transit, React won't show a black box."
 7. Broadcaster replies to NestJS with `{status, video, workers_ready, workers_timeout,
-   first_frame_ready}`, sends the `meta` broadcast, and anchors `stream_start_time` to now —
+first_frame_ready}`, sends the `meta` broadcast, and anchors `stream_start_time` to now —
    frame 1 onward paces from the moment React actually starts playing (no catch-up burst).
 
 ### Cold-start fix (tracker only)
@@ -680,10 +744,10 @@ reset (drain is a no-op), and unblocks in ≤100ms instead of waiting out the 15
 self-timeout. The VLM's `RCVTIMEO` is 200ms, but since it has no ack path this only affects how
 quickly it notices the reset topic, not any broadcaster wait.
 
-| Condition (tracker) | Latency |
-|---|---|
-| First play (nothing buffered) | ~100ms |
-| Subsequent plays (frames buffered) | <100ms |
+| Condition (tracker)                | Latency |
+| ---------------------------------- | ------- |
+| First play (nothing buffered)      | ~100ms  |
+| Subsequent plays (frames buffered) | <100ms  |
 
 ---
 
@@ -734,6 +798,7 @@ string). Pass `--scoring-level` yourself if you know what a business runs at; de
 `balanced`. Use `--sweep` to see all three at once.
 
 ### `eval/score_logs.py`
+
 ```bash
 py eval/score_logs.py --business jewelry
 py eval/score_logs.py --business jewelry --source log
@@ -742,6 +807,7 @@ py eval/score_logs.py --business jewelry --sweep --verbose
 py eval/score_logs.py --business jewelry --json out.json
 py eval/score_logs.py --mock PATH --logs PATH        # explicit paths, log-source only
 ```
+
 Reports a normal/suspicious/criminal confusion matrix (in graded seconds), accuracy, score MAE,
 under-calls (predicted less severe than ground truth — the dangerous direction) vs. over-calls
 (false alarms), and — for the `log` source only — a text-similarity score between the mock's and
@@ -749,12 +815,14 @@ the real `reason` narrative, plus a parse-failure count. `--verbose` also lists 
 under-call frames and, for `log`, the per-row mock-overlap breakdown.
 
 ### `eval/build_analytics.py`
+
 ```bash
 py eval/build_analytics.py
 py eval/build_analytics.py --scoring-level aggressive
 py eval/build_analytics.py --out PATH
 py eval/build_analytics.py --mock PATH    # override ground truth for ALL businesses (testing only)
 ```
+
 Builds `analytics.json` for every business that has log data on disk, using each business's own
 latest `groq_vN.jsonl` / `vlm_vN.jsonl` / `tracker_vN.jsonl` and its own ground-truth mock. KPIs/
 trend/severity are normalized to the **full video via replay** (not just whatever a live run
@@ -769,44 +837,44 @@ narration coverage, since replay never invents narrative text. See the schema ta
 
 ### `.env`
 
-| Var | Used by | Notes |
-|---|---|---|
-| `GROQ_API_KEY` | `groq/groq_anomaly_worker.py` | required |
-| `VLM_BACKEND` | `vlm/vlm_worker.py` | `local` (default) or `online`; CLI `--backend` overrides |
-| `VLM_MODEL` | `vlm/vlm_worker.py` | model tag; CLI `--vlm_model` overrides |
-| `OLLAMA_HOST` | `vlm/vlm_model.py` | default `http://localhost:11434` |
-| `GEMINI_API_KEY` | `vlm/vlm_model.py` | required only for `--backend online` |
+| Var              | Used by                       | Notes                                                    |
+| ---------------- | ----------------------------- | -------------------------------------------------------- |
+| `GROQ_API_KEY`   | `groq/groq_anomaly_worker.py` | required                                                 |
+| `VLM_BACKEND`    | `vlm/vlm_worker.py`           | `local` (default) or `online`; CLI `--backend` overrides |
+| `VLM_MODEL`      | `vlm/vlm_worker.py`           | model tag; CLI `--vlm_model` overrides                   |
+| `OLLAMA_HOST`    | `vlm/vlm_model.py`            | default `http://localhost:11434`                         |
+| `GEMINI_API_KEY` | `vlm/vlm_model.py`            | required only for `--backend online`                     |
 
 ### Per-worker CLI flags (defaults)
 
-| Worker | Flag | Default | Meaning |
-|---|---|---|---|
-| broadcaster | `--endpoint` | `tcp://127.0.0.1:5560` | frame PUB |
-| broadcaster | `--cmd_endpoint` | `tcp://127.0.0.1:5561` | play command REP |
-| broadcaster | `--ack_endpoint` | `tcp://127.0.0.1:5562` | reset ack PULL |
-| broadcaster | `--resize_width` | `640` | resize before encoding |
-| broadcaster | `--jpeg_quality` | `85` | JPEG quality |
-| tracker | `--device` | `auto` | `auto`/`cpu`/`cuda` |
-| tracker | `--conf_th` | `0.35` | passed to YOLO, but detections are still hard-filtered at `conf >= 0.6` |
-| tracker | `--send_every_n_frames` | `1` | frame sampling |
-| tracker | `--send_overlay` | `0` | include base64 debug overlay JPEG in payload |
-| tracker | `--max_track_age` | `30` | frames before a stale track is dropped |
-| tracker | `--iou_match_th` | `0.30` | IOU tracker match threshold |
-| vlm | `--every` / `--process_every_n_frames` | `60` | frame sampling |
-| vlm | `--max_new_tokens` | `512` | token budget for the JSON response |
-| groq | `--decision-frames` | `60` | min frames between Groq calls |
-| groq | `--window-frames` | `3` | "NOW" window size / `frame_range` span |
-| groq | `--tracker-every` | `5` | must match tracker's `--send_every_n_frames` |
-| groq | `--groq-model` | `llama-3.3-70b-versatile` | Groq model |
+| Worker      | Flag                                   | Default                   | Meaning                                                                 |
+| ----------- | -------------------------------------- | ------------------------- | ----------------------------------------------------------------------- |
+| broadcaster | `--endpoint`                           | `tcp://127.0.0.1:5560`    | frame PUB                                                               |
+| broadcaster | `--cmd_endpoint`                       | `tcp://127.0.0.1:5561`    | play command REP                                                        |
+| broadcaster | `--ack_endpoint`                       | `tcp://127.0.0.1:5562`    | reset ack PULL                                                          |
+| broadcaster | `--resize_width`                       | `640`                     | resize before encoding                                                  |
+| broadcaster | `--jpeg_quality`                       | `85`                      | JPEG quality                                                            |
+| tracker     | `--device`                             | `auto`                    | `auto`/`cpu`/`cuda`                                                     |
+| tracker     | `--conf_th`                            | `0.35`                    | passed to YOLO, but detections are still hard-filtered at `conf >= 0.6` |
+| tracker     | `--send_every_n_frames`                | `1`                       | frame sampling                                                          |
+| tracker     | `--send_overlay`                       | `0`                       | include base64 debug overlay JPEG in payload                            |
+| tracker     | `--max_track_age`                      | `30`                      | frames before a stale track is dropped                                  |
+| tracker     | `--iou_match_th`                       | `0.30`                    | IOU tracker match threshold                                             |
+| vlm         | `--every` / `--process_every_n_frames` | `60`                      | frame sampling                                                          |
+| vlm         | `--max_new_tokens`                     | `512`                     | token budget for the JSON response                                      |
+| groq        | `--decision-frames`                    | `60`                      | min frames between Groq calls                                           |
+| groq        | `--window-frames`                      | `3`                       | "NOW" window size / `frame_range` span                                  |
+| groq        | `--tracker-every`                      | `5`                       | must match tracker's `--send_every_n_frames`                            |
+| groq        | `--groq-model`                         | `llama-3.3-70b-versatile` | Groq model                                                              |
 
 ### Tuning files (no code changes needed)
 
-| File | Controls |
-|---|---|
-| `tracker/config.py` | `ROBBERY_OBJECT_CLASSES` allowlist |
-| `vlm/prompt.txt` | VLM output schema + instructions — add/remove fields here directly |
-| `groq/prompt.txt` | Groq's narrative style/instructions |
-| `groq/scoring.py` | cue weights, thresholds, gate/latch constants |
+| File                | Controls                                                           |
+| ------------------- | ------------------------------------------------------------------ |
+| `tracker/config.py` | `ROBBERY_OBJECT_CLASSES` allowlist                                 |
+| `vlm/prompt.txt`    | VLM output schema + instructions — add/remove fields here directly |
+| `groq/prompt.txt`   | Groq's narrative style/instructions                                |
+| `groq/scoring.py`   | cue weights, thresholds, gate/latch constants                      |
 
 ---
 
@@ -823,12 +891,12 @@ unaffected and still runs on `llama-3.3-70b-versatile` — it's a small text cal
 
 ### `--backend local` models
 
-| Model | Notes |
-|---|---|
-| `gemma3:4b` *(default)* | ~3 GB — light enough to run alongside the tracker's YOLO model on the same GPU |
-| `gemma3:12b` | stronger structured JSON, but too heavy to run concurrently with the tracker — use for VLM-only runs or with GPU headroom to spare |
-| `qwen2.5vl:7b` | tried as the default first — loaded fine, but both slow and weak in practice on this project's Pascal/Vulkan GPU |
-| `llava` | last resort — loads reliably but weakest at structured JSON of the group |
+| Model                   | Notes                                                                                                                              |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `gemma3:4b` _(default)_ | ~3 GB — light enough to run alongside the tracker's YOLO model on the same GPU                                                     |
+| `gemma3:12b`            | stronger structured JSON, but too heavy to run concurrently with the tracker — use for VLM-only runs or with GPU headroom to spare |
+| `qwen2.5vl:7b`          | tried as the default first — loaded fine, but both slow and weak in practice on this project's Pascal/Vulkan GPU                   |
+| `llava`                 | last resort — loads reliably but weakest at structured JSON of the group                                                           |
 
 > **Do not confuse `qwen2.5vl` with `qwen2-vl`** (no `.5`) — the latter is an older model with a
 > known broken vision-projector bug in Ollama.
@@ -842,6 +910,7 @@ support with no fix/ETA ([ollama/ollama#16490](https://github.com/ollama/ollama/
 open).
 
 **Before trying a different vision model:**
+
 1. Prefer the current engine's natively-supported families: **Llama 4, Gemma 3, Qwen 2.5 VL,
    Mistral Small 3.1**. Pull only from the
    [official Ollama vision library](https://ollama.com/search?c=vision) — community-imported
@@ -863,8 +932,58 @@ shut down mid-project while it was still the configured default). Override with
 
 Two things carried over from the original all-Gemini implementation, both required for this to
 work on surveillance footage:
+
 - **Safety settings relaxed to `BLOCK_NONE`** for dangerous-content/harassment/hate-speech/
   sexual-content categories — without this, Gemini's default filters silently blocked or
   emptied responses on exactly the frames this worker exists to catch. Ollama has no equivalent
   filter.
 - Frames leave the device to Google with this backend; `local` stays fully on-device.
+
+---
+
+## System Showcase
+
+This repo is the detection pipeline; the screenshots and diagrams below are the rest of the
+product it feeds — full documentation for each lives in its own repo (linked above). Included
+here so the whole system is visible in one place.
+
+### Live dashboard
+
+The hero shot at the top of this README is `CRIMENO-Client`'s live monitor: real-time bounding
+boxes over the video feed, the VLM's scene analysis panel, and Groq's anomaly narration panel,
+all fed by this pipeline in real time.
+
+### Business management
+
+![CRIMENO-Client's business management page listing Royal Diamond Jewelry and Downtown Market, each with hours/cameras counts and policy status](crimeno-pics/buisness_management.png)
+
+CRUD UI over the `Business`/`BusinessHours`/`Camera`/`BusinessPolicy` graph — the
+`sensitivity_level`/`scoring_level`/`interaction_sensitivity` set here is what
+`groq/scoring.py`'s scoring levels (see [`groq/scoring.py`](#groqscoringpy)) actually run
+against. Full CRUD flow: `CRIMENO-Backend`'s [Businesses](https://github.com/DcSlight/CRIMENO-Backend#businesses)
+section; UI flow: `CRIMENO-Client`'s [Business Management](https://github.com/DcSlight/CRIMENO-Client#business-management)
+section.
+
+### AI assistant
+
+![The AI assistant answering "Analyze behaviour patterns" for Rio Diamond Gallery, grounded in real event counts and anomaly types](crimeno-pics/ai_assitant.png)
+
+![AI assistant decision flow: branches on whether a video is active (load and compress pipeline logs + KPIs) or a business selection is pending, converges on building a grounded prompt, calls the Gemini API, and returns either a grounded answer or a resilient fallback](crimeno-pics/chat_bot_condiational_diagram.png)
+
+Grounded in real business data, analytics KPIs, and this pipeline's own `groq_v*.jsonl`/
+`vlm_v*.jsonl` session logs (see [Logs & sessions](#logs--sessions)) — never a general-purpose
+chatbot. Full write-up: `CRIMENO-Backend`'s [AI Assistant](https://github.com/DcSlight/CRIMENO-Backend#ai-assistant)
+section.
+
+### Mobile alerts
+
+<p>
+  <img src="crimeno-pics/mobile_image.png" alt="CRIMENO-Mobile critical alert screen showing three 'man holding gun' events with HIGH severity" width="260">
+  <img src="crimeno-pics/mobile_image_2.png" alt="CRIMENO-Mobile recent alerts screen showing HIGH, MEDIUM, and SAFE severity events" width="260">
+</p>
+
+![Push notification pipeline: this pipeline (running on a closed VPN) detects events and reports them to NestJS, which triggers Pusher in the public cloud, which streams over WebSocket to the Expo Go mobile app and fires a local notification](crimeno-pics/pusher_logic.png)
+
+Every `groq_anomaly` this pipeline emits (see [`groq_anomaly`](#groq_anomaly-groq--nestjs-wsgroq-logged-to-groq_vnjsonl))
+reaches the phone through exactly this path — `CRIMENO-Backend`'s `GroqGateway` mirrors each one
+to Pusher (`PUSHER_SEND=true`) the moment it fans it out over `/ws/groq`.
