@@ -11,7 +11,13 @@ from dotenv import load_dotenv
 from groq import Groq
 
 from event_builder import build_event_sentence, CUE_LABELS
-from scoring import apply_scoring, score_from_cues
+from scoring import (
+    WEAPON_CONFIDENCE_CUE,
+    apply_scoring,
+    grade_weapon_text,
+    new_threat_state,
+    score_from_cues,
+)
 
 _HERE         = Path(__file__).resolve().parent
 _PROJECT_ROOT = _HERE.parent
@@ -53,6 +59,72 @@ def _resolve_log_paths():
 # HARD_SIGNAL_KEYS: if ANY of these is "yes", the frame is ALWAYS sent to Groq.
 BINARY_CUE_KEYS  = list(CUE_LABELS.keys())
 HARD_SIGNAL_KEYS = ["gun", "knife", "hands_up", "aggression"]
+
+# The VLM's 3-state answers are free-form strings: neither backend enforces an enum (Ollama
+# types every field as a bare "string", the Gemini path sends no response schema at all), and
+# vlm_model only rewrites outright refusals. So "yes, a gun", "YES - handgun", "unclear
+# (partially obscured)" and "no." all reach us verbatim — and scoring._cue_weight does an
+# EXACT dict lookup, so every one of them silently scored 0.0 while the change-detector below
+# (v.startswith("y")) still treated them as hard signals. That is a silent weapon-evidence
+# dropout, so normalize to the {yes, no, unclear} vocabulary at ingest.
+#
+# The aliases also cover CRIMENO-Backend/mocks' hand-labeled vocabulary ("uncertain",
+# "possible", "partial", "victims controlled", and the older `reaching_counter` key), so the
+# ground-truth VLM mocks can be replayed straight through the scorer as a regression fixture.
+_CUE_KEY_ALIASES = {"reaching_counter": "reaching_behind_counter"}
+_CUE_VALUE_ALIASES = {
+    "uncertain": "unclear",
+    "possible": "unclear",
+    "possibly": "unclear",
+    "partial": "unclear",
+    "partially": "unclear",
+    "maybe": "unclear",
+    "victims controlled": "yes",
+    "true": "yes",
+    "false": "no",
+    "none": "no",
+}
+
+
+def normalize_cue_value(value: Any) -> str:
+    """Map a raw VLM cue answer onto the {yes, no, unclear} vocabulary scoring.py expects."""
+    text = str(value or "").strip().lower().rstrip(".!,;:")
+    if not text:
+        return "no"
+    if text in _CUE_VALUE_ALIASES:
+        return _CUE_VALUE_ALIASES[text]
+    if text in ("yes", "no", "unclear"):
+        return text
+    # Prefixed / qualified answers: "yes, a gun", "unclear (partially obscured)", "no visible…"
+    for prefix in ("unclear", "yes", "no"):
+        if text.startswith(prefix):
+            return prefix
+    for alias, canonical in _CUE_VALUE_ALIASES.items():
+        if text.startswith(alias):
+            return canonical
+    return "unclear"
+
+
+def extract_raw_cues(qa: Dict[str, Any]) -> Dict[str, str]:
+    """Build the normalized cue dict scoring.score_from_cues consumes.
+
+    Includes the derived `weapon_confidence` cue graded from the free-text `weapon` field —
+    that field never reached the score before, even though it is where the VLM's actual
+    confidence lives (vlm/prompt.txt forbids answering gun/knife "yes" on hedged wording, so
+    on real footage the structured fields are almost always "unclear" regardless of whether
+    the frame shows a handgun aimed at a cashier or an unidentifiable dark object).
+    """
+    cues: Dict[str, str] = {}
+    for key in BINARY_CUE_KEYS:
+        value = qa.get(key)
+        if value is None:
+            for alias, canonical in _CUE_KEY_ALIASES.items():
+                if canonical == key and alias in qa:
+                    value = qa.get(alias)
+                    break
+        cues[key] = normalize_cue_value(value)
+    cues[WEAPON_CONFIDENCE_CUE] = grade_weapon_text(qa.get("weapon", ""))
+    return cues
 
 _PROMPT_TEMPLATE = (_HERE / "prompt.txt").read_text(encoding="utf-8")
 
@@ -296,6 +368,7 @@ async def main_async():
     tracker_buffer: Dict[int, Dict]   = {}
     last_decision_frame: Optional[int] = None
     last_cues: Optional[Dict[str, str]] = None  # raw 3-state (yes/no/unclear) values, not booleans
+    threat_state: Dict[str, float]    = new_threat_state()
 
     buffer_cap = max(MAX_EVENT_HISTORY, args.window_frames) + 5
 
@@ -318,10 +391,13 @@ async def main_async():
                 tracker_buffer.clear()
                 last_decision_frame = None
                 last_cues = None
+                # A latched threat must NOT survive a video switch — otherwise the next clip
+                # opens at "criminal" because the previous one ended mid-robbery.
+                threat_state = new_threat_state()
                 # Broadcaster may have started a new business/session before this reset.
                 current_jsonl_log, current_context_log = _resolve_log_paths()
                 print("[GROQ] Reset — cleared event_history, vlm_frame_buffer, tracker_buffer, "
-                      "last_decision_frame, last_cues")
+                      "last_decision_frame, last_cues, threat_state")
                 continue
 
             if msg_type == "business_context":
@@ -353,7 +429,7 @@ async def main_async():
             rec["vlm"] = rec
             new_event = build_event_sentence(rec)
             qa       = rec.get("qa") or {}
-            raw_cues = {k: str(qa.get(k, "")).strip().lower() for k in BINARY_CUE_KEYS}
+            raw_cues = extract_raw_cues(qa)
             print(f"[DEBUG] New event (VLM frame {frame_idx}): {new_event}")
 
             # Buffer EVERY vlm_frame seen (before the throttle below) so the sliding "NOW"
@@ -379,7 +455,8 @@ async def main_async():
             # not just the yes/no-ish boolean — so a "no" -> "unclear" escalation still
             # triggers a Groq call even though it isn't a hard signal on its own.
             cues         = {k: v.startswith("y") for k, v in raw_cues.items()}
-            hard_now     = any(cues[k] for k in HARD_SIGNAL_KEYS)
+            hard_now     = (any(cues[k] for k in HARD_SIGNAL_KEYS)
+                            or raw_cues.get(WEAPON_CONFIDENCE_CUE) == "high")
             cues_changed = (last_cues is None) or (raw_cues != last_cues)
             print(f"[DEBUG] Cues: {raw_cues} | hard={hard_now} | changed={cues_changed}")
 
@@ -434,14 +511,18 @@ async def main_async():
             # per-frame cue history; scoring_level comes from the business-context text;
             # multi-person convergence is a corroborating signal from the tracker; Groq's own
             # "concern" tag is only a small bounded tiebreak, never the deciding factor.
+            # threat_state latches an established incident across decisions so the score
+            # doesn't collapse back to "normal" the moment the weapon leaves frame while the
+            # suspects are still emptying the display cases — see scoring.LATCH_* .
             cue_history   = [entry["raw_cues"] for entry in vlm_frame_buffer]
             scoring_level = extract_scoring_level(latest_business_context)
             converging    = multi_person_converging(rec)
-            score, label = score_from_cues(
+            score, label, threat_state = score_from_cues(
                 cue_history,
                 scoring_level=scoring_level,
                 multi_person_converge=converging,
                 concern=groq_result.get("concern", ""),
+                prior_state=threat_state,
             )
 
             result = {

@@ -1,0 +1,1306 @@
+{
+  "schema_version": 2,
+  "generated_at_unix_ms": 1785530850978,
+  "source": {
+    "business": "jewerly_store_short",
+    "version": 15
+  },
+  "businesses": [
+    {
+      "key": "jewelry",
+      "name": "Jewelry Store"
+    },
+    {
+      "key": "market",
+      "name": "Market"
+    },
+    {
+      "key": "gun_store",
+      "name": "Gun Store"
+    }
+  ],
+  "kpisByBusiness": {
+    "jewelry": {
+      "totalEvents": 51,
+      "criminalEvents": 38,
+      "avgAnomalyScore": 0.7886274509803921,
+      "activeBusinesses": 3,
+      "alertsToday": 38
+    },
+    "market": {
+      "totalEvents": 37,
+      "criminalEvents": 0,
+      "avgAnomalyScore": 0.27756756756756756,
+      "activeBusinesses": 3,
+      "alertsToday": 0
+    },
+    "gun_store": {
+      "totalEvents": 29,
+      "criminalEvents": 0,
+      "avgAnomalyScore": 0.41517241379310343,
+      "activeBusinesses": 3,
+      "alertsToday": 0
+    }
+  },
+  "anomalyTrendByBusiness": {
+    "jewelry": [
+      {
+        "time": "0s",
+        "normal": 20,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "2s",
+        "normal": 18,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "4s",
+        "normal": 20,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "6s",
+        "normal": 16,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "8s",
+        "normal": 19,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "10s",
+        "normal": 5,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "12s",
+        "normal": 3,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "14s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "16s",
+        "normal": 0,
+        "suspicious": 67,
+        "criminal": 0
+      },
+      {
+        "time": "18s",
+        "normal": 0,
+        "suspicious": 56,
+        "criminal": 0
+      },
+      {
+        "time": "20s",
+        "normal": 0,
+        "suspicious": 55,
+        "criminal": 0
+      },
+      {
+        "time": "22s",
+        "normal": 0,
+        "suspicious": 60,
+        "criminal": 0
+      },
+      {
+        "time": "24s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "26s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
+      },
+      {
+        "time": "28s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
+      },
+      {
+        "time": "30s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
+      },
+      {
+        "time": "32s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "34s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
+      },
+      {
+        "time": "36s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "38s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "40s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "42s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "44s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "46s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "48s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
+      },
+      {
+        "time": "50s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
+      },
+      {
+        "time": "52s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
+      },
+      {
+        "time": "54s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "56s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 94
+      },
+      {
+        "time": "58s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "60s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "62s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "64s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "66s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "68s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "70s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "72s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "74s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
+      },
+      {
+        "time": "76s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "78s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "80s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "82s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "84s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 98
+      },
+      {
+        "time": "86s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
+      },
+      {
+        "time": "88s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
+      },
+      {
+        "time": "90s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 91
+      },
+      {
+        "time": "92s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "94s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "96s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 100
+      },
+      {
+        "time": "98s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      },
+      {
+        "time": "100s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 90
+      }
+    ],
+    "market": [
+      {
+        "time": "0s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "2s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "4s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "6s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "8s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "10s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "12s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "14s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "16s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "18s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "20s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "22s",
+        "normal": 0,
+        "suspicious": 55,
+        "criminal": 0
+      },
+      {
+        "time": "24s",
+        "normal": 0,
+        "suspicious": 30,
+        "criminal": 0
+      },
+      {
+        "time": "26s",
+        "normal": 0,
+        "suspicious": 68,
+        "criminal": 0
+      },
+      {
+        "time": "28s",
+        "normal": 0,
+        "suspicious": 37,
+        "criminal": 0
+      },
+      {
+        "time": "30s",
+        "normal": 9,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "32s",
+        "normal": 5,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "34s",
+        "normal": 0,
+        "suspicious": 43,
+        "criminal": 0
+      },
+      {
+        "time": "36s",
+        "normal": 0,
+        "suspicious": 43,
+        "criminal": 0
+      },
+      {
+        "time": "38s",
+        "normal": 20,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "40s",
+        "normal": 13,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "42s",
+        "normal": 15,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "44s",
+        "normal": 0,
+        "suspicious": 58,
+        "criminal": 0
+      },
+      {
+        "time": "46s",
+        "normal": 0,
+        "suspicious": 55,
+        "criminal": 0
+      },
+      {
+        "time": "48s",
+        "normal": 0,
+        "suspicious": 53,
+        "criminal": 0
+      },
+      {
+        "time": "50s",
+        "normal": 0,
+        "suspicious": 51,
+        "criminal": 0
+      },
+      {
+        "time": "52s",
+        "normal": 20,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "54s",
+        "normal": 0,
+        "suspicious": 50,
+        "criminal": 0
+      },
+      {
+        "time": "56s",
+        "normal": 0,
+        "suspicious": 50,
+        "criminal": 0
+      },
+      {
+        "time": "58s",
+        "normal": 0,
+        "suspicious": 50,
+        "criminal": 0
+      },
+      {
+        "time": "60s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "62s",
+        "normal": 0,
+        "suspicious": 44,
+        "criminal": 0
+      },
+      {
+        "time": "64s",
+        "normal": 0,
+        "suspicious": 63,
+        "criminal": 0
+      },
+      {
+        "time": "66s",
+        "normal": 0,
+        "suspicious": 35,
+        "criminal": 0
+      },
+      {
+        "time": "68s",
+        "normal": 0,
+        "suspicious": 54,
+        "criminal": 0
+      },
+      {
+        "time": "70s",
+        "normal": 20,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "72s",
+        "normal": 16,
+        "suspicious": 0,
+        "criminal": 0
+      }
+    ],
+    "gun_store": [
+      {
+        "time": "0s",
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "2s",
+        "normal": 8,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "4s",
+        "normal": 8,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "6s",
+        "normal": 8,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "8s",
+        "normal": 4,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "10s",
+        "normal": 0,
+        "suspicious": 43,
+        "criminal": 0
+      },
+      {
+        "time": "12s",
+        "normal": 0,
+        "suspicious": 50,
+        "criminal": 0
+      },
+      {
+        "time": "14s",
+        "normal": 20,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "16s",
+        "normal": 19,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "18s",
+        "normal": 20,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "20s",
+        "normal": 11,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "22s",
+        "normal": 17,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "24s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "26s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "28s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "30s",
+        "normal": 0,
+        "suspicious": 43,
+        "criminal": 0
+      },
+      {
+        "time": "32s",
+        "normal": 0,
+        "suspicious": 69,
+        "criminal": 0
+      },
+      {
+        "time": "34s",
+        "normal": 0,
+        "suspicious": 48,
+        "criminal": 0
+      },
+      {
+        "time": "36s",
+        "normal": 20,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "38s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "40s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "42s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "44s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "46s",
+        "normal": 0,
+        "suspicious": 50,
+        "criminal": 0
+      },
+      {
+        "time": "48s",
+        "normal": 0,
+        "suspicious": 50,
+        "criminal": 0
+      },
+      {
+        "time": "50s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "52s",
+        "normal": 0,
+        "suspicious": 55,
+        "criminal": 0
+      },
+      {
+        "time": "54s",
+        "normal": 0,
+        "suspicious": 65,
+        "criminal": 0
+      },
+      {
+        "time": "56s",
+        "normal": 0,
+        "suspicious": 36,
+        "criminal": 0
+      }
+    ]
+  },
+  "anomalyTypeByBusiness": {
+    "jewelry": [
+      {
+        "type": "Weapon Detected",
+        "count": 8
+      },
+      {
+        "type": "Suspicious Behavior",
+        "count": 6
+      },
+      {
+        "type": "Armed Robbery",
+        "count": 5
+      }
+    ],
+    "market": [
+      {
+        "type": "Suspicious Behavior",
+        "count": 10
+      },
+      {
+        "type": "Weapon Detected",
+        "count": 1
+      }
+    ],
+    "gun_store": [
+      {
+        "type": "Suspicious Behavior",
+        "count": 8
+      }
+    ]
+  },
+  "severityByBusiness": {
+    "jewelry": [
+      {
+        "name": "Normal",
+        "value": 7
+      },
+      {
+        "name": "Suspicious",
+        "value": 6
+      },
+      {
+        "name": "Criminal",
+        "value": 38
+      }
+    ],
+    "market": [
+      {
+        "name": "Normal",
+        "value": 19
+      },
+      {
+        "name": "Suspicious",
+        "value": 18
+      },
+      {
+        "name": "Criminal",
+        "value": 0
+      }
+    ],
+    "gun_store": [
+      {
+        "name": "Normal",
+        "value": 11
+      },
+      {
+        "name": "Suspicious",
+        "value": 18
+      },
+      {
+        "name": "Criminal",
+        "value": 0
+      }
+    ]
+  },
+  "wordFrequenciesByBusiness": {
+    "jewelry": [
+      {
+        "text": "Counter",
+        "value": 100
+      },
+      {
+        "text": "Display",
+        "value": 83
+      },
+      {
+        "text": "Potential",
+        "value": 83
+      },
+      {
+        "text": "Physical",
+        "value": 83
+      },
+      {
+        "text": "Scene",
+        "value": 75
+      },
+      {
+        "text": "Man",
+        "value": 75
+      },
+      {
+        "text": "Individual",
+        "value": 67
+      },
+      {
+        "text": "Behind",
+        "value": 67
+      },
+      {
+        "text": "Customer",
+        "value": 58
+      },
+      {
+        "text": "Escalates",
+        "value": 58
+      },
+      {
+        "text": "Aggression",
+        "value": 58
+      },
+      {
+        "text": "Firearm",
+        "value": 58
+      },
+      {
+        "text": "Stands",
+        "value": 50
+      },
+      {
+        "text": "Employee",
+        "value": 50
+      },
+      {
+        "text": "Handgun",
+        "value": 50
+      },
+      {
+        "text": "Woman",
+        "value": 50
+      },
+      {
+        "text": "Person",
+        "value": 50
+      },
+      {
+        "text": "Case",
+        "value": 42
+      },
+      {
+        "text": "Another",
+        "value": 42
+      },
+      {
+        "text": "Interacts",
+        "value": 42
+      },
+      {
+        "text": "Object",
+        "value": 42
+      },
+      {
+        "text": "Flag",
+        "value": 42
+      },
+      {
+        "text": "Restraint",
+        "value": 42
+      },
+      {
+        "text": "Robbery",
+        "value": 42
+      }
+    ],
+    "market": [
+      {
+        "text": "Counter",
+        "value": 100
+      },
+      {
+        "text": "Individual",
+        "value": 74
+      },
+      {
+        "text": "Person",
+        "value": 65
+      },
+      {
+        "text": "Scene",
+        "value": 52
+      },
+      {
+        "text": "Behind",
+        "value": 48
+      },
+      {
+        "text": "Register",
+        "value": 35
+      },
+      {
+        "text": "Object",
+        "value": 30
+      },
+      {
+        "text": "Cash",
+        "value": 30
+      },
+      {
+        "text": "Jacket",
+        "value": 26
+      },
+      {
+        "text": "Reaches",
+        "value": 26
+      },
+      {
+        "text": "Area",
+        "value": 26
+      },
+      {
+        "text": "Dark",
+        "value": 22
+      },
+      {
+        "text": "Toward",
+        "value": 22
+      },
+      {
+        "text": "Into",
+        "value": 22
+      },
+      {
+        "text": "Escalates",
+        "value": 17
+      },
+      {
+        "text": "Approaches",
+        "value": 17
+      },
+      {
+        "text": "Stands",
+        "value": 17
+      },
+      {
+        "text": "Interaction",
+        "value": 17
+      },
+      {
+        "text": "Drawer",
+        "value": 17
+      },
+      {
+        "text": "Open",
+        "value": 17
+      },
+      {
+        "text": "Leans",
+        "value": 17
+      },
+      {
+        "text": "Over",
+        "value": 17
+      },
+      {
+        "text": "Reaching",
+        "value": 17
+      },
+      {
+        "text": "Stabilizes",
+        "value": 13
+      }
+    ],
+    "gun_store": [
+      {
+        "text": "Display",
+        "value": 100
+      },
+      {
+        "text": "Cases",
+        "value": 87
+      },
+      {
+        "text": "Individuals",
+        "value": 57
+      },
+      {
+        "text": "Reaching",
+        "value": 52
+      },
+      {
+        "text": "Merchandise",
+        "value": 48
+      },
+      {
+        "text": "Into",
+        "value": 43
+      },
+      {
+        "text": "Aggression",
+        "value": 39
+      },
+      {
+        "text": "Smashing",
+        "value": 30
+      },
+      {
+        "text": "Face",
+        "value": 30
+      },
+      {
+        "text": "Concealment",
+        "value": 30
+      },
+      {
+        "text": "Case",
+        "value": 26
+      },
+      {
+        "text": "Subjects",
+        "value": 26
+      },
+      {
+        "text": "Counter",
+        "value": 26
+      },
+      {
+        "text": "Over",
+        "value": 22
+      },
+      {
+        "text": "Access",
+        "value": 17
+      },
+      {
+        "text": "Reach",
+        "value": 17
+      },
+      {
+        "text": "Escalating",
+        "value": 17
+      },
+      {
+        "text": "Behind",
+        "value": 17
+      },
+      {
+        "text": "Person",
+        "value": 13
+      },
+      {
+        "text": "Glass",
+        "value": 13
+      },
+      {
+        "text": "Detected",
+        "value": 13
+      },
+      {
+        "text": "Lean",
+        "value": 13
+      },
+      {
+        "text": "Behavior",
+        "value": 13
+      },
+      {
+        "text": "Looting",
+        "value": 13
+      }
+    ]
+  },
+  "peopleByBusiness": {
+    "jewelry": 6,
+    "market": 3,
+    "gun_store": 2
+  },
+  "confusionMatrixByBusiness": {
+    "jewelry": [
+      [
+        12,
+        10,
+        0
+      ],
+      [
+        0,
+        2,
+        2
+      ],
+      [
+        0,
+        0,
+        74
+      ]
+    ],
+    "market": [
+      [
+        18,
+        0,
+        0
+      ],
+      [
+        4,
+        8,
+        0
+      ],
+      [
+        14,
+        28,
+        0
+      ]
+    ],
+    "gun_store": [
+      [
+        6,
+        0,
+        0
+      ],
+      [
+        8,
+        4,
+        0
+      ],
+      [
+        6,
+        32,
+        0
+      ]
+    ]
+  },
+  "narrativeCoverageByBusiness": {
+    "jewelry": {
+      "covered_range": [
+        0,
+        1080
+      ],
+      "mock_full_range": [
+        0,
+        2999
+      ],
+      "coverage_pct": 0.3601
+    },
+    "market": {
+      "covered_range": [
+        540,
+        1800
+      ],
+      "mock_full_range": [
+        0,
+        3635
+      ],
+      "coverage_pct": 0.3466
+    },
+    "gun_store": {
+      "covered_range": [
+        0,
+        840
+      ],
+      "mock_full_range": [
+        0,
+        2122
+      ],
+      "coverage_pct": 0.3959
+    }
+  },
+  "eval": {
+    "scoring_level": "balanced",
+    "replay": {
+      "total_frames": 3000,
+      "compared_frames": 3000,
+      "confusion_matrix": {
+        "normal": {
+          "normal": 361,
+          "suspicious": 299,
+          "criminal": 0
+        },
+        "suspicious": {
+          "normal": 0,
+          "suspicious": 61,
+          "criminal": 59
+        },
+        "criminal": {
+          "normal": 0,
+          "suspicious": 0,
+          "criminal": 2220
+        }
+      },
+      "not_covered": {
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      "accuracy": 0.8806666666666667,
+      "score_mae": 0.11339999999999997,
+      "under_call_count": 0,
+      "over_call_count": 358,
+      "coverage": {
+        "covered_range": [
+          0,
+          3000
+        ],
+        "mock_full_range": [
+          0,
+          2999
+        ],
+        "coverage_pct": 1.0
+      }
+    },
+    "log": {
+      "total_frames": 3000,
+      "compared_frames": 1021,
+      "confusion_matrix": {
+        "normal": {
+          "normal": 121,
+          "suspicious": 479,
+          "criminal": 0
+        },
+        "suspicious": {
+          "normal": 0,
+          "suspicious": 61,
+          "criminal": 59
+        },
+        "criminal": {
+          "normal": 0,
+          "suspicious": 0,
+          "criminal": 301
+        }
+      },
+      "not_covered": {
+        "normal": 60,
+        "suspicious": 0,
+        "criminal": 1919
+      },
+      "accuracy": 0.4730656219392752,
+      "score_mae": 0.35655239960822727,
+      "under_call_count": 0,
+      "over_call_count": 538,
+      "coverage": {
+        "covered_range": [
+          0,
+          1080
+        ],
+        "mock_full_range": [
+          0,
+          2999
+        ],
+        "coverage_pct": 0.3601
+      }
+    },
+    "confusion_matrix_source": "replay"
+  }
+}
