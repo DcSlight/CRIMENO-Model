@@ -5,6 +5,8 @@ import time
 import argparse
 import yt_dlp
 
+import session_log
+
 WORKER_ACK_TIMEOUT_S = 20    # seconds to wait for reset_ack from all workers
 FIRST_FRAME_ACK_TIMEOUT_S = 5  # seconds to wait for tracker to emit its first real bbox
 
@@ -80,6 +82,10 @@ def main():
         source = resolve_video_source(args.video_path, "local")
         cap = cv2.VideoCapture(source)
         current_video = args.video_path
+        try:
+            session_log.begin_session(current_video)
+        except Exception as e:
+            print(f"[WARN] session_log.begin_session failed: {e}")
         frame_index = 0
         stream_start_time = time.time()
 
@@ -111,6 +117,10 @@ def main():
 
                 cap = cv2.VideoCapture(source)
                 current_video = new_path
+                try:
+                    session_log.begin_session(current_video)
+                except Exception as e:
+                    print(f"[WARN] session_log.begin_session failed: {e}")
                 frame_index = 0
                 # stream_start_time is set AFTER the first-frame ack so pacing starts from
                 # the moment React receives {ok:true} — avoids a catch-up burst on first play.
@@ -126,7 +136,7 @@ def main():
                 pub_socket.send_multipart([b"reset"])
                 print("[CONTROL] Sent reset — waiting for worker acks...")
 
-                expected_acks = {"florence", "tracker"}
+                expected_acks = {"tracker"}
                 received_acks = set()
                 deadline = time.time() + WORKER_ACK_TIMEOUT_S
                 while received_acks < expected_acks and time.time() < deadline:

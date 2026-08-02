@@ -1,0 +1,2 @@
+{"type": "groq_anomaly", "frame_range": {"start": 0, "end": 0}, "result": {"anomaly_score": 0.05, "label": "normal", "reason": "Customer interacts with salesperson at counter", "key_moments": ["customer reaches for display case", "salesperson present during interaction"]}}
+{"type": "groq_anomaly", "frame_range": {"start": 0, "end": 0}, "result": {"anomaly_score": 0.0, "label": "normal", "reason": "Scene analysis unavailable", "key_moments": []}}

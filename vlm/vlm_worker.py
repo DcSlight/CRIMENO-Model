@@ -1,0 +1,282 @@
+import argparse
+import asyncio
+import io
+import json
+import os
+import sys
+import time
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+from PIL import Image
+
+_HERE = Path(__file__).resolve().parent
+_PROJECT_ROOT = _HERE.parent
+_OUTPUT_LOG = _HERE / "logs_output.jsonl"
+
+sys.path.insert(0, str(_PROJECT_ROOT))
+import session_log
+
+from dotenv import load_dotenv
+load_dotenv(_PROJECT_ROOT / ".env")
+
+import zmq
+
+from vlm_model import load_vlm, analyze_frame, build_summary, now_unix_ms
+
+
+# ============================================================
+# WebSocket helpers
+# ============================================================
+
+async def ws_connect_loop(ws_url: str):
+    import websockets
+
+    if ws_url.lower() == "none":
+        print("[WS] Disabled (ws_url=none)")
+        return None
+
+    backoff = 0.25
+    while True:
+        try:
+            ws = await websockets.connect(ws_url, max_size=16 * 1024 * 1024)
+            print(f"[WS] Connected: {ws_url}")
+            return ws
+        except Exception as e:
+            print(f"[WS] Connect failed: {e} (retry in {backoff:.2f}s)")
+            await asyncio.sleep(backoff)
+            backoff = min(5.0, backoff * 1.7)
+
+
+async def ws_send_json(ws, payload: Dict[str, Any]):
+    if ws is not None:
+        await ws.send(json.dumps(payload, ensure_ascii=False))
+
+
+# ============================================================
+# Main loop
+# ============================================================
+
+async def main_async():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--video-endpoint", "--video_endpoint", dest="video_endpoint",
+                        default="tcp://127.0.0.1:5560",
+                        help="ZeroMQ endpoint to receive video frames (SUB).")
+    parser.add_argument("--anomaly-endpoint", "--anomaly_endpoint", dest="anomaly_endpoint",
+                        default="tcp://127.0.0.1:5581",
+                        help="ZeroMQ PUSH endpoint of the Groq anomaly worker.")
+    parser.add_argument("--ws-url", "--ws_url", dest="ws_url", default="none",
+                        help="WebSocket URL for forwarding VLM records (or 'none').")
+    parser.add_argument("--backend", choices=["local", "online"],
+                        default=os.environ.get("VLM_BACKEND", "local"),
+                        help="Vision backend. 'local' (default) runs a vision model on your "
+                             "GPU via Ollama — no API key, no quota, no per-request cost, but "
+                             "bounded by local hardware. 'online' calls the Gemini API instead "
+                             "— needs GEMINI_API_KEY (see --gemini-api-key / .env), has no "
+                             "local GPU/VRAM cost, but sends frames off-device to Google and "
+                             "is subject to Gemini's rate limits/pricing. See vlm/README.md "
+                             "for the tradeoffs and history behind each. Can be set via the "
+                             "VLM_BACKEND env var (.env) instead of passing this flag every "
+                             "run — this flag overrides the env var when both are given.")
+    parser.add_argument("--gemini-api-key", "--gemini_api_key", dest="gemini_api_key", default="",
+                        help="Gemini API key (or set GEMINI_API_KEY env var / .env). "
+                             "Only used with --backend online. Get one at "
+                             "https://aistudio.google.com/apikey")
+    parser.add_argument("--vlm_model", default=os.environ.get("VLM_MODEL") or None,
+                        help="Vision model id. Can be set via the VLM_MODEL env var (.env) "
+                             "instead of passing this flag every run — this flag overrides "
+                             "the env var when both are given. If neither is set, defaults to "
+                             "'gemma3:4b' for --backend local, or 'gemini-3.5-flash' for "
+                             "--backend online (verify this tag is "
+                             "still current in Google AI Studio before relying on it — this "
+                             "project has already been burned twice by silent model "
+                             "deprecations, Groq's Llama 4 Scout and gemini-2.0-flash). "
+                             "--- Notes for --backend local (Ollama) below. --- "
+                             "Runs locally via Ollama — pull it first "
+                             "with `ollama pull <tag>`. Hosted vision was dropped after every "
+                             "free tier failed in practice (Groq deprecated Llama 4 Scout, "
+                             "Groq's qwen/qwen3.6-27b is a flaky preview reasoning model, "
+                             "Gemini's free tier caps out at 5 requests/minute). Local models "
+                             "tried and rejected before landing here: minicpm-v4.5/4.6 crash "
+                             "official Ollama (exit 0xc0000005) — that architecture needs an "
+                             "unofficial fork to run at all — llama3.2-vision:11b fails to "
+                             "load (`unknown model architecture: 'mllama'`) because Ollama's "
+                             "new inference engine dropped mllama support with no fix/ETA — "
+                             "qwen2.5vl:7b loaded fine but was both slow and weak on this "
+                             "project's GPU (see Pascal note below) — and gemma3:12b was "
+                             "stronger at schema-constrained JSON but too heavy to run "
+                             "alongside tracker_worker.py's YOLO models at the same time (both "
+                             "compete for the same GPU). gemma3:4b is light enough to run "
+                             "concurrently with the tracker while staying in the natively "
+                             "supported architecture set (Llama 4, Gemma 3, Qwen 2.5 VL, "
+                             "Mistral Small 3.1). If quality suffers, gemma3:12b is the "
+                             "heavier fallback (VLM-only runs, or if you free up GPU headroom); "
+                             "qwen2.5vl:7b also still works. Do NOT use "
+                             "qwen2-vl (no '.5') — different, buggier model. NOTE: on "
+                             "Pascal-class GPUs (e.g. Tesla/GRID P40, compute capability 6.1) "
+                             "vision models can crash with `exit 0xc0000005` — that is NOT the "
+                             "model's fault, it is Ollama's CUDA backend segfaulting on Pascal "
+                             "in the new engine. Fix: set env var CUDA_VISIBLE_DEVICES=-1 "
+                             "(persist with `setx CUDA_VISIBLE_DEVICES -1`, then fully restart "
+                             "the Ollama service). This hides the device from the CUDA backend "
+                             "only — Ollama then falls back to its Vulkan backend, which "
+                             "supports Pascal correctly and still runs on GPU (confirmed: "
+                             "29/29 layers offloaded, flash attention enabled, no crash). Do "
+                             "not mistake this for a CPU fallback.")
+    parser.add_argument("--ollama-host", "--ollama_host", dest="ollama_host", default="",
+                        help="Ollama server URL (or set OLLAMA_HOST env var). Only used with "
+                             "--backend local. Defaults to http://localhost:11434.")
+    parser.add_argument("--process_every_n_frames", "--every", dest="process_every_n_frames",
+                        type=int, default=60, help="Analyze one frame every N frames.")
+    parser.add_argument("--max_new_tokens", "--max_output_tokens", dest="max_new_tokens",
+                        type=int, default=512, help="Token budget for the structured JSON response.")
+    args = parser.parse_args()
+
+    # argparse only validates --backend against choices when it comes from argv — a typo'd
+    # VLM_BACKEND env value would silently fall through as "local" everywhere else, so check
+    # explicitly and fail fast rather than run the wrong backend without noticing.
+    if args.backend not in ("local", "online"):
+        parser.error(f"--backend / VLM_BACKEND must be 'local' or 'online', got {args.backend!r}")
+
+    if args.vlm_model is None:
+        args.vlm_model = "gemini-3.5-flash" if args.backend == "online" else "gemma3:4b"
+
+    connection_arg = args.gemini_api_key if args.backend == "online" else args.ollama_host
+    client = load_vlm(args.backend, args.vlm_model, connection_arg)
+
+    # Loads the model into VRAM and surfaces load/architecture-compatibility errors here,
+    # before the rest of the pipeline (broadcaster/tracker/anomaly worker) is up and running —
+    # mirrors tracker_worker.py's model warm-up.
+    print(f"[VLM] Warming up model (backend={args.backend})...")
+    _warmup_jpg = io.BytesIO()
+    Image.new("RGB", (64, 64)).save(_warmup_jpg, format="JPEG")
+    _warmup_qa = await asyncio.to_thread(
+        analyze_frame, args.backend, client, args.vlm_model, _warmup_jpg.getvalue(), args.max_new_tokens
+    )
+    print(f"[VLM] Warm-up result: {build_summary(_warmup_qa)}")
+    print("[VLM] ✓ Model ready")
+
+    context = zmq.Context()
+
+    sub = context.socket(zmq.SUB)
+    sub.connect(args.video_endpoint)
+    sub.setsockopt(zmq.SUBSCRIBE, b"frame")
+    sub.setsockopt(zmq.SUBSCRIBE, b"reset")
+    sub.setsockopt(zmq.RCVHWM, 5)
+    sub.setsockopt(zmq.RCVTIMEO, 200)
+    print(f"🔗 [VLM] Connected to broadcaster on {args.video_endpoint}")
+
+    groq_socket = context.socket(zmq.PUSH)
+    groq_socket.connect(args.anomaly_endpoint)
+    print(f"🔗 [VLM] Connected to anomaly worker via ZMQ PUSH on {args.anomaly_endpoint}")
+
+    ws = await ws_connect_loop(args.ws_url)
+
+    # Resolve the current session's log path; falls back to the legacy flat file if
+    # no session exists yet (e.g. broadcaster hasn't played a video, or session_log
+    # hiccuped).
+    current_log = session_log.resolve_log_path("vlm") or _OUTPUT_LOG
+
+    def _drain():
+        drained = 0
+        while True:
+            try:
+                sub.recv_multipart(zmq.NOBLOCK)
+                drained += 1
+            except zmq.error.Again:
+                break
+        if drained:
+            print(f"[VLM] Drained {drained} stale frames after reset")
+
+    frames_processed = 0
+    last_log_ts = time.time()
+
+    try:
+        while True:
+            try:
+                parts = await asyncio.to_thread(sub.recv_multipart)
+            except zmq.error.Again:
+                continue
+            except Exception:
+                await asyncio.sleep(0.01)
+                continue
+
+            topic = parts[0]
+            if topic == b"reset":
+                print("[VLM] Reset received — draining stale frames")
+                _drain()
+                # Broadcaster may have started a new business/session before this reset.
+                current_log = session_log.resolve_log_path("vlm") or _OUTPUT_LOG
+                continue
+            if topic != b"frame" or len(parts) < 4:
+                continue
+
+            frame_idx = int(parts[1].decode("utf-8"))
+            try:
+                video_time_ms = int(parts[2].decode("utf-8"))
+            except Exception:
+                video_time_ms = -1
+            jpg_bytes = parts[3]
+
+            if args.process_every_n_frames > 1 and (frame_idx % args.process_every_n_frames) != 0:
+                continue
+
+            qa = await asyncio.to_thread(
+                analyze_frame, args.backend, client, args.vlm_model, jpg_bytes, args.max_new_tokens
+            )
+            summary = build_summary(qa)
+
+            record = {
+                "type":          "vlm_frame",
+                "frame_index":   frame_idx,
+                "video_time_ms": video_time_ms,
+                "qa":            qa,
+                "summary":       summary,
+                "meta": {
+                    "generated_at_unix_ms": now_unix_ms(),
+                    "model": args.vlm_model,
+                    "backend": args.backend,
+                },
+            }
+
+            print(f"🤖 [VLM] frame {frame_idx} | {summary}")
+
+            with open(current_log, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+            try:
+                groq_socket.send(json.dumps(record, ensure_ascii=False).encode("utf-8"))
+            except Exception as e:
+                print(f"[VLM] Failed to send to anomaly worker: {e}")
+
+            try:
+                await ws_send_json(ws, record)
+            except Exception as e:
+                print(f"[WS] Send failed: {e}. Reconnecting...")
+                ws = await ws_connect_loop(args.ws_url)
+
+            frames_processed += 1
+            now = time.time()
+            if now - last_log_ts >= 5.0:
+                print(f"[VLM] processed={frames_processed} last_frame={frame_idx}")
+                last_log_ts = now
+
+    except KeyboardInterrupt:
+        print("\n[INFO] Stopped by user (VLM worker).")
+    finally:
+        if ws is not None:
+            try:
+                await ws.close()
+            except Exception:
+                pass
+        sub.close()
+        groq_socket.close()
+        context.term()
+
+
+def main():
+    asyncio.run(main_async())
+
+
+if __name__ == "__main__":
+    main()

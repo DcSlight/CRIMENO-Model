@@ -1,0 +1,251 @@
+{
+  "schema_version": 1,
+  "generated_at_unix_ms": 1784822475258,
+  "source": {
+    "business": "jewerly_store_short",
+    "version": 11
+  },
+  "businesses": [
+    {
+      "key": "jewelry",
+      "name": "Jewelry Store"
+    },
+    {
+      "key": "market",
+      "name": "Market"
+    },
+    {
+      "key": "gun_store",
+      "name": "Gun Store"
+    }
+  ],
+  "kpis": {
+    "totalEvents": 8,
+    "criminalEvents": 0,
+    "avgAnomalyScore": 0.49125,
+    "activeBusinesses": 3,
+    "alertsToday": 0
+  },
+  "anomalyTrendByBusiness": {
+    "jewelry": [
+      {
+        "time": "0s",
+        "normal": 0,
+        "suspicious": 30,
+        "criminal": 0
+      },
+      {
+        "time": "0s",
+        "normal": 20,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "0s",
+        "normal": 0,
+        "suspicious": 50,
+        "criminal": 0
+      },
+      {
+        "time": "2s",
+        "normal": 20,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      {
+        "time": "10s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "12s",
+        "normal": 0,
+        "suspicious": 70,
+        "criminal": 0
+      },
+      {
+        "time": "14s",
+        "normal": 0,
+        "suspicious": 66,
+        "criminal": 0
+      },
+      {
+        "time": "16s",
+        "normal": 0,
+        "suspicious": 67,
+        "criminal": 0
+      }
+    ]
+  },
+  "anomalyType": [
+    {
+      "type": "Suspicious Behavior",
+      "count": 6
+    },
+    {
+      "type": "Weapon Detected",
+      "count": 3
+    }
+  ],
+  "severity": [
+    {
+      "name": "Normal",
+      "value": 2
+    },
+    {
+      "name": "Suspicious",
+      "value": 6
+    },
+    {
+      "name": "Criminal",
+      "value": 0
+    }
+  ],
+  "wordFrequencies": [
+    {
+      "text": "Display",
+      "value": 100
+    },
+    {
+      "text": "Customer",
+      "value": 70
+    },
+    {
+      "text": "Employee",
+      "value": 70
+    },
+    {
+      "text": "Interacts",
+      "value": 60
+    },
+    {
+      "text": "Case",
+      "value": 60
+    },
+    {
+      "text": "Stands",
+      "value": 60
+    },
+    {
+      "text": "Scene",
+      "value": 60
+    },
+    {
+      "text": "Jewelry",
+      "value": 50
+    },
+    {
+      "text": "Desk",
+      "value": 50
+    },
+    {
+      "text": "Handgun",
+      "value": 50
+    },
+    {
+      "text": "Individual",
+      "value": 40
+    },
+    {
+      "text": "Customers",
+      "value": 40
+    },
+    {
+      "text": "Counter",
+      "value": 40
+    },
+    {
+      "text": "Seated",
+      "value": 40
+    },
+    {
+      "text": "Escalates",
+      "value": 40
+    },
+    {
+      "text": "Man",
+      "value": 40
+    },
+    {
+      "text": "Object",
+      "value": 40
+    },
+    {
+      "text": "Aggression",
+      "value": 40
+    },
+    {
+      "text": "Another",
+      "value": 30
+    },
+    {
+      "text": "Remains",
+      "value": 30
+    },
+    {
+      "text": "Browsing",
+      "value": 30
+    },
+    {
+      "text": "Potential",
+      "value": 30
+    },
+    {
+      "text": "Resembling",
+      "value": 30
+    },
+    {
+      "text": "Flag",
+      "value": 30
+    }
+  ],
+  "peopleByBusiness": {
+    "jewelry": 6
+  },
+  "confusionMatrixByBusiness": {
+    "jewelry": [
+      [
+        2,
+        6,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ]
+  },
+  "eval": {
+    "confusion_matrix": {
+      "normal": {
+        "normal": 2,
+        "suspicious": 6,
+        "criminal": 0
+      },
+      "suspicious": {
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      },
+      "criminal": {
+        "normal": 0,
+        "suspicious": 0,
+        "criminal": 0
+      }
+    },
+    "accuracy": 0.25,
+    "under_call_count": 0,
+    "under_calls": [],
+    "over_call_count": 6,
+    "score_mae": 0.41875,
+    "avg_similarity": 0.3292252342205216,
+    "parse_failure_count": 0
+  }
+}

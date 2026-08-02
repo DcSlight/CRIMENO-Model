@@ -1,0 +1,25 @@
+# Core
+pyzmq
+opencv-python
+numpy
+Pillow
+websockets
+
+# YOLO tracker
+ultralytics
+
+# VLM (uses torch only for the tracker; vision inference is local via Ollama below)
+torch
+
+# VLM vision — --backend local (default): Ollama (requires the Ollama server running, see vlm/README.md)
+ollama
+
+# VLM vision — --backend online: Gemini API (requires GEMINI_API_KEY, see vlm/README.md)
+google-genai
+
+# Groq (anomaly worker only)
+groq
+python-dotenv
+
+# Video broadcaster
+yt-dlp
