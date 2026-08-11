@@ -3,124 +3,422 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Chrome Tab Recorder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Stable Chrome Tab Recorder</title>
+
   <style>
     body {
       font-family: Arial, sans-serif;
-      max-width: 600px;
+      max-width: 700px;
       margin: 60px auto;
+      padding: 20px;
       text-align: center;
+    }
+
+    h1 {
+      margin-bottom: 10px;
+    }
+
+    p {
+      color: #555;
+      line-height: 1.5;
     }
 
     button {
       font-size: 18px;
-      padding: 12px 22px;
-      margin: 8px;
+      padding: 12px 24px;
+      margin: 10px;
       cursor: pointer;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
     }
 
     #status {
       margin-top: 20px;
-      font-size: 16px;
+      font-size: 17px;
+      font-weight: bold;
+    }
+
+    #info {
+      margin-top: 15px;
+      font-size: 14px;
+      color: #666;
+      white-space: pre-line;
+    }
+
+    #timer {
+      margin-top: 10px;
+      font-size: 20px;
+      font-weight: bold;
     }
   </style>
 </head>
+
 <body>
-  <h1>Chrome Tab Recorder</h1>
+
+  <h1>Stable Chrome Tab Recorder</h1>
+
+  <p>
+    Choose <strong>Chrome Tab</strong> when Chrome asks what to share.
+    <br />
+    Enable <strong>Share tab audio</strong> if you need the video's audio.
+  </p>
 
   <button id="startBtn">Start Recording</button>
   <button id="stopBtn" disabled>Stop Recording</button>
 
   <div id="status">Ready</div>
+  <div id="timer">00:00</div>
+  <div id="info"></div>
 
   <script>
-    let mediaRecorder;
+    let stream = null;
+    let mediaRecorder = null;
     let recordedChunks = [];
-    let stream;
+
+    let timerInterval = null;
+    let recordingStartTime = null;
+    let isStopping = false;
 
     const startBtn = document.getElementById("startBtn");
     const stopBtn = document.getElementById("stopBtn");
-    const status = document.getElementById("status");
+    const statusEl = document.getElementById("status");
+    const infoEl = document.getElementById("info");
+    const timerEl = document.getElementById("timer");
 
-    startBtn.onclick = async () => {
+    function formatTime(seconds) {
+      const minutes = Math.floor(seconds / 60);
+      const remainingSeconds = seconds % 60;
+
+      return (
+        String(minutes).padStart(2, "0") +
+        ":" +
+        String(remainingSeconds).padStart(2, "0")
+      );
+    }
+
+    function startTimer() {
+      recordingStartTime = Date.now();
+
+      timerInterval = setInterval(() => {
+        const elapsedSeconds = Math.floor(
+          (Date.now() - recordingStartTime) / 1000
+        );
+
+        timerEl.textContent = formatTime(elapsedSeconds);
+      }, 500);
+    }
+
+    function stopTimer() {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+    }
+
+    function getMimeType() {
+      const supportedTypes = [
+        "video/webm;codecs=vp8,opus",
+        "video/webm;codecs=vp8",
+        "video/webm"
+      ];
+
+      for (const type of supportedTypes) {
+        if (MediaRecorder.isTypeSupported(type)) {
+          return type;
+        }
+      }
+
+      return "";
+    }
+
+    async function startRecording() {
       try {
+        isStopping = false;
+        recordedChunks = [];
+
+        statusEl.textContent = "Choose the Chrome tab...";
+        infoEl.textContent = "";
+        timerEl.textContent = "00:00";
+
+        /*
+         * 1080p / 30 FPS
+         *
+         * Much lighter and more stable inside a VM than
+         * VP9 + 60 FPS.
+         */
         stream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
+          video: {
+            width: {
+              ideal: 1920
+            },
+
+            height: {
+              ideal: 1080
+            },
+
+            frameRate: {
+              ideal: 30,
+              max: 30
+            }
+          },
+
           audio: true
         });
 
-        recordedChunks = [];
+        const videoTrack = stream.getVideoTracks()[0];
 
-        let options = {};
-
-        if (MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")) {
-          options.mimeType = "video/webm;codecs=vp9,opus";
-        } else if (MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")) {
-          options.mimeType = "video/webm;codecs=vp8,opus";
+        /*
+         * Ask again for 30 FPS after capture begins.
+         * If Chrome can't apply it, recording still continues.
+         */
+        try {
+          await videoTrack.applyConstraints({
+            frameRate: {
+              ideal: 30,
+              max: 30
+            }
+          });
+        } catch (error) {
+          console.warn(
+            "Could not apply exact frame rate:",
+            error
+          );
         }
 
-        mediaRecorder = new MediaRecorder(stream, options);
+        const settings = videoTrack.getSettings();
 
-        mediaRecorder.ondataavailable = event => {
-          if (event.data.size > 0) {
+        const width = settings.width || "unknown";
+        const height = settings.height || "unknown";
+        const fps = settings.frameRate || "unknown";
+
+        const mimeType = getMimeType();
+
+        /*
+         * 10 Mbps:
+         * High enough for clear 1080p screen/video recording,
+         * but much easier to encode than 20 Mbps VP9/60fps.
+         */
+        const options = {
+          videoBitsPerSecond: 10_000_000,
+          audioBitsPerSecond: 128_000
+        };
+
+        if (mimeType) {
+          options.mimeType = mimeType;
+        }
+
+        mediaRecorder = new MediaRecorder(
+          stream,
+          options
+        );
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (
+            event.data &&
+            event.data.size > 0
+          ) {
             recordedChunks.push(event.data);
           }
         };
 
-        mediaRecorder.onstop = () => {
-          const blob = new Blob(recordedChunks, {
-            type: mediaRecorder.mimeType || "video/webm"
-          });
+        mediaRecorder.onerror = (event) => {
+          console.error(
+            "MediaRecorder error:",
+            event
+          );
 
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
+          statusEl.textContent =
+            "Recorder error";
 
-          a.href = url;
-          a.download = `recording-${Date.now()}.webm`;
-
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-
-          setTimeout(() => URL.revokeObjectURL(url), 1000);
-
-          status.textContent = "Recording saved";
+          stopRecording();
         };
 
-        mediaRecorder.start();
+        mediaRecorder.onstop = () => {
+          saveRecording();
+        };
+
+        /*
+         * Create a chunk every second.
+         *
+         * Better for longer recordings because Chrome
+         * doesn't need to keep one enormous chunk in memory.
+         */
+        mediaRecorder.start(1000);
 
         startBtn.disabled = true;
         stopBtn.disabled = false;
-        status.textContent = "Recording...";
 
-        stream.getVideoTracks()[0].onended = () => {
-          if (mediaRecorder && mediaRecorder.state !== "inactive") {
-            mediaRecorder.stop();
+        statusEl.textContent = "Recording...";
+
+        infoEl.textContent =
+          `Capture: ${width} × ${height}\n` +
+          `FPS: ${fps}\n` +
+          `Codec: ${mediaRecorder.mimeType || "browser default"}\n` +
+          `Target bitrate: 10 Mbps`;
+
+        startTimer();
+
+        /*
+         * Detect if Chrome's "Stop sharing" button is pressed.
+         */
+        videoTrack.addEventListener(
+          "ended",
+          () => {
+            stopRecording();
           }
+        );
 
-          startBtn.disabled = false;
-          stopBtn.disabled = true;
-        };
+      } catch (error) {
+        console.error(error);
 
-      } catch (err) {
-        console.error(err);
-        status.textContent = "Recording cancelled or permission denied";
+        statusEl.textContent =
+          "Recording cancelled or permission denied";
+
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+
+        stopTimer();
       }
-    };
+    }
 
-    stopBtn.onclick = () => {
-      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+    function stopRecording() {
+      if (isStopping) {
+        return;
+      }
+
+      isStopping = true;
+
+      stopTimer();
+
+      statusEl.textContent =
+        "Finishing recording...";
+
+      /*
+       * First stop MediaRecorder so it can flush
+       * the final video chunk.
+       */
+      if (
+        mediaRecorder &&
+        mediaRecorder.state !== "inactive"
+      ) {
+        try {
+          mediaRecorder.requestData();
+        } catch (error) {
+          console.warn(
+            "requestData failed:",
+            error
+          );
+        }
+
         mediaRecorder.stop();
-      }
-
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
+      } else {
+        cleanupStream();
       }
 
       startBtn.disabled = false;
       stopBtn.disabled = true;
-    };
+    }
+
+    function cleanupStream() {
+      if (stream) {
+        stream.getTracks().forEach((track) => {
+          if (track.readyState !== "ended") {
+            track.stop();
+          }
+        });
+      }
+
+      stream = null;
+    }
+
+    function saveRecording() {
+      cleanupStream();
+
+      if (recordedChunks.length === 0) {
+        statusEl.textContent =
+          "No recording data was captured";
+
+        isStopping = false;
+        return;
+      }
+
+      const mimeType =
+        mediaRecorder?.mimeType ||
+        "video/webm";
+
+      const blob = new Blob(
+        recordedChunks,
+        {
+          type: mimeType
+        }
+      );
+
+      const url =
+        URL.createObjectURL(blob);
+
+      const downloadLink =
+        document.createElement("a");
+
+      const timestamp =
+        new Date()
+          .toISOString()
+          .replace(/:/g, "-")
+          .replace(/\..+/, "");
+
+      downloadLink.href = url;
+
+      downloadLink.download =
+        `chrome-tab-${timestamp}.webm`;
+
+      document.body.appendChild(
+        downloadLink
+      );
+
+      downloadLink.click();
+
+      downloadLink.remove();
+
+      /*
+       * Don't revoke immediately.
+       * Give Chrome time to start/finish the download.
+       */
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 10000);
+
+      const sizeMB =
+        (
+          blob.size /
+          1024 /
+          1024
+        ).toFixed(1);
+
+      statusEl.textContent =
+        `Saved successfully (${sizeMB} MB)`;
+
+      recordedChunks = [];
+      mediaRecorder = null;
+      isStopping = false;
+    }
+
+    startBtn.addEventListener(
+      "click",
+      startRecording
+    );
+
+    stopBtn.addEventListener(
+      "click",
+      stopRecording
+    );
   </script>
+
 </body>
 </html>
 ```
