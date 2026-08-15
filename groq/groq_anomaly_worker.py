@@ -31,7 +31,7 @@ load_dotenv(_PROJECT_ROOT / ".env")
 # Configuration
 # ============================================================
 
-GROQ_MODEL_NAME = "llama-3.3-70b-versatile"
+GROQ_MODEL_NAME = "gpt-oss-120b"
 ZMQ_ENDPOINT    = "tcp://127.0.0.1:5581"
 
 MAX_QUEUE_SIZE    = 30
