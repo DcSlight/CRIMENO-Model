@@ -275,8 +275,9 @@ def call_groq_for_anomaly(client: Groq, model_name: str, prompt: str) -> Dict[st
     response = client.chat.completions.create(
         model=model_name,
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=400,
+        max_tokens=1024,
         temperature=0.0,
+        reasoning_effort="low",
     )
     return parse_groq_output(response.choices[0].message.content or "")
 
