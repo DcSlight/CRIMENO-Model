@@ -1,0 +1,762 @@
+
+======================================================
+VLM frame 0 (window 0-0)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+Business context (from NestJS):
+- Store: Downtown Market (grocery)
+Description: Neighborhood store with fresh produce and daily essentials.
+Location: 123 King St W, Toronto
+Sensitivity: high; scoring: aggressive; interaction: medium
+Allowed behaviors: Employees carry boxes, Customers stay in store for long periods, People smoke near entrance
+Forbidden behaviors: holding a gun, holding a knife
+Surveillance cameras (2) — all video frames analyzed are captured from these cameras:
+  - Front Entrance Cam: Mounted above the main entrance door
+  - Checkout Cam: Overlooking all cash registers
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 0) VLM observation: A man stands on the sidewalk near traffic cones while a silver sedan drives past on the street. Several other individuals are visible near the storefronts in the background. Flags — none. Tracker detected: 2 persons.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "A man is standing on the sidewalk near traffic cones while a car passes; no notable activity inside the store.",
+  "key_moments": [
+    "subject remains on sidewalk",
+    "no interaction with store or customers"
+  ],
+  "concern": "low"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.0,
+  "label": "normal",
+  "reason": "A man is standing on the sidewalk near traffic cones while a car passes; no notable activity inside the store.",
+  "key_moments": [
+    "subject remains on sidewalk",
+    "no interaction with store or customers"
+  ]
+}
+
+======================================================
+VLM frame 420 (window 300-420)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+Business context (from NestJS):
+- Store: Downtown Market (grocery)
+Description: Neighborhood store with fresh produce and daily essentials.
+Location: 123 King St W, Toronto
+Sensitivity: high; scoring: aggressive; interaction: medium
+Allowed behaviors: Employees carry boxes, Customers stay in store for long periods, People smoke near entrance
+Forbidden behaviors: holding a gun, holding a knife
+Surveillance cameras (2) — all video frames analyzed are captured from these cameras:
+  - Front Entrance Cam: Mounted above the main entrance door
+  - Checkout Cam: Overlooking all cash registers
+EARLIER observations (oldest → most recent):
+- (frame 0) VLM observation: A man stands on the sidewalk near traffic cones while a silver sedan drives past on the street. Several other individuals are visible near the storefronts in the background. Flags — none. Tracker detected: 2 persons.
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 300) VLM observation: Two individuals are placing orange traffic cones on the street near a parked white SUV, while other pedestrians walk along the sidewalk. The scene depicts routine street activity with no signs of security threats. Flags — none. Tracker detected: 5 persons.
+- (frame 360) VLM observation: A black SUV is parked on the street while several pedestrians walk on the sidewalk and a motorcycle with two riders passes by. No suspicious activity or security threats are observed. Flags — none. Tracker detected: 8 persons.
+- (frame 420) VLM observation: A motorcycle with two riders is passing a black SUV on a city street, while several pedestrians walk along the sidewalk and near the curb. No suspicious activity or security threats are observed. Flags — face concealed: yes. Tracker detected: 4 persons.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "Street activity has increased with more pedestrians and vehicles, but actions remain routine; a rider with a concealed face is noted but no weapons or forbidden behavior appear.",
+  "key_moments": [
+    "more pedestrians walking along the sidewalk",
+    "individuals place orange traffic cones near a parked SUV",
+    "motorcycle riders pass by the black SUV",
+    "one rider's face is concealed"
+  ],
+  "concern": "low"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.2,
+  "label": "normal",
+  "reason": "Street activity has increased with more pedestrians and vehicles, but actions remain routine; a rider with a concealed face is noted but no weapons or forbidden behavior appear.",
+  "key_moments": [
+    "more pedestrians walking along the sidewalk",
+    "individuals place orange traffic cones near a parked SUV",
+    "motorcycle riders pass by the black SUV",
+    "one rider's face is concealed"
+  ]
+}
+
+======================================================
+VLM frame 480 (window 360-480)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+Business context (from NestJS):
+- Store: Downtown Market (grocery)
+Description: Neighborhood store with fresh produce and daily essentials.
+Location: 123 King St W, Toronto
+Sensitivity: high; scoring: aggressive; interaction: medium
+Allowed behaviors: Employees carry boxes, Customers stay in store for long periods, People smoke near entrance
+Forbidden behaviors: holding a gun, holding a knife
+Surveillance cameras (2) — all video frames analyzed are captured from these cameras:
+  - Front Entrance Cam: Mounted above the main entrance door
+  - Checkout Cam: Overlooking all cash registers
+EARLIER observations (oldest → most recent):
+- (frame 0) VLM observation: A man stands on the sidewalk near traffic cones while a silver sedan drives past on the street. Several other individuals are visible near the storefronts in the background. Flags — none. Tracker detected: 2 persons.
+- (frame 420) VLM observation: A motorcycle with two riders is passing a black SUV on a city street, while several pedestrians walk along the sidewalk and near the curb. No suspicious activity or security threats are observed. Flags — face concealed: yes. Tracker detected: 4 persons.
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 360) VLM observation: A black SUV is parked on the street while several pedestrians walk on the sidewalk and a motorcycle with two riders passes by. No suspicious activity or security threats are observed. Flags — none. Tracker detected: 8 persons.
+- (frame 420) VLM observation: A motorcycle with two riders is passing a black SUV on a city street, while several pedestrians walk along the sidewalk and near the curb. No suspicious activity or security threats are observed. Flags — face concealed: yes. Tracker detected: 4 persons.
+- (frame 480) VLM observation: A motorcycle with two riders is driving down a street between a black SUV and a white SUV, while several pedestrians walk on the sidewalk nearby. The scene appears to be a normal street-level view with no signs of criminal activity or security threats. Flags — none. Tracker detected: 4 persons.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "Pedestrian flow around the store fluctuates but no suspicious actions appear; the scene remains calm with normal street traffic.",
+  "key_moments": [
+    "pedestrian count rises to eight then settles at four",
+    "motorcycle passes between parked SUVs",
+    "no weapons or aggressive behavior detected"
+  ],
+  "concern": "low"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.13,
+  "label": "normal",
+  "reason": "Pedestrian flow around the store fluctuates but no suspicious actions appear; the scene remains calm with normal street traffic.",
+  "key_moments": [
+    "pedestrian count rises to eight then settles at four",
+    "motorcycle passes between parked SUVs",
+    "no weapons or aggressive behavior detected"
+  ]
+}
+
+======================================================
+VLM frame 540 (window 420-540)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+Business context (from NestJS):
+- Store: Downtown Market (grocery)
+Description: Neighborhood store with fresh produce and daily essentials.
+Location: 123 King St W, Toronto
+Sensitivity: high; scoring: aggressive; interaction: medium
+Allowed behaviors: Employees carry boxes, Customers stay in store for long periods, People smoke near entrance
+Forbidden behaviors: holding a gun, holding a knife
+Surveillance cameras (2) — all video frames analyzed are captured from these cameras:
+  - Front Entrance Cam: Mounted above the main entrance door
+  - Checkout Cam: Overlooking all cash registers
+EARLIER observations (oldest → most recent):
+- (frame 0) VLM observation: A man stands on the sidewalk near traffic cones while a silver sedan drives past on the street. Several other individuals are visible near the storefronts in the background. Flags — none. Tracker detected: 2 persons.
+- (frame 420) VLM observation: A motorcycle with two riders is passing a black SUV on a city street, while several pedestrians walk along the sidewalk and near the curb. No suspicious activity or security threats are observed. Flags — face concealed: yes. Tracker detected: 4 persons.
+- (frame 480) VLM observation: A motorcycle with two riders is driving down a street between a black SUV and a white SUV, while several pedestrians walk on the sidewalk nearby. The scene appears to be a normal street-level view with no signs of criminal activity or security threats. Flags — none. Tracker detected: 4 persons.
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 420) VLM observation: A motorcycle with two riders is passing a black SUV on a city street, while several pedestrians walk along the sidewalk and near the curb. No suspicious activity or security threats are observed. Flags — face concealed: yes. Tracker detected: 4 persons.
+- (frame 480) VLM observation: A motorcycle with two riders is driving down a street between a black SUV and a white SUV, while several pedestrians walk on the sidewalk nearby. The scene appears to be a normal street-level view with no signs of criminal activity or security threats. Flags — none. Tracker detected: 4 persons.
+- (frame 540) VLM observation: A motorcycle with two riders is traveling down a street past a parked black SUV and a white SUV, while several pedestrians walk on the sidewalk. No suspicious activity or security threats are observed. Flags — face concealed: yes. Tracker detected: 5 persons.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "The street scene remains unchanged as the motorcycle passes parked cars, but an extra pedestrian joins the sidewalk crowd and the riders' faces are again flagged as concealed, indicating a slight increase in foot traffic without new threats.",
+  "key_moments": [
+    "motorcycle continues past parked black and white SUVs",
+    "one additional pedestrian appears on the sidewalk",
+    "face concealment flag reappears on the riders"
+  ],
+  "concern": "low"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.2,
+  "label": "normal",
+  "reason": "The street scene remains unchanged as the motorcycle passes parked cars, but an extra pedestrian joins the sidewalk crowd and the riders' faces are again flagged as concealed, indicating a slight increase in foot traffic without new threats.",
+  "key_moments": [
+    "motorcycle continues past parked black and white SUVs",
+    "one additional pedestrian appears on the sidewalk",
+    "face concealment flag reappears on the riders"
+  ]
+}
+
+======================================================
+VLM frame 600 (window 480-600)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+Business context (from NestJS):
+- Store: Downtown Market (grocery)
+Description: Neighborhood store with fresh produce and daily essentials.
+Location: 123 King St W, Toronto
+Sensitivity: high; scoring: aggressive; interaction: medium
+Allowed behaviors: Employees carry boxes, Customers stay in store for long periods, People smoke near entrance
+Forbidden behaviors: holding a gun, holding a knife
+Surveillance cameras (2) — all video frames analyzed are captured from these cameras:
+  - Front Entrance Cam: Mounted above the main entrance door
+  - Checkout Cam: Overlooking all cash registers
+EARLIER observations (oldest → most recent):
+- (frame 0) VLM observation: A man stands on the sidewalk near traffic cones while a silver sedan drives past on the street. Several other individuals are visible near the storefronts in the background. Flags — none. Tracker detected: 2 persons.
+- (frame 420) VLM observation: A motorcycle with two riders is passing a black SUV on a city street, while several pedestrians walk along the sidewalk and near the curb. No suspicious activity or security threats are observed. Flags — face concealed: yes. Tracker detected: 4 persons.
+- (frame 480) VLM observation: A motorcycle with two riders is driving down a street between a black SUV and a white SUV, while several pedestrians walk on the sidewalk nearby. The scene appears to be a normal street-level view with no signs of criminal activity or security threats. Flags — none. Tracker detected: 4 persons.
+- (frame 540) VLM observation: A motorcycle with two riders is traveling down a street past a parked black SUV and a white SUV, while several pedestrians walk on the sidewalk. No suspicious activity or security threats are observed. Flags — face concealed: yes. Tracker detected: 5 persons.
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 480) VLM observation: A motorcycle with two riders is driving down a street between a black SUV and a white SUV, while several pedestrians walk on the sidewalk nearby. The scene appears to be a normal street-level view with no signs of criminal activity or security threats. Flags — none. Tracker detected: 4 persons.
+- (frame 540) VLM observation: A motorcycle with two riders is traveling down a street past a parked black SUV and a white SUV, while several pedestrians walk on the sidewalk. No suspicious activity or security threats are observed. Flags — face concealed: yes. Tracker detected: 5 persons.
+- (frame 600) VLM observation: A man is standing on the sidewalk near a parked black SUV while another man walks across the street in front of a white car. The scene shows a typical street-level view with pedestrians and vehicles in front of storefronts. Flags — none. Tracker detected: 4 persons.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "The earlier motorcycle traffic has cleared; now two pedestrians are on the sidewalk, one standing by a black SUV and another crossing in front of a white car, with no suspicious flags.",
+  "key_moments": [
+    "motorcycle riders no longer present",
+    "man stands beside parked black SUV",
+    "second man walks across street near storefront"
+  ],
+  "concern": "low"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.13,
+  "label": "normal",
+  "reason": "The earlier motorcycle traffic has cleared; now two pedestrians are on the sidewalk, one standing by a black SUV and another crossing in front of a white car, with no suspicious flags.",
+  "key_moments": [
+    "motorcycle riders no longer present",
+    "man stands beside parked black SUV",
+    "second man walks across street near storefront"
+  ]
+}
+
+======================================================
+VLM frame 780 (window 660-780)
+======================================================
+INPUT TO GROQ:
+You are a security analyst reviewing a sequence of camera observations from a store, in
+chronological order. Your job is to write a short narrative of what is happening and how the
+scene has changed — so a human reader instantly understands whether the situation is
+escalating, stable, or resolving. You are NOT restating isolated facts, and you are NOT
+deciding a numeric score or a normal/suspicious/criminal label — that is computed separately
+from the structured evidence. Your only job is the narrative and your honest read of concern.
+
+You receive:
+1. Business context — this store's specific allowed and forbidden behaviors.
+2. EARLIER observations — VLM (vision model) readings from recent prior decision points,
+   oldest first.
+3. NOW — the current window's VLM reading(s), the one(s) you are reporting on.
+
+==================== HOW TO WRITE THE NARRATIVE ====================
+
+### 1. Compare NOW against EARLIER — describe the trajectory, not a snapshot
+Look at what changed between the earlier observations and now: movement, positioning, new
+people, new flags (weapon, aggression, concealment, forbidden actions). Is a person moving
+toward the counter, closing distance, escalating from browsing to something else? Say so.
+
+### 2. Ground every claim in the evidence you were given — do not invent motion
+Only describe actions, positions, or objects stated in the EARLIER/NOW lines or business
+context. If nothing meaningfully changed between EARLIER and NOW, say the scene is stable
+(e.g. "scene remains stable, customer still browsing the display case") — do NOT invent
+escalation, movement, or a weapon that isn't supported by the text just to make the narrative
+more dramatic. A stable, boring scene deserves a stable, boring narrative.
+
+### 3. Match behavior to the business context BY SPECIFIC WORDING, NOT GENERAL TOPIC
+Before writing, check which specific Allowed/Forbidden list item each described action actually
+matches — do not pattern-match on a general theme (e.g. "reaching" or "counter") and jump to the
+nearest-sounding Forbidden item. Reaching INTO or OVER a display case to view/handle merchandise
+matches an Allowed item ("Employees opening display cases", "Customers trying on jewelry") — it
+is NOT the same as reaching BEHIND the CASHIER COUNTER (the employee-only space), which is what
+a Forbidden item like "Reaching behind cashier counter" actually describes.
+
+### 4. Appearance is context only
+Clothing, hoods, masks, and hats are frequently benign (fashion, weather, religious or cultural
+headwear). Mention appearance only as a MODIFIER of an action you are already describing, never
+as a claim on its own. A "face concealed" flag means the VLM judged the face ITSELF hidden —
+plain headwear mentioned in appearance text is NOT concealment; never infer concealment yourself
+from appearance words alone.
+
+### 5. Weapons and forbidden actions are the strongest signal
+If a weapon flag or forbidden-action flag appears, that is the most important thing to narrate —
+lead with it. An "unclear" flag (e.g. "gun: unclear", "aggression: unclear") is weak-to-moderate
+escalating evidence, worth mentioning as developing concern — do not treat it as nothing, and do
+not treat it as confirmed either.
+
+==================== OUTPUT FORMAT (STRICT) ====================
+Output EXACTLY one JSON object with these keys — no extra text before or after:
+- "reason": a short analyst narrative (max ~45 words) describing what is happening and how it
+  has changed since the earlier observations — write it the way a human security analyst would
+  describe the situation to a colleague, not a restated flag.
+- "key_moments": 2-5 short clauses describing what people are doing / how the scene changed
+  (e.g. "subject closes distance to the seller", "posture becomes more assertive") — never
+  isolated flag names, never appearance alone, never raw tracker/technical data.
+- "concern": one of "low", "medium", "high" — your own honest instinct for how concerning this
+  moment is. This is advisory only: the actual anomaly score and label are computed separately
+  from the structured evidence, not from this field, so answer honestly rather than trying to
+  guess a target number.
+
+Do NOT include "anomaly_score" or "label" fields in your output — they are not yours to decide.
+
+Examples of the narrative voice we want (style only — do not reuse this wording verbatim):
+- "Capped male enters and moves directly toward the counter with limited browsing behavior."
+- "Subject reaches the counter area and body language becomes more assertive, though weapon
+  visibility is still uncertain."
+- "Handgun becomes visible near the seller, indicating the start of an armed robbery."
+
+Examples of what NOT to write (too terse, cue-echoing — FORBIDDEN style):
+- "Reaching display case"
+- "Face concealed, reaching display case"
+- "person wearing a hood" (appearance stated with no action)
+- Any mention of tracker IDs, confidence scores, or bounding boxes
+
+==============================================================
+
+Here is the scene, in chronological order:
+
+Business context (from NestJS):
+- Store: Downtown Market (grocery)
+Description: Neighborhood store with fresh produce and daily essentials.
+Location: 123 King St W, Toronto
+Sensitivity: high; scoring: aggressive; interaction: medium
+Allowed behaviors: Employees carry boxes, Customers stay in store for long periods, People smoke near entrance
+Forbidden behaviors: holding a gun, holding a knife
+Surveillance cameras (2) — all video frames analyzed are captured from these cameras:
+  - Front Entrance Cam: Mounted above the main entrance door
+  - Checkout Cam: Overlooking all cash registers
+EARLIER observations (oldest → most recent):
+- (frame 0) VLM observation: A man stands on the sidewalk near traffic cones while a silver sedan drives past on the street. Several other individuals are visible near the storefronts in the background. Flags — none. Tracker detected: 2 persons.
+- (frame 420) VLM observation: A motorcycle with two riders is passing a black SUV on a city street, while several pedestrians walk along the sidewalk and near the curb. No suspicious activity or security threats are observed. Flags — face concealed: yes. Tracker detected: 4 persons.
+- (frame 480) VLM observation: A motorcycle with two riders is driving down a street between a black SUV and a white SUV, while several pedestrians walk on the sidewalk nearby. The scene appears to be a normal street-level view with no signs of criminal activity or security threats. Flags — none. Tracker detected: 4 persons.
+- (frame 540) VLM observation: A motorcycle with two riders is traveling down a street past a parked black SUV and a white SUV, while several pedestrians walk on the sidewalk. No suspicious activity or security threats are observed. Flags — face concealed: yes. Tracker detected: 5 persons.
+- (frame 600) VLM observation: A man is standing on the sidewalk near a parked black SUV while another man walks across the street in front of a white car. The scene shows a typical street-level view with pedestrians and vehicles in front of storefronts. Flags — none. Tracker detected: 4 persons.
+
+NOW — current window (oldest → most recent; compare against EARLIER):
+- (frame 660) VLM observation: A man is standing on the sidewalk near a parked black SUV while another man walks away from a parked white car toward the street corner. The scene shows a typical outdoor street environment with no signs of security threats or suspicious activity. Flags — none.
+- (frame 720) VLM observation: A man is standing on the sidewalk near a parked black SUV, gesturing toward the street while another man stands nearby observing. The scene shows a typical street-level view with pedestrians and vehicles in front of storefronts. Flags — none.
+- (frame 780) VLM observation: A man is standing on the sidewalk near a parked black SUV while a motorcyclist drives past on the street. The scene shows a typical outdoor urban environment with businesses and vehicles. Flags — face concealed: yes.
+
+Respond with exactly one JSON object and nothing else.
+
+RAW OUTPUT FROM GROQ (narrative only — score/label are code-computed):
+{
+  "reason": "The scene remains an outdoor street view; a man near the black SUV begins gesturing toward traffic while another watches, but no weapons or forbidden actions appear.",
+  "key_moments": [
+    "subject near black SUV gestures toward street",
+    "second person observes the gesturing individual",
+    "no weapons or prohibited behavior detected"
+  ],
+  "concern": "low"
+}
+
+FINAL RESULT (code-scored):
+{
+  "anomaly_score": 0.1,
+  "label": "normal",
+  "reason": "The scene remains an outdoor street view; a man near the black SUV begins gesturing toward traffic while another watches, but no weapons or forbidden actions appear.",
+  "key_moments": [
+    "subject near black SUV gestures toward street",
+    "second person observes the gesturing individual",
+    "no weapons or prohibited behavior detected"
+  ]
+}
