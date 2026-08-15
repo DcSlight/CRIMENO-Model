@@ -1,0 +1,7 @@
+{"type": "groq_anomaly", "frame_range": {"start": 0, "end": 0}, "result": {"anomaly_score": 0.2, "label": "normal", "reason": "Failed to parse model JSON output", "key_moments": []}}
+{"type": "groq_anomaly", "frame_range": {"start": 0, "end": 60}, "result": {"anomaly_score": 0.18, "label": "normal", "reason": "Failed to parse model JSON output", "key_moments": []}}
+{"type": "groq_anomaly", "frame_range": {"start": 60, "end": 180}, "result": {"anomaly_score": 0.15, "label": "normal", "reason": "Failed to parse model JSON output", "key_moments": []}}
+{"type": "groq_anomaly", "frame_range": {"start": 120, "end": 240}, "result": {"anomaly_score": 0.18, "label": "normal", "reason": "Failed to parse model JSON output", "key_moments": []}}
+{"type": "groq_anomaly", "frame_range": {"start": 300, "end": 420}, "result": {"anomaly_score": 0.7, "label": "suspicious", "reason": "Failed to parse model JSON output", "key_moments": []}}
+{"type": "groq_anomaly", "frame_range": {"start": 360, "end": 480}, "result": {"anomaly_score": 0.67, "label": "suspicious", "reason": "Failed to parse model JSON output", "key_moments": []}}
+{"type": "groq_anomaly", "frame_range": {"start": 420, "end": 540}, "result": {"anomaly_score": 0.56, "label": "suspicious", "reason": "Failed to parse model JSON output", "key_moments": []}}
