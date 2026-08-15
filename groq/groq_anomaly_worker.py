@@ -31,7 +31,7 @@ load_dotenv(_PROJECT_ROOT / ".env")
 # Configuration
 # ============================================================
 
-GROQ_MODEL_NAME = "gpt-oss-120b"
+GROQ_MODEL_NAME = "openai/gpt-oss-120b"
 ZMQ_ENDPOINT    = "tcp://127.0.0.1:5581"
 
 MAX_QUEUE_SIZE    = 30
