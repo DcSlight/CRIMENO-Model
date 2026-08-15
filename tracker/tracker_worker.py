@@ -252,6 +252,23 @@ async def main_async():
 
     asyncio.create_task(clear_sender())
 
+    # Frame payloads are sent to the client via this 1-slot queue instead of an inline
+    # await, so a slow/backpressured client can never stall YOLO/tracking — it just
+    # misses stale frames and picks up the latest one once it catches up.
+    ws_frame_queue: asyncio.Queue = asyncio.Queue(maxsize=1)
+
+    async def ws_sender():
+        nonlocal ws
+        while True:
+            payload = await ws_frame_queue.get()
+            try:
+                await ws_send_json(ws, payload)
+            except Exception as e:
+                print(f"[TRACKER] WS send failed: {e}. Reconnecting...")
+                ws = await ws_connect_loop(args.ws_url)
+
+    asyncio.create_task(ws_sender())
+
     tracks: List[Track] = []
     next_track_id = 1
     first_frame    = True
@@ -377,11 +394,9 @@ async def main_async():
             print(f"[TRACKER] Failed to send to Groq: {e}")
 
         _log_output(payload)
-        try:
-            await ws_send_json(ws, payload)
-        except Exception as e:
-            print(f"[TRACKER] WS send failed: {e}. Reconnecting...")
-            ws = await ws_connect_loop(args.ws_url)
+        if ws_frame_queue.full():
+            ws_frame_queue.get_nowait()  # client is behind — drop the stale frame, keep only latest
+        ws_frame_queue.put_nowait(payload)
 
         if _first_frame_pending.is_set():
             _first_frame_pending.clear()
